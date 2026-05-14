@@ -20,6 +20,10 @@ import io.flutter.plugin.common.EventChannel
 import java.io.ByteArrayOutputStream
 import android.os.Handler
 import android.os.Looper
+import android.graphics.Rect
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 
 class MainActivity : FlutterActivity() {
 
@@ -42,6 +46,20 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 10+ (Q): exclude the full bottom of the window from system
+        // gesture handling so the OS home-gesture zone cannot steal touches that
+        // we use for the app-drawer drag.  We set it after the first layout pass
+        // so the window size is already known.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
+                val height = window.decorView.height
+                val width  = window.decorView.width
+                // Exclude left/right edges (back gestures) and full bottom strip
+                window.decorView.systemGestureExclusionRects = listOf(
+                    Rect(0, height - 200, width, height)  // bottom 200 px
+                )
+            }
+        }
     }
 
     override fun getCachedEngineId(): String = GoLauncherApplication.ENGINE_ID
@@ -304,14 +322,41 @@ class MainActivity : FlutterActivity() {
                 }
                 "openUrlInBrowser" -> {
                     val url = call.argument<String>("url")
+                    val packageName = call.argument<String>("packageName")
                     if (url != null) {
                         try {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            if (packageName != null && packageName.isNotEmpty()) {
+                                intent.setPackage(packageName)
+                            }
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             startActivity(intent)
                         } catch (_: Exception) {}
                     }
                     result.success(null)
+                }
+                "getInstalledBrowsers" -> {
+                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.google.com"))
+                    val resolveInfos = packageManager.queryIntentActivities(browserIntent, android.content.pm.PackageManager.MATCH_ALL)
+                    val browsers = mutableListOf<Map<String, Any>>()
+                    for (info in resolveInfos) {
+                        try {
+                            val appInfo = packageManager.getApplicationInfo(info.activityInfo.packageName, 0)
+                            val label = packageManager.getApplicationLabel(appInfo).toString()
+                            val icon = packageManager.getApplicationIcon(appInfo)
+                            val iconBytes = drawableToByteArray(icon)
+                            
+                            val map = mapOf(
+                                "packageName" to info.activityInfo.packageName,
+                                "label" to label,
+                                "icon" to iconBytes
+                            )
+                            if (browsers.none { it["packageName"] == info.activityInfo.packageName }) {
+                                browsers.add(map)
+                            }
+                        } catch (e: Exception) { }
+                    }
+                    result.success(browsers)
                 }
                 "expandNotifications" -> {
                     try {

@@ -4,6 +4,7 @@ import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:ui';
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -50,11 +51,7 @@ class _AppDrawerState extends State<AppDrawer> {
   final TextEditingController _searchController = TextEditingController();
   String _iconShape = 'Circle';
 
-  // A-Z sidebar
-  final Map<String, int> _letterIndex = {}; // letter -> first grid index
-  OverlayEntry? _letterOverlay;
-
-  // Grid scroll key for alphabet jump
+  // Grid scroll key
   final GlobalKey _gridKey = GlobalKey();
 
   // Approximate row height in the grid
@@ -72,7 +69,6 @@ class _AppDrawerState extends State<AppDrawer> {
   @override
   void dispose() {
     _searchController.dispose();
-    _letterOverlay?.remove();
     super.dispose();
   }
 
@@ -102,7 +98,6 @@ class _AppDrawerState extends State<AppDrawer> {
         _filteredApps = metaApps;
         _isLoading = false;
       });
-      _buildLetterIndex(metaApps);
     }
 
     AppDatabaseService.syncAppsBackground().then((freshApps) {
@@ -113,20 +108,7 @@ class _AppDrawerState extends State<AppDrawer> {
         _filteredApps = apps;
         _isLoading = false;
       });
-      _buildLetterIndex(apps);
     });
-  }
-
-  void _buildLetterIndex(List<AppInfo> apps) {
-    _letterIndex.clear();
-    for (int i = 0; i < apps.length; i++) {
-      final firstChar = apps[i].name.isNotEmpty
-          ? apps[i].name[0].toUpperCase()
-          : '#';
-      if (!_letterIndex.containsKey(firstChar)) {
-        _letterIndex[firstChar] = i;
-      }
-    }
   }
 
   void _filterApps() {
@@ -136,74 +118,22 @@ class _AppDrawerState extends State<AppDrawer> {
           .where((app) => app.name.toLowerCase().contains(query))
           .toList();
     });
-    _buildLetterIndex(_filteredApps);
   }
 
-  void _jumpToLetter(String letter) {
-    final index = _letterIndex[letter];
-    if (index == null) return;
 
-    // Header sliver height estimate: search bar (~56) + top padding (~32) + suggested apps (~120) + divider(~20) = ~228
-    const headerHeight = 228.0;
-    final row = (index / _gridColumns).floor();
-    final offset = headerHeight + row * _cellSize;
-
-    widget.scrollController.animateTo(
-      offset.clamp(0.0, widget.scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-    );
-  }
-
-  void _showLetterBubble(String letter) {
-    _letterOverlay?.remove();
-    final overlay = Overlay.of(context);
-    _letterOverlay = OverlayEntry(
-      builder: (context) => Center(
-        child: IgnorePointer(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                letter,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onPrimary,
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    overlay.insert(_letterOverlay!);
-    Future.delayed(const Duration(milliseconds: 700), () {
-      _letterOverlay?.remove();
-      _letterOverlay = null;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Row(
-        children: [
-          // Main drawer content
-          Expanded(
-            child: CustomScrollView(
-              controller: widget.scrollController,
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+          ),
+          child: CustomScrollView(
+            controller: widget.scrollController,
               // AlwaysScrollableScrollPhysics lets the sheet collapse on
               // drag-down even when the list is at the top — no more fighting
               // the bouncing behaviour that traps the user mid-way.
@@ -213,24 +143,9 @@ class _AppDrawerState extends State<AppDrawer> {
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
                     child: Column(
                       children: [
-                        // Pull handle
-                        Center(
-                          child: Container(
-                            width: 40,
-                            height: 4,
-                            margin: const EdgeInsets.only(bottom: 14),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant
-                                  .withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
                         // Search box — compact rect with rounded edges + mic
                         SizedBox(
                           height: 44,
@@ -370,116 +285,7 @@ class _AppDrawerState extends State<AppDrawer> {
               ],
             ),
           ),
-
-          // A-Z Sidebar
-          if (_searchController.text.isEmpty)
-            _AlphabetSidebar(
-              letterIndex: _letterIndex,
-              onLetterTap: (letter) {
-                _jumpToLetter(letter);
-                _showLetterBubble(letter);
-              },
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Alphabet Sidebar ────────────────────────────────────────────────────────
-
-class _AlphabetSidebar extends StatefulWidget {
-  final Map<String, int> letterIndex;
-  final void Function(String letter) onLetterTap;
-
-  const _AlphabetSidebar({
-    required this.letterIndex,
-    required this.onLetterTap,
-  });
-
-  @override
-  State<_AlphabetSidebar> createState() => _AlphabetSidebarState();
-}
-
-class _AlphabetSidebarState extends State<_AlphabetSidebar> {
-  String? _pressed;
-  static const List<String> _allLetters = [
-    'A',
-    'B',
-    'C',
-    'D',
-    'E',
-    'F',
-    'G',
-    'H',
-    'I',
-    'J',
-    'K',
-    'L',
-    'M',
-    'N',
-    'O',
-    'P',
-    'Q',
-    'R',
-    'S',
-    'T',
-    'U',
-    'V',
-    'W',
-    'X',
-    'Y',
-    'Z',
-    '#',
-  ];
-
-  void _handleTouch(Offset localPosition, double sidebarHeight) {
-    final fraction = (localPosition.dy / sidebarHeight).clamp(0.0, 1.0);
-    final idx = (fraction * (_allLetters.length - 1)).round();
-    final letter = _allLetters[idx];
-    if (letter != _pressed && widget.letterIndex.containsKey(letter)) {
-      setState(() => _pressed = letter);
-      widget.onLetterTap(letter);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (d) {
-        final box = context.findRenderObject() as RenderBox?;
-        if (box != null) _handleTouch(d.localPosition, box.size.height);
-      },
-      onVerticalDragUpdate: (d) {
-        final box = context.findRenderObject() as RenderBox?;
-        if (box != null) _handleTouch(d.localPosition, box.size.height);
-      },
-      onVerticalDragEnd: (_) => setState(() => _pressed = null),
-      onTapUp: (_) => setState(() => _pressed = null),
-      child: Container(
-        width: 22,
-        margin: const EdgeInsets.only(right: 4),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: _allLetters.map((l) {
-            final hasApps = widget.letterIndex.containsKey(l);
-            final isPressed = _pressed == l;
-            return Text(
-              l,
-              style: TextStyle(
-                fontSize: isPressed ? 13 : 10,
-                fontWeight: isPressed ? FontWeight.bold : FontWeight.normal,
-                color: hasApps
-                    ? (isPressed
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurface)
-                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.25),
-              ),
-            );
-          }).toList(),
         ),
-      ),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:swavoti/services/launcher_service.dart';
@@ -69,31 +70,21 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
     final cs = Theme.of(context).colorScheme;
     final filtered = _filtered;
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.82,
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Handle ──────────────────────────────────────────────
-          const SizedBox(height: 12),
-          Center(
-            child: Container(
-              width: 32,
-              height: 4,
-              decoration: BoxDecoration(
-                color: cs.onSurfaceVariant.withOpacity(0.35),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          height: MediaQuery.of(context).size.height,
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: 0.65),
           ),
-          const SizedBox(height: 16),
-
-          // ── Title + count ────────────────────────────────────────
-          Padding(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 28),
+              // ── Title + count ────────────────────────────────────────
+              Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
@@ -220,7 +211,9 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                     },
                   ),
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -17,7 +17,8 @@ class Workspace extends StatefulWidget {
   State<Workspace> createState() => _WorkspaceState();
 }
 
-class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
+class _WorkspaceState extends State<Workspace>
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   Map<String, int> _notifications = {};
   StreamSubscription<Map<String, int>>? _notificationSubscription;
 
@@ -26,6 +27,10 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
   double _drawerExtent = 0.0;
+
+  // Discover page animation
+  late final AnimationController _discoverController;
+  late final Animation<double> _discoverAnimation;
 
   // Drag bubble state
   String? _draggingPackage;
@@ -40,6 +45,16 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkDefaultLauncher();
+
+    _discoverController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+    _discoverAnimation = CurvedAnimation(
+      parent: _discoverController,
+      curve: Curves.easeOutQuart,
+      reverseCurve: Curves.easeInQuart,
+    );
 
     try {
       _notificationSubscription = LauncherService.notificationsStream.listen(
@@ -69,6 +84,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _notificationSubscription?.cancel();
     _sheetController.dispose();
+    _discoverController.dispose();
     super.dispose();
   }
 
@@ -92,6 +108,9 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
     }
   }
 
+  void _openDiscover() => _discoverController.forward();
+  void _closeDiscover() => _discoverController.reverse();
+
   void _onDragStarted(String packageName) {
     setState(() {
       _draggingPackage = packageName;
@@ -110,48 +129,52 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // Home Screen — vertical drag routes:
-          //   swipe UP  → open app drawer
-          //   swipe DOWN → expand notification shade
-          GestureDetector(
-            onVerticalDragUpdate: (details) {
-              final dy = details.primaryDelta ?? 0;
-              if (dy < -8) {
-                _openDrawer();
-              } else if (dy > 8) {
-                LauncherService.expandNotifications();
-              }
-            },
-            child: HomeScreen(
-              key: _homeScreenKey,
-              prefs: widget.prefs,
-              appCache: widget.appCache,
-              notifications: _notifications,
-              onSettingsChanged: () {},
-              onDragStarted: _onDragStarted,
-              onDragEnded: _onDragEnded,
-            ),
-          ),
-
-          // 2. Dynamic Blur (based on drawer extent)
-          if (_drawerExtent > 0.01)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: _drawerExtent * 18,
-                    sigmaY: _drawerExtent * 18,
-                  ),
-                  child: Container(
-                    color: Colors.black.withValues(alpha: _drawerExtent * 0.5),
-                  ),
+          // 1. Home Screen (with synchronized translate/fade)
+          AnimatedBuilder(
+            animation: _discoverAnimation,
+            builder: (context, child) {
+              final screenWidth = MediaQuery.of(context).size.width;
+              final screenHeight = MediaQuery.of(context).size.height;
+              final discoverExtent = _discoverAnimation.value;
+              return Transform.translate(
+                offset: Offset(
+                  screenWidth * 0.25 * discoverExtent,
+                  -screenHeight * 0.25 * _drawerExtent,
                 ),
+                child: Opacity(
+                  opacity: ((1.0 - _drawerExtent) * (1.0 - discoverExtent * 0.7)).clamp(0.0, 1.0),
+                  child: child,
+                ),
+              );
+            },
+            child: GestureDetector(
+              onVerticalDragUpdate: (details) {
+                final dy = details.primaryDelta ?? 0;
+                if (dy < -8) {
+                  _openDrawer();
+                } else if (dy > 8) {
+                  LauncherService.expandNotifications();
+                }
+              },
+              child: HomeScreen(
+                key: _homeScreenKey,
+                prefs: widget.prefs,
+                appCache: widget.appCache,
+                notifications: _notifications,
+                onSettingsChanged: () {},
+                onDragStarted: _onDragStarted,
+                onDragEnded: _onDragEnded,
+                onDiscoverOpen: _openDiscover,
+                onDiscoverClose: _closeDiscover,
               ),
             ),
+          ),
 
           // 3. App Drawer as DraggableScrollableSheet
           NotificationListener<DraggableScrollableNotification>(
@@ -208,6 +231,7 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
               ),
             ),
         ],
+      ),
       ),
     );
   }

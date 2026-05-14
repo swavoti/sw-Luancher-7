@@ -1,14 +1,14 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
-import 'package:swavoti/services/app_database_service.dart';
-import 'package:installed_apps/app_info.dart';
 import 'package:swavoti/screens/edit_icons_page.dart';
 
 class WallpaperPage extends StatefulWidget {
-  const WallpaperPage({super.key});
+  final Uint8List? homeScreenScreenshot;
+  const WallpaperPage({super.key, this.homeScreenScreenshot});
 
   @override
   State<WallpaperPage> createState() => _WallpaperPageState();
@@ -18,36 +18,10 @@ class _WallpaperPageState extends State<WallpaperPage> {
   List<String> _wallpapers = [];
   String _currentPreview = '';
   bool _isLoading = true;
-  List<AppInfo> _dockAppsPreview = [];
-
   @override
   void initState() {
     super.initState();
     _loadWallpapers();
-    _loadDockPreview();
-  }
-
-  Future<void> _loadDockPreview() async {
-    final prefs = await SharedPreferences.getInstance();
-    final rawItems = prefs.getStringList('launcher_items') ?? [];
-    final List<AppInfo> allApps = await AppDatabaseService.getAllApps();
-    final appMap = {for (final a in allApps) a.packageName: a};
-    final dockApps = <AppInfo>[];
-    // Dock items are stored with page == -1
-    for (final raw in rawItems) {
-      try {
-        final json = jsonDecode(raw) as Map<String, dynamic>;
-        if ((json['page'] as int? ?? 0) == -1 && json['type'] == 'app') {
-          final pkg = json['packageName'] as String? ?? '';
-          if (appMap.containsKey(pkg)) dockApps.add(appMap[pkg]!);
-        }
-      } catch (_) {}
-    }
-    if (mounted) {
-      setState(() {
-        _dockAppsPreview = dockApps.take(4).toList();
-      });
-    }
   }
 
   Future<void> _loadWallpapers() async {
@@ -298,6 +272,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
                             MaterialPageRoute(
                               builder: (_) => EditIconsPage(
                                 backgroundWallpaperPath: _currentPreview,
+                                homeScreenScreenshot: widget.homeScreenScreenshot,
                               ),
                             ),
                           );
@@ -351,70 +326,13 @@ class _WallpaperPageState extends State<WallpaperPage> {
                 : null,
           ),
           child: Stack(
+            fit: StackFit.expand,
             children: [
-              if (isLockScreen) ...[
-                Positioned(
-                  top: 40,
-                  left: 0,
-                  right: 0,
-                  child: Column(
-                    children: [
-                      Text(
-                        '10',
-                        style: TextStyle(
-                          fontSize: 64,
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.primaryContainer,
-                          height: 1.0,
-                        ),
-                      ),
-                      Text(
-                        '30',
-                        style: TextStyle(
-                          fontSize: 64,
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onPrimaryContainer,
-                          height: 1.0,
-                        ),
-                      ),
-                    ],
-                  ),
+              if (widget.homeScreenScreenshot != null)
+                Image.memory(
+                  widget.homeScreenScreenshot!,
+                  fit: BoxFit.cover,
                 ),
-              ] else ...[
-                // Home Screen Dock Mockup
-                Positioned(
-                  bottom: 16,
-                  left: 16,
-                  right: 16,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _dockAppsPreview.isEmpty
-                        ? List.generate(
-                            4,
-                            (index) => Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.8),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          )
-                        : _dockAppsPreview.map((app) {
-                            return app.icon != null
-                                ? Image.memory(app.icon!, width: 24, height: 24)
-                                : Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.8),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  );
-                          }).toList(),
-                  ),
-                ),
-              ],
             ],
           ),
         ),

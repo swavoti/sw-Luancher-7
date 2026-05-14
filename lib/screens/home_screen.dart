@@ -5,7 +5,6 @@ import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
-import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
 import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
@@ -14,6 +13,8 @@ import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 
 class LauncherItem {
   final String id;
@@ -79,6 +80,8 @@ class HomeScreen extends StatefulWidget {
   final void Function(Map<String, dynamic>)? onAddAppToHomeScreen;
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
+  final VoidCallback? onDiscoverOpen;
+  final VoidCallback? onDiscoverClose;
 
   const HomeScreen({
     super.key,
@@ -89,6 +92,8 @@ class HomeScreen extends StatefulWidget {
     this.onAddAppToHomeScreen,
     this.onDragStarted,
     this.onDragEnded,
+    this.onDiscoverOpen,
+    this.onDiscoverClose,
   });
 
   @override
@@ -101,6 +106,7 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isDragging = false;
   bool _isNavigatingToDiscover = false;
   String _iconShape = 'Circle';
+  final GlobalKey _repaintBoundaryKey = GlobalKey();
 
   // Grid Configuration
   final int _columns = 4;
@@ -149,6 +155,7 @@ class HomeScreenState extends State<HomeScreen> {
     final offset = _workspaceController.offset;
     if (offset < -60) {
       _isNavigatingToDiscover = true;
+      widget.onDiscoverOpen?.call();
       // Snap back to position 0 so the bounce doesn't look weird on return
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_workspaceController.hasClients) {
@@ -158,25 +165,26 @@ class HomeScreenState extends State<HomeScreen> {
       Navigator.of(context)
           .push(
             PageRouteBuilder(
+              opaque: false,
               pageBuilder: (_, __, ___) => const DiscoverNewsPage(),
               transitionsBuilder: (_, animation, __, child) {
+                // Push: home screen slides right + fades out, discover slides in from left
+                final discoverSlide = Tween<Offset>(
+                  begin: const Offset(-1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutQuart));
                 return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(-1, 0),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutCubic,
-                    ),
-                  ),
+                  position: discoverSlide,
                   child: child,
                 );
               },
-              transitionDuration: const Duration(milliseconds: 280),
+              transitionDuration: const Duration(milliseconds: 360),
             ),
           )
-          .then((_) => _isNavigatingToDiscover = false);
+          .then((_) {
+            _isNavigatingToDiscover = false;
+            widget.onDiscoverClose?.call();
+          });
     }
   }
 
@@ -260,10 +268,7 @@ class HomeScreenState extends State<HomeScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface.withOpacity(0.95),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
+          color: Colors.transparent,
           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -285,12 +290,26 @@ class HomeScreenState extends State<HomeScreen> {
                   _buildMenuButton(
                     icon: Icons.wallpaper,
                     label: 'Wallpaper',
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(context);
+                      Uint8List? screenshotBytes;
+                      try {
+                        final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+                        if (boundary != null) {
+                          final image = await boundary.toImage(pixelRatio: 2.0);
+                          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                          if (byteData != null) {
+                            screenshotBytes = byteData.buffer.asUint8List();
+                          }
+                        }
+                      } catch (e) {
+                        print('Error capturing screenshot: $e');
+                      }
+                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const WallpaperPage(),
+                          builder: (context) => WallpaperPage(homeScreenScreenshot: screenshotBytes),
                         ),
                       );
                     },
@@ -361,6 +380,7 @@ class HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => WidgetBottomSheet(
         onWidgetSelected: (widgetData) async {
@@ -487,9 +507,11 @@ class HomeScreenState extends State<HomeScreen> {
 
     return GestureDetector(
       onLongPress: _showWorkspaceMenu,
-      child: Container(
-        color: Colors.transparent,
-        child: Column(
+      child: RepaintBoundary(
+        key: _repaintBoundaryKey,
+        child: Container(
+          color: Colors.transparent,
+          child: Column(
           children: [
             SizedBox(height: statusBarHeight + 16),
             // Time & Weather Widget Area
@@ -973,6 +995,7 @@ class HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          ),
         ),
       ),
     );

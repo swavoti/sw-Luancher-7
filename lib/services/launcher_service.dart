@@ -122,12 +122,28 @@ class LauncherService {
     }
   }
 
-  static Future<void> openUrlInBrowser(String url) async {
+  static Future<void> openUrlInBrowser(String url, [String? packageName]) async {
     try {
-      await _systemChannel.invokeMethod('openUrlInBrowser', {'url': url});
+      await _systemChannel.invokeMethod('openUrlInBrowser', {
+        'url': url,
+        'packageName': packageName,
+      });
     } catch (e) {
       print('Error opening URL: $e');
     }
+  }
+
+  static Future<List<Map<String, dynamic>>> getInstalledBrowsers() async {
+    try {
+      final List<dynamic>? browsers =
+          await _systemChannel.invokeMethod('getInstalledBrowsers');
+      if (browsers != null) {
+        return browsers.map((b) => Map<String, dynamic>.from(b as Map)).toList();
+      }
+    } catch (e) {
+      print('Error getting installed browsers: $e');
+    }
+    return [];
   }
 
   static Future<void> openNotificationSettings() async {

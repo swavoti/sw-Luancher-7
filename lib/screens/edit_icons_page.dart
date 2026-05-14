@@ -1,10 +1,12 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class EditIconsPage extends StatefulWidget {
   final String backgroundWallpaperPath;
+  final Uint8List? homeScreenScreenshot;
 
-  const EditIconsPage({super.key, required this.backgroundWallpaperPath});
+  const EditIconsPage({super.key, required this.backgroundWallpaperPath, this.homeScreenScreenshot});
 
   @override
   State<EditIconsPage> createState() => _EditIconsPageState();
@@ -80,7 +82,14 @@ class _EditIconsPageState extends State<EditIconsPage> {
       ),
       body: Stack(
         children: [
-          if (widget.backgroundWallpaperPath.isNotEmpty)
+          if (widget.homeScreenScreenshot != null)
+            Positioned.fill(
+              child: Image.memory(
+                widget.homeScreenScreenshot!,
+                fit: BoxFit.cover,
+              ),
+            )
+          else if (widget.backgroundWallpaperPath.isNotEmpty)
             Positioned.fill(
               child: Image.asset(
                 widget.backgroundWallpaperPath,
@@ -136,6 +145,25 @@ class _EditIconsPageState extends State<EditIconsPage> {
                             },
                           );
                         }).toList(),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Icon Pack',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Lawnicons'),
+                        subtitle: const Text('Requires Lawnicons app'),
+                        trailing: Switch(
+                          value: false,
+                          onChanged: (val) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Lawnicons not found on device.')),
+                            );
+                          },
+                        ),
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton(
