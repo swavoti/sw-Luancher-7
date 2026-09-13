@@ -114,11 +114,16 @@ class _WorkspaceState extends State<Workspace> with WidgetsBindingObserver {
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 1. Home Screen
+          // Home Screen — vertical drag routes:
+          //   swipe UP  → open app drawer
+          //   swipe DOWN → expand notification shade
           GestureDetector(
             onVerticalDragUpdate: (details) {
-              if (details.primaryDelta! < -8) {
+              final dy = details.primaryDelta ?? 0;
+              if (dy < -8) {
                 _openDrawer();
+              } else if (dy > 8) {
+                LauncherService.expandNotifications();
               }
             },
             child: HomeScreen(

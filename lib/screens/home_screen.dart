@@ -471,12 +471,6 @@ class HomeScreenState extends State<HomeScreen> {
 
     return GestureDetector(
       onLongPress: _showWorkspaceMenu,
-      onVerticalDragUpdate: (details) {
-        // Swipe down anywhere on home grid → drop notification shade
-        if (details.primaryDelta != null && details.primaryDelta! > 6) {
-          LauncherService.expandNotifications();
-        }
-      },
       child: Container(
         color: Colors.transparent,
         child: Column(
