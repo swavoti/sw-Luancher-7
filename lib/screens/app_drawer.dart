@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_database_service.dart';
@@ -31,18 +30,15 @@ class AppDrawer extends StatefulWidget {
 class _WorkspaceItemData {
   final String packageName;
   final String label;
-  final String type;
 
   _WorkspaceItemData({
     required this.packageName,
     required this.label,
-    this.type = 'app',
   });
 
   Map<String, dynamic> toMap() => {
     'packageName': packageName,
     'label': label,
-    'type': type,
   };
 }
 
@@ -55,7 +51,6 @@ class _AppDrawerState extends State<AppDrawer> {
 
   // A-Z sidebar
   final Map<String, int> _letterIndex = {}; // letter -> first grid index
-  String? _hoveredLetter;
   OverlayEntry? _letterOverlay;
 
   // Grid scroll key for alphabet jump
@@ -216,7 +211,12 @@ class _AppDrawerState extends State<AppDrawer> {
           Expanded(
             child: CustomScrollView(
               controller: widget.scrollController,
-              physics: const ClampingScrollPhysics(),
+              // AlwaysScrollableScrollPhysics lets the sheet collapse on
+              // drag-down even when the list is at the top — no more fighting
+              // the bouncing behaviour that traps the user mid-way.
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
@@ -230,32 +230,82 @@ class _AppDrawerState extends State<AppDrawer> {
                             height: 4,
                             margin: const EdgeInsets.only(bottom: 14),
                             decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant.withOpacity(0.35),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withValues(alpha: 0.35),
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
                         ),
-                        // Search box
-                        TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Search Apps...',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () => _searchController.clear(),
-                                  )
-                                : null,
-                            filled: true,
-                            fillColor: Theme.of(
-                              context,
-                            ).colorScheme.surfaceVariant.withOpacity(0.5),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(28),
-                              borderSide: BorderSide.none,
+                        // Search box — compact rect with rounded edges + mic
+                        SizedBox(
+                          height: 44,
+                          child: TextField(
+                            controller: _searchController,
+                            textAlignVertical: TextAlignVertical.center,
+                            style: const TextStyle(fontSize: 14),
+                            decoration: InputDecoration(
+                              hintText: 'Search apps',
+                              hintStyle: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant
+                                    .withValues(alpha: 0.65),
+                                fontSize: 14,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                                size: 20,
+                              ),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        size: 18,
+                                      ),
+                                      onPressed: () =>
+                                          _searchController.clear(),
+                                    )
+                                  : IconButton(
+                                      icon: Icon(
+                                        Icons.mic_rounded,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary,
+                                        size: 20,
+                                      ),
+                                      onPressed:
+                                          LauncherService.openGoogleVoiceSearch,
+                                    ),
+                              filled: true,
+                              fillColor: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: 0.55),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 10,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 1.5,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -431,7 +481,7 @@ class _AlphabetSidebarState extends State<_AlphabetSidebar> {
                     ? (isPressed
                           ? Theme.of(context).colorScheme.primary
                           : Theme.of(context).colorScheme.onSurface)
-                    : Theme.of(context).colorScheme.onSurface.withOpacity(0.25),
+                    : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.25),
               ),
             );
           }).toList(),
@@ -487,7 +537,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
         widget.onDragStarted?.call(app.packageName);
       },
       onDragEnd: (_) => widget.onDragEnded?.call(),
-      onDraggableCanceled: (_, __) => widget.onDragEnded?.call(),
+      onDraggableCanceled: (_, _) => widget.onDragEnded?.call(),
       feedback: Material(
         color: Colors.transparent,
         child: Opacity(

@@ -11,7 +11,6 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs
@@ -40,12 +39,9 @@ class MainActivity : FlutterActivity() {
 
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
-    private var askedBatteryExemption = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        LauncherKeepAliveService.start(this)
-        requestUnrestrictedBackground()
     }
 
     override fun getCachedEngineId(): String = GoLauncherApplication.ENGINE_ID
@@ -57,29 +53,11 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        // Keep the Flutter engine and keep-alive service. Locking the phone
-        // must not tear the launcher down.
+        // Do not destroy the cached Flutter engine — android:persistent keeps
+        // this process alive so the engine survives lock/unlock naturally.
         super.onDestroy()
     }
 
-    private fun requestUnrestrictedBackground() {
-        if (askedBatteryExemption) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val powerManager = getSystemService(PowerManager::class.java) ?: return
-        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return
-        askedBatteryExemption = true
-        try {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-            intent.data = Uri.parse("package:$packageName")
-            startActivity(intent)
-        } catch (_: Exception) {
-            try {
-                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            } catch (_: Exception) {
-                // User can still disable battery restriction in system settings.
-            }
-        }
-    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -321,6 +299,41 @@ class MainActivity : FlutterActivity() {
                         val shareIntent = Intent.createChooser(sendIntent, null)
                         shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(shareIntent)
+                    }
+                    result.success(null)
+                }
+                "openUrlInBrowser" -> {
+                    val url = call.argument<String>("url")
+                    if (url != null) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+                    result.success(null)
+                }
+                "expandNotifications" -> {
+                    try {
+                        @Suppress("DEPRECATION")
+                        val sbService = getSystemService("statusbar")
+                        val sbClass = Class.forName("android.app.StatusBarManager")
+                        val expandMethod = sbClass.getMethod("expandNotificationsPanel")
+                        expandMethod.invoke(sbService)
+                    } catch (_: Exception) {}
+                    result.success(null)
+                }
+                "openGoogleVoiceSearch" -> {
+                    try {
+                        val intent = Intent(Intent.ACTION_VOICE_COMMAND)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                    } catch (_: Exception) {
+                        try {
+                            val intent2 = Intent("android.speech.action.VOICE_SEARCH_HANDS_FREE")
+                            intent2.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent2)
+                        } catch (_: Exception) {}
                     }
                     result.success(null)
                 }

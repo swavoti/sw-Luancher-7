@@ -9,10 +9,11 @@ class BootCompletedReceiver : BroadcastReceiver() {
         when (intent?.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
-            Intent.ACTION_MY_PACKAGE_REPLACED,
-            Intent.ACTION_USER_PRESENT,
-            Intent.ACTION_SCREEN_ON -> {
-                LauncherKeepAliveService.start(context)
+            Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                // Re-warm the Flutter engine after a cold reboot or self-update.
+                // android:persistent keeps the process alive at runtime; this handles
+                // the initial cold-boot case where the process hasn't started yet.
+                (context.applicationContext as? GoLauncherApplication)?.ensureEngineWarmed()
             }
         }
     }

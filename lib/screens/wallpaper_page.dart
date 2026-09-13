@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,20 +29,24 @@ class _WallpaperPageState extends State<WallpaperPage> {
 
   Future<void> _loadDockPreview() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedDock = prefs.getStringList('dock_apps');
-    if (savedDock != null && savedDock.isNotEmpty) {
-      List<AppInfo> apps = await AppDatabaseService.getAllApps();
-      final previewApps = <AppInfo>[];
-      for (var pkg in savedDock) {
-        try {
-          previewApps.add(apps.firstWhere((a) => a.packageName == pkg));
-        } catch (_) {}
-      }
-      if (mounted) {
-        setState(() {
-          _dockAppsPreview = previewApps;
-        });
-      }
+    final rawItems = prefs.getStringList('launcher_items') ?? [];
+    final List<AppInfo> allApps = await AppDatabaseService.getAllApps();
+    final appMap = {for (final a in allApps) a.packageName: a};
+    final dockApps = <AppInfo>[];
+    // Dock items are stored with page == -1
+    for (final raw in rawItems) {
+      try {
+        final json = jsonDecode(raw) as Map<String, dynamic>;
+        if ((json['page'] as int? ?? 0) == -1 && json['type'] == 'app') {
+          final pkg = json['packageName'] as String? ?? '';
+          if (appMap.containsKey(pkg)) dockApps.add(appMap[pkg]!);
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _dockAppsPreview = dockApps.take(4).toList();
+      });
     }
   }
 

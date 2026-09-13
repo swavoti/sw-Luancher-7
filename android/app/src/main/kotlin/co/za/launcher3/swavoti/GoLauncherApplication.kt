@@ -24,11 +24,10 @@ class GoLauncherApplication : Application() {
         } catch (_: Exception) {
             // Widgets unavailable on this device — launcher still works.
         }
-        prewarmEngine()
-        LauncherKeepAliveService.start(this)
+        ensureEngineWarmed()
     }
 
-    private fun prewarmEngine() {
+    fun ensureEngineWarmed() {
         if (FlutterEngineCache.getInstance().get(ENGINE_ID) != null) return
 
         val engine = FlutterEngine(this)

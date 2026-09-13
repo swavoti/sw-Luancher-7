@@ -128,12 +128,56 @@ class HomeScreenState extends State<HomeScreen> {
     _loadItemsSync();
     _loadSettingsSync();
     _workspaceController = PageController(initialPage: 0);
+    _workspaceController.addListener(_onWorkspaceScroll);
   }
 
   @override
   void dispose() {
+    _workspaceController.removeListener(_onWorkspaceScroll);
     _workspaceController.dispose();
     super.dispose();
+  }
+
+  /// Called every scroll frame. When the user drags left-to-right past the
+  /// beginning of page 0 the PageController offset goes negative — at that
+  /// point we push the Discover page. Using the controller offset is far more
+  /// reliable than OverscrollNotification with BouncingScrollPhysics on Android.
+  void _onWorkspaceScroll() {
+    if (!_workspaceController.hasClients) return;
+    if (_isNavigatingToDiscover) return;
+    if (_currentWorkspacePage != 0) return;
+    final offset = _workspaceController.offset;
+    if (offset < -60) {
+      _isNavigatingToDiscover = true;
+      // Snap back to position 0 so the bounce doesn't look weird on return
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_workspaceController.hasClients) {
+          _workspaceController.jumpTo(0);
+        }
+      });
+      Navigator.of(context)
+          .push(
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const DiscoverNewsPage(),
+              transitionsBuilder: (_, animation, __, child) {
+                return SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(-1, 0),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                    ),
+                  ),
+                  child: child,
+                );
+              },
+              transitionDuration: const Duration(milliseconds: 280),
+            ),
+          )
+          .then((_) => _isNavigatingToDiscover = false);
+    }
   }
 
   void _loadSettingsSync() {
@@ -427,6 +471,12 @@ class HomeScreenState extends State<HomeScreen> {
 
     return GestureDetector(
       onLongPress: _showWorkspaceMenu,
+      onVerticalDragUpdate: (details) {
+        // Swipe down anywhere on home grid → drop notification shade
+        if (details.primaryDelta != null && details.primaryDelta! > 6) {
+          LauncherService.expandNotifications();
+        }
+      },
       child: Container(
         color: Colors.transparent,
         child: Column(
@@ -451,43 +501,7 @@ class HomeScreenState extends State<HomeScreen> {
                     final cellWidth = constraints.maxWidth / _columns;
                     final cellHeight = constraints.maxHeight / _rows;
 
-                    return NotificationListener<OverscrollNotification>(
-                      onNotification: (notification) {
-                        if (_currentWorkspacePage == 0 &&
-                            notification.overscroll < -50 &&
-                            !_isNavigatingToDiscover) {
-                          _isNavigatingToDiscover = true;
-                          Navigator.of(context)
-                              .push(
-                                PageRouteBuilder(
-                                  pageBuilder: (_, __, ___) =>
-                                      const DiscoverNewsPage(),
-                                  transitionsBuilder:
-                                      (_, animation, __, child) {
-                                        return SlideTransition(
-                                          position:
-                                              Tween<Offset>(
-                                                begin: const Offset(-1, 0),
-                                                end: Offset.zero,
-                                              ).animate(
-                                                CurvedAnimation(
-                                                  parent: animation,
-                                                  curve: Curves.easeOutCubic,
-                                                ),
-                                              ),
-                                          child: child,
-                                        );
-                                      },
-                                  transitionDuration: const Duration(
-                                    milliseconds: 280,
-                                  ),
-                                ),
-                              )
-                              .then((_) => _isNavigatingToDiscover = false);
-                        }
-                        return false;
-                      },
-                      child: PageView.builder(
+                    return PageView.builder(
                         physics: const BouncingScrollPhysics(
                           parent: AlwaysScrollableScrollPhysics(),
                         ),
@@ -725,8 +739,7 @@ class HomeScreenState extends State<HomeScreen> {
                             ],
                           );
                         },
-                      ),
-                    );
+                      );
                   },
                 ),
               ),
@@ -833,6 +846,56 @@ class HomeScreenState extends State<HomeScreen> {
                   );
                 },
               ),
+
+            // ── Search Bar above Dock ─────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: GestureDetector(
+                onTap: () {
+                  // Open Google in the user's default browser
+                  LauncherService.openUrlInBrowser('https://www.google.com');
+                },
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.25),
+                      width: 1,
+                    ),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search_rounded,
+                        color: Colors.white.withOpacity(0.85),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Search',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: LauncherService.openGoogleVoiceSearch,
+                        child: Icon(
+                          Icons.mic_rounded,
+                          color: Colors.white.withOpacity(0.85),
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
             // App Dock
             Container(

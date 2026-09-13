@@ -106,6 +106,30 @@ class LauncherService {
     }
   }
 
+  static Future<void> expandNotifications() async {
+    try {
+      await _systemChannel.invokeMethod('expandNotifications');
+    } catch (e) {
+      print('Error expanding notifications: $e');
+    }
+  }
+
+  static Future<void> openGoogleVoiceSearch() async {
+    try {
+      await _systemChannel.invokeMethod('openGoogleVoiceSearch');
+    } catch (e) {
+      print('Error opening voice search: $e');
+    }
+  }
+
+  static Future<void> openUrlInBrowser(String url) async {
+    try {
+      await _systemChannel.invokeMethod('openUrlInBrowser', {'url': url});
+    } catch (e) {
+      print('Error opening URL: $e');
+    }
+  }
+
   static Future<void> openNotificationSettings() async {
     try {
       await _systemChannel.invokeMethod('openNotificationSettings');

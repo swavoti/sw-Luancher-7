@@ -1,8 +1,9 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:swavoti/services/weather_service.dart';
 import 'package:swavoti/widgets/weather_icon.dart';
-import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/screens/weather_page.dart';
 
 class TimeWeatherWidget extends StatefulWidget {
   final VoidCallback onRemove;
@@ -31,6 +32,17 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
   void dispose() {
     _timer.cancel();
     super.dispose();
+  }
+
+  String _formatDate(DateTime dt) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final day = weekdays[dt.weekday - 1];
+    final month = months[dt.month - 1];
+    return '$day, ${dt.day} $month';
   }
 
   Future<void> _loadWeather() async {
@@ -84,18 +96,23 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
                   '${_currentTime.hour}:${_currentTime.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 48,
-                    fontWeight: FontWeight.w300,
+                    fontSize: 56,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -2,
+                    height: 1.0,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  '${_currentTime.day}/${_currentTime.month}/${_currentTime.year}',
+                  _formatDate(_currentTime),
                   style: TextStyle(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.9),
-                    fontSize: 16,
+                    ).colorScheme.onSurface.withOpacity(0.75),
+                    fontSize: 15,
                     fontWeight: FontWeight.w500,
+                    letterSpacing: 0.2,
                   ),
                 ),
               ],
@@ -104,7 +121,12 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
             if (_weatherData != null)
               GestureDetector(
                 onTap: () {
-                  LauncherService.launchGoogleWeather();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const WeatherPage(),
+                    ),
+                  );
                 },
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
