@@ -36,7 +36,8 @@ class _WorkspaceItemData {
     required this.label,
   });
 
-  Map<String, dynamic> toMap() => {
+  Map<String, dynamic> toMap() => <String, dynamic>{
+    'type': 'app',
     'packageName': packageName,
     'label': label,
   };

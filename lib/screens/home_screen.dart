@@ -9,6 +9,7 @@ import 'package:swavoti/screens/widget_bottomsheet.dart';
 import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
 import 'package:swavoti/screens/discover_news.dart';
+import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'dart:async';
@@ -221,6 +222,21 @@ class HomeScreenState extends State<HomeScreen> {
           ),
         );
       }
+      
+      // Default search widget on first launch
+      loadedItems.add(
+        LauncherItem(
+          id: 'search_default',
+          type: 'search_widget',
+          packageName: '',
+          label: 'Search',
+          x: 0,
+          y: 0,
+          spanX: 4,
+          spanY: 1,
+          page: 0,
+        )
+      );
     }
     _items = loadedItems;
   }
@@ -841,55 +857,8 @@ class HomeScreenState extends State<HomeScreen> {
                 },
               ),
 
-            // ── Search Bar above Dock ─────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: GestureDetector(
-                onTap: () {
-                  // Open Google in the user's default browser
-                  LauncherService.openUrlInBrowser('https://www.google.com');
-                },
-                child: Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: Colors.white.withOpacity(0.25),
-                      width: 1,
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search_rounded,
-                        color: Colors.white.withOpacity(0.85),
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Search',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: LauncherService.openGoogleVoiceSearch,
-                        child: Icon(
-                          Icons.mic_rounded,
-                          color: Colors.white.withOpacity(0.85),
-                          size: 20,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            // ── Search Bar Removed (Now a Grid Widget) ─────────────────
+
 
             // App Dock
             Container(
@@ -1025,6 +994,18 @@ class HomeScreenState extends State<HomeScreen> {
             creationParams: {'appWidgetId': item.appWidgetId},
             creationParamsCodec: const StandardMessageCodec(),
           ),
+        ),
+      );
+    } else if (item.type == 'search_widget') {
+      return Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: SearchWidget(
+          onRemove: () {
+            setState(() {
+              _items.removeWhere((i) => i.id == item.id);
+            });
+            _saveItems();
+          },
         ),
       );
     } else {

@@ -15,6 +15,7 @@ class _HomeSettingsState extends State<HomeSettings> {
   bool _isLoading = true;
   String _feedProvider = 'msn';
   bool _showTimeWeather = true;
+  bool _showSearchWidget = true;
   int _gridColumns = 4;
   bool _showHiddenApps = false;
 
@@ -26,12 +27,24 @@ class _HomeSettingsState extends State<HomeSettings> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Check if search widget is present in items
+    final savedItems = prefs.getStringList('launcher_items') ?? [];
+    bool hasSearchWidget = false;
+    for (final jsonStr in savedItems) {
+      if (jsonStr.contains('"type":"search_widget"')) {
+        hasSearchWidget = true;
+        break;
+      }
+    }
+
     if (mounted) {
       setState(() {
         _notificationDotsEnabled =
             prefs.getBool('notification_dots_enabled') ?? false;
         _feedProvider = prefs.getString('feed_provider') ?? 'msn';
         _showTimeWeather = prefs.getBool('show_time_weather') ?? true;
+        _showSearchWidget = hasSearchWidget;
         _gridColumns = prefs.getInt('grid_columns') ?? 4;
         _showHiddenApps = prefs.getBool('show_hidden_apps') ?? false;
         _isLoading = false;
@@ -75,6 +88,25 @@ class _HomeSettingsState extends State<HomeSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('show_time_weather', value);
     setState(() => _showTimeWeather = value);
+  }
+
+  Future<void> _toggleSearchWidget(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedItems = prefs.getStringList('launcher_items') ?? [];
+    
+    if (value) {
+      // Add search widget if not present
+      if (!savedItems.any((jsonStr) => jsonStr.contains('"type":"search_widget"'))) {
+        savedItems.add('{"id":"search_default","type":"search_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Search"}');
+        await prefs.setStringList('launcher_items', savedItems);
+      }
+    } else {
+      // Remove search widget
+      savedItems.removeWhere((jsonStr) => jsonStr.contains('"type":"search_widget"'));
+      await prefs.setStringList('launcher_items', savedItems);
+    }
+    
+    setState(() => _showSearchWidget = value);
   }
 
   Future<void> _toggleShowHiddenApps(bool value) async {
@@ -184,6 +216,16 @@ class _HomeSettingsState extends State<HomeSettings> {
                       ),
                       value: _showTimeWeather,
                       onChanged: _toggleTimeWeather,
+                    ),
+                    const Divider(height: 1, indent: 56),
+                    SwitchListTile(
+                      secondary: const Icon(Icons.search_rounded),
+                      title: const Text('Show Search Widget'),
+                      subtitle: const Text(
+                        'Display search bar widget on home screen',
+                      ),
+                      value: _showSearchWidget,
+                      onChanged: _toggleSearchWidget,
                     ),
                   ],
                 ),
