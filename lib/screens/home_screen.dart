@@ -5,6 +5,7 @@ import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
 import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
@@ -96,7 +97,6 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   List<LauncherItem> _items = [];
-  late Map<String, AppInfo> _appCache;
   bool _showTimeWeather = true;
   bool _isDragging = false;
   bool _isNavigatingToDiscover = false;
@@ -125,7 +125,6 @@ class HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     LauncherService.preloadWidgets();
-    _appCache = Map<String, AppInfo>.from(widget.appCache);
     _loadItemsSync();
     _loadSettingsSync();
     _workspaceController = PageController(initialPage: 0);
@@ -242,9 +241,10 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Future<AppInfo?> _getAppInfo(String packageName) async {
-    if (_appCache.containsKey(packageName)) return _appCache[packageName];
+    final cache = widget.appCache;
+    if (cache.containsKey(packageName)) return cache[packageName];
     final info = await InstalledApps.getAppInfo(packageName);
-    if (info != null && mounted) setState(() => _appCache[packageName] = info);
+    if (info != null) cache[packageName] = info;
     return info;
   }
 

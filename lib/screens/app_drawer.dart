@@ -95,34 +95,26 @@ class _AppDrawerState extends State<AppDrawer> {
       return apps.where((a) => !hidden.contains(a.packageName)).toList();
     }
 
-    final cachedApps = filterApps(await AppDatabaseService.getAllApps());
-    if (cachedApps.isNotEmpty) {
-      if (mounted) {
-        setState(() {
-          _apps = cachedApps;
-          _filteredApps = cachedApps;
-          _isLoading = false;
-        });
-        _buildLetterIndex(cachedApps);
-      }
+    final metaApps = filterApps(await AppDatabaseService.getAppMetadata());
+    if (metaApps.isNotEmpty && mounted) {
+      setState(() {
+        _apps = metaApps;
+        _filteredApps = metaApps;
+        _isLoading = false;
+      });
+      _buildLetterIndex(metaApps);
     }
 
-    final freshApps = filterApps(await AppDatabaseService.syncAppsBackground());
-    if (freshApps.isNotEmpty && mounted) {
+    AppDatabaseService.syncAppsBackground().then((freshApps) {
+      if (!mounted) return;
+      final apps = filterApps(freshApps);
       setState(() {
-        _apps = freshApps;
-        final query = _searchController.text.toLowerCase();
-        _filteredApps = _apps
-            .where((app) => app.name.toLowerCase().contains(query))
-            .toList();
+        _apps = apps;
+        _filteredApps = apps;
         _isLoading = false;
       });
-      _buildLetterIndex(_filteredApps);
-    } else if (cachedApps.isEmpty && mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+      _buildLetterIndex(apps);
+    });
   }
 
   void _buildLetterIndex(List<AppInfo> apps) {

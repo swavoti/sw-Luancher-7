@@ -1,12 +1,12 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
-import 'package:swavoti/screens/workspace.dart';
-import 'package:swavoti/services/app_database_service.dart';
 import 'package:flutter/services.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:swavoti/screens/workspace.dart';
+import 'package:swavoti/services/app_database_service.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Make status bar and navigation bar transparent for edge-to-edge
@@ -18,27 +18,59 @@ void main() async {
   );
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  final prefs = await SharedPreferences.getInstance();
-
-  // Pre-warm icon cache from SQLite so icons show on first frame (no jank on unlock)
-  final List<AppInfo> cachedApps = await AppDatabaseService.getAllApps();
-  final Map<String, AppInfo> appCache = {
-    for (final app in cachedApps) app.packageName: app,
-  };
-
-  // Sync fresh apps in background (won't block startup)
-  AppDatabaseService.syncAppsBackground();
-
-  runApp(SwavotiApp(prefs: prefs, appCache: appCache));
+  runApp(const SwavotiApp());
 }
 
-class SwavotiApp extends StatelessWidget {
-  final SharedPreferences prefs;
-  final Map<String, AppInfo> appCache;
-  const SwavotiApp({super.key, required this.prefs, required this.appCache});
+class SwavotiApp extends StatefulWidget {
+  const SwavotiApp({super.key});
+
+  @override
+  State<SwavotiApp> createState() => _SwavotiAppState();
+}
+
+class _SwavotiAppState extends State<SwavotiApp> {
+  SharedPreferences? _prefs;
+  Map<String, AppInfo> _appCache = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _hydrate();
+  }
+
+  Future<void> _hydrate() async {
+    final results = await Future.wait([
+      SharedPreferences.getInstance(),
+      AppDatabaseService.getAppMetadata(),
+    ]);
+
+    final prefs = results[0] as SharedPreferences;
+    final List<AppInfo> cachedApps = results[1] as List<AppInfo>;
+    final Map<String, AppInfo> appCache = {
+      for (final app in cachedApps) app.packageName: app,
+    };
+
+    if (!mounted) return;
+    setState(() {
+      _prefs = prefs;
+      _appCache = appCache;
+    });
+
+    // Sync fresh apps in background (won't block startup)
+    AppDatabaseService.syncAppsBackground();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final prefs = _prefs;
+    if (prefs == null) {
+      return const MaterialApp(
+        title: 'Go Launcher 7',
+        home: Scaffold(backgroundColor: Colors.transparent),
+        debugShowCheckedModeBanner: false,
+      );
+    }
+
     return DynamicColorBuilder(
       builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
         ColorScheme lightColorScheme;
@@ -83,7 +115,7 @@ class SwavotiApp extends StatelessWidget {
           ),
           home: PopScope(
             canPop: false,
-            child: Workspace(prefs: prefs, appCache: appCache),
+            child: Workspace(prefs: prefs, appCache: _appCache),
           ),
           debugShowCheckedModeBanner: false,
         );
