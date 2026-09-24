@@ -82,8 +82,20 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
           ),
         );
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        padding: const EdgeInsets.all(24.0),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.8),
+          borderRadius: BorderRadius.circular(32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            )
+          ],
+        ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -91,28 +103,27 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
             // Left: Time & Date
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   '${_currentTime.hour}:${_currentTime.minute.toString().padLeft(2, '0')}',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 56,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -2,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontSize: 64,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -3,
                     height: 1.0,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Text(
                   _formatDate(_currentTime),
                   style: TextStyle(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.75),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.2,
+                    color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.8),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ],
@@ -128,24 +139,31 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
                     ),
                   );
                 },
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    WeatherIcon(
-                      weatherCode: _weatherData!.weatherCode,
-                      size: 32,
-                      isNight: _currentTime.hour < 6 || _currentTime.hour >= 20,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${_weatherData!.temperature.round()}°',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurface,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      WeatherIcon(
+                        weatherCode: _weatherData!.weatherCode,
+                        size: 40,
+                        isNight: _currentTime.hour < 6 || _currentTime.hour >= 20,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_weatherData!.temperature.round()}°',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
           ],

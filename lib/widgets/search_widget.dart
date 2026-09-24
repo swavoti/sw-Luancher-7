@@ -63,7 +63,7 @@ class _SearchWidgetState extends State<SearchWidget> {
         LauncherService.openUrlInBrowser('https://www.google.com', _browserPackage);
       },
       child: Container(
-        height: 48,
+        height: 36,
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(borderRadius),

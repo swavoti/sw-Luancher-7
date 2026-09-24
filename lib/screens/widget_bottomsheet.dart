@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
@@ -20,6 +21,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
   bool _loadingDone = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _frostedGlassEnabled = false;
 
   @override
   void initState() {
@@ -27,7 +29,17 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
     _searchController.addListener(() {
       setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
     });
+    _loadSettings();
     _loadWidgetsIncremental();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? false;
+      });
+    }
   }
 
   @override
@@ -70,151 +82,159 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
     final cs = Theme.of(context).colorScheme;
     final filtered = _filtered;
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          height: MediaQuery.of(context).size.height,
-          decoration: BoxDecoration(
-            color: cs.surface.withValues(alpha: 0.65),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final childContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 28),
+        // ── Title + count ────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
             children: [
-              const SizedBox(height: 28),
-              // ── Title + count ────────────────────────────────────────
-              Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Text(
-                  'Widgets',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (_loadingDone) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: cs.secondaryContainer,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${_groupedWidgets.values.fold(0, (s, l) => s + l.length)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSecondaryContainer,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Search pill ──────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              controller: _searchController,
-              textInputAction: TextInputAction.search,
-              style: TextStyle(fontSize: 15, color: cs.onSurface),
-              decoration: InputDecoration(
-                hintText: 'Search widgets',
-                hintStyle: TextStyle(
-                  color: cs.onSurfaceVariant.withOpacity(0.7),
-                ),
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  color: cs.onSurfaceVariant,
-                  size: 20,
-                ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        onPressed: () => _searchController.clear(),
-                      )
-                    : null,
-                filled: true,
-                fillColor: cs.surfaceContainerHighest.withOpacity(0.6),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(50),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(50),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(50),
-                  borderSide: BorderSide(color: cs.primary, width: 1.5),
+              Text(
+                'Widgets',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // ── List ────────────────────────────────────────────────
-          Expanded(
-            child: !_loadingDone
-                ? const Center(child: CircularProgressIndicator())
-                : filtered.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.search_off_rounded,
-                          size: 48,
-                          color: cs.onSurfaceVariant.withOpacity(0.4),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'No widgets found',
-                          style: TextStyle(
-                            color: cs.onSurfaceVariant,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 32),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final pkg = filtered.keys.elementAt(index);
-                      final widgetsForApp = filtered[pkg]!;
-
-                      return _AppWidgetGroup(
-                        packageName: pkg,
-                        widgets: widgetsForApp,
-                        onWidgetSelected: widget.onWidgetSelected,
-                        isLast: index == filtered.length - 1,
-                      );
-                    },
+              if (_loadingDone) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
                   ),
-          ),
+                  decoration: BoxDecoration(
+                    color: cs.secondaryContainer,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${_groupedWidgets.values.fold(0, (s, l) => s + l.length)}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: cs.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-      ),
+        const SizedBox(height: 12),
+
+        // ── Search pill ──────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            style: TextStyle(fontSize: 15, color: cs.onSurface),
+            decoration: InputDecoration(
+              hintText: 'Search widgets',
+              hintStyle: TextStyle(
+                color: cs.onSurfaceVariant.withOpacity(0.7),
+              ),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                color: cs.onSurfaceVariant,
+                size: 20,
+              ),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(
+                        Icons.close_rounded,
+                        size: 18,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      onPressed: () => _searchController.clear(),
+                    )
+                  : null,
+              filled: true,
+              fillColor: cs.surfaceContainerHighest.withOpacity(0.6),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(50),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(50),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(50),
+                borderSide: BorderSide(color: cs.primary, width: 1.5),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        // ── List ────────────────────────────────────────────────
+        Expanded(
+          child: !_loadingDone
+              ? const Center(child: CircularProgressIndicator())
+              : filtered.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.search_off_rounded,
+                        size: 48,
+                        color: cs.onSurfaceVariant.withOpacity(0.4),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No widgets found',
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 32),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final pkg = filtered.keys.elementAt(index);
+                    final widgetsForApp = filtered[pkg]!;
+
+                    return _AppWidgetGroup(
+                      packageName: pkg,
+                      widgets: widgetsForApp,
+                      onWidgetSelected: widget.onWidgetSelected,
+                      isLast: index == filtered.length - 1,
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: _frostedGlassEnabled
+        ? BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              height: MediaQuery.of(context).size.height,
+              decoration: BoxDecoration(
+                color: cs.surface.withValues(alpha: 0.65),
+              ),
+              child: childContent,
+            ),
+          )
+        : Container(
+            height: MediaQuery.of(context).size.height,
+            color: cs.surface,
+            child: childContent,
+          ),
     );
   }
 }

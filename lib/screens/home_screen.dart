@@ -18,8 +18,8 @@ import 'package:flutter/rendering.dart';
 
 class LauncherItem {
   final String id;
-  final String type; // 'app' or 'widget'
-  final String packageName;
+  String type; // 'app' or 'widget' or 'folder'
+  String packageName;
   final String? className; // for widgets
   final int? appWidgetId;
   int x;
@@ -27,7 +27,8 @@ class LauncherItem {
   int spanX;
   int spanY;
   int page;
-  final String label;
+  String label;
+  List<String>? folderApps;
 
   LauncherItem({
     required this.id,
@@ -41,6 +42,7 @@ class LauncherItem {
     this.spanY = 1,
     this.page = 0,
     required this.label,
+    this.folderApps,
   });
 
   Map<String, dynamic> toJson() => {
@@ -55,6 +57,7 @@ class LauncherItem {
     'spanY': spanY,
     'page': page,
     'label': label,
+    if (folderApps != null) 'folderApps': folderApps,
   };
 
   factory LauncherItem.fromJson(Map<String, dynamic> json) => LauncherItem(
@@ -69,6 +72,7 @@ class LauncherItem {
     spanY: json['spanY'] ?? 1,
     page: json['page'] ?? 0,
     label: json['label'] ?? '',
+    folderApps: json['folderApps'] != null ? List<String>.from(json['folderApps']) : null,
   );
 }
 
@@ -199,12 +203,13 @@ class HomeScreenState extends State<HomeScreen> {
       setState(() {
         _showTimeWeather = prefs.getBool('show_time_weather') ?? true;
         _iconShape = prefs.getString('icon_shape') ?? 'Circle';
+        _loadItemsFromPrefs(prefs);
       });
     }
   }
 
-  void _loadItemsSync() {
-    final data = widget.prefs.getStringList('launcher_items') ?? [];
+  void _loadItemsFromPrefs(SharedPreferences prefs) {
+    final data = prefs.getStringList('launcher_items') ?? [];
     final loadedItems = data
         .map((item) => LauncherItem.fromJson(jsonDecode(item)))
         .toList();
@@ -230,6 +235,23 @@ class HomeScreenState extends State<HomeScreen> {
         );
       }
       
+      // Default time/weather widget
+      if (prefs.getBool('show_time_weather') ?? true) {
+        loadedItems.add(
+          LauncherItem(
+            id: 'time_weather_default',
+            type: 'time_weather_widget',
+            packageName: '',
+            label: 'Time & Weather',
+            x: 0,
+            y: 0,
+            spanX: 4,
+            spanY: 1,
+            page: 0,
+          )
+        );
+      }
+      
       // Default search widget on first launch
       loadedItems.add(
         LauncherItem(
@@ -238,7 +260,7 @@ class HomeScreenState extends State<HomeScreen> {
           packageName: '',
           label: 'Search',
           x: 0,
-          y: 0,
+          y: 1,
           spanX: 4,
           spanY: 1,
           page: 0,
@@ -246,6 +268,10 @@ class HomeScreenState extends State<HomeScreen> {
       );
     }
     _items = loadedItems;
+  }
+
+  void _loadItemsSync() {
+    _loadItemsFromPrefs(widget.prefs);
   }
 
   Future<AppInfo?> _getAppInfo(String packageName) async {
@@ -514,16 +540,6 @@ class HomeScreenState extends State<HomeScreen> {
           child: Column(
           children: [
             SizedBox(height: statusBarHeight + 16),
-            // Time & Weather Widget Area
-            if (_showTimeWeather)
-              TimeWeatherWidget(
-                onRemove: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.setBool('show_time_weather', false);
-                  setState(() => _showTimeWeather = false);
-                },
-              ),
-
             // Workspace Grid
             Expanded(
               child: Padding(
@@ -534,9 +550,6 @@ class HomeScreenState extends State<HomeScreen> {
                     final cellHeight = constraints.maxHeight / _rows;
 
                     return PageView.builder(
-                        physics: const BouncingScrollPhysics(
-                          parent: AlwaysScrollableScrollPhysics(),
-                        ),
                         controller: _workspaceController,
                         itemCount: _totalPages,
                         onPageChanged: (index) {
@@ -582,25 +595,75 @@ class HomeScreenState extends State<HomeScreen> {
                                             final item = _items.firstWhere(
                                               (i) => i.id == itemId,
                                             );
-                                            item.x = targetX;
-                                            item.y = targetY;
-                                            item.page = pageIndex;
+                                            // Check if there's already an item at target position
+                                            final existingIdx = _items.indexWhere(
+                                              (i) => i.id != itemId &&
+                                                  i.page == pageIndex &&
+                                                  i.x == targetX &&
+                                                  i.y == targetY,
+                                            );
+                                            if (existingIdx != -1) {
+                                              final target = _items[existingIdx];
+                                              if (target.type == 'app' && item.type == 'app') {
+                                                target.type = 'folder';
+                                                target.label = 'Folder';
+                                                target.folderApps = [target.packageName, item.packageName];
+                                                _items.remove(item);
+                                              } else if (target.type == 'folder' && item.type == 'app') {
+                                                target.folderApps ??= [];
+                                                if (!target.folderApps!.contains(item.packageName)) {
+                                                  target.folderApps!.add(item.packageName);
+                                                }
+                                                _items.remove(item);
+                                              } else {
+                                                item.x = targetX;
+                                                item.y = targetY;
+                                                item.page = pageIndex;
+                                              }
+                                            } else {
+                                              item.x = targetX;
+                                              item.y = targetY;
+                                              item.page = pageIndex;
+                                            }
                                           });
                                           _saveItems();
                                         } else if (data['type'] == 'app') {
-                                          _addNewItem(
-                                            LauncherItem(
-                                              id: DateTime.now()
-                                                  .millisecondsSinceEpoch
-                                                  .toString(),
-                                              type: 'app',
-                                              packageName: data['packageName'],
-                                              label: data['label'],
-                                              x: targetX,
-                                              y: targetY,
-                                              page: pageIndex,
-                                            ),
+                                          final existingIdx = _items.indexWhere(
+                                            (i) => i.page == pageIndex &&
+                                                i.x == targetX &&
+                                                i.y == targetY,
                                           );
+                                          setState(() {
+                                            if (existingIdx != -1) {
+                                              final target = _items[existingIdx];
+                                              if (target.type == 'app') {
+                                                target.type = 'folder';
+                                                target.label = 'Folder';
+                                                target.folderApps = [target.packageName, data['packageName']];
+                                                _saveItems();
+                                              } else if (target.type == 'folder') {
+                                                target.folderApps ??= [];
+                                                if (!target.folderApps!.contains(data['packageName'])) {
+                                                  target.folderApps!.add(data['packageName']);
+                                                }
+                                                _saveItems();
+                                              }
+                                            } else {
+                                              _addNewItem(
+                                                LauncherItem(
+                                                  id: DateTime.now()
+                                                      .millisecondsSinceEpoch
+                                                      .toString(),
+                                                  type: 'app',
+                                                  packageName: data['packageName'],
+                                                  label: data['label'],
+                                                  x: targetX,
+                                                  y: targetY,
+                                                  page: pageIndex,
+                                                ),
+                                              );
+                                            }
+                                          });
                                         } else if (data['type'] ==
                                             'widget_preview') {
                                           LauncherService.allocateWidgetId().then((
@@ -691,12 +754,14 @@ class HomeScreenState extends State<HomeScreen> {
                                         },
                                         feedback: Material(
                                           color: Colors.transparent,
-                                          child: Opacity(
-                                            opacity: 0.7,
+                                          child: SizedBox(
+                                            width: item.spanX * cellWidth,
+                                            height: item.spanY * cellHeight,
                                             child: _buildItemContent(
                                               item,
                                               cellWidth,
                                               cellHeight,
+                                              isFeedback: true,
                                             ),
                                           ),
                                         ),
@@ -1004,20 +1069,45 @@ class HomeScreenState extends State<HomeScreen> {
   Widget _buildItemContent(
     LauncherItem item,
     double cellWidth,
-    double cellHeight,
-  ) {
+    double cellHeight, {
+    bool isFeedback = false,
+  }) {
     if (item.type == 'widget' && item.appWidgetId != null) {
-      return Container(
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: AndroidView(
-            viewType: 'widget_view',
-            creationParams: {'appWidgetId': item.appWidgetId},
-            creationParamsCodec: const StandardMessageCodec(),
+      if (isFeedback) {
+        return Container(
+          margin: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
+          child: Center(
+            child: Icon(
+              Icons.widgets,
+              size: 48,
+              color: Theme.of(context).colorScheme.onPrimaryContainer,
+            ),
+          ),
+        );
+      }
+      return FutureBuilder(
+        future: Future.delayed(const Duration(milliseconds: 300)),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+          }
+          return Container(
+            margin: const EdgeInsets.all(4),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: AndroidView(
+                viewType: 'widget_view',
+                creationParams: {'appWidgetId': item.appWidgetId},
+                creationParamsCodec: const StandardMessageCodec(),
+              ),
+            ),
+          );
+        }
       );
     } else if (item.type == 'search_widget') {
       return Padding(
@@ -1029,6 +1119,119 @@ class HomeScreenState extends State<HomeScreen> {
             });
             _saveItems();
           },
+        ),
+      );
+    } else if (item.type == 'time_weather_widget') {
+      return TimeWeatherWidget(
+        onRemove: () {
+          setState(() {
+            _items.removeWhere((i) => i.id == item.id);
+          });
+          _saveItems();
+        },
+      );
+    } else if (item.type == 'folder') {
+      return GestureDetector(
+        onTap: () {
+          // Open folder bottom sheet
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (context) {
+              return Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      item.label,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 24),
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: (item.folderApps ?? []).map((pkg) {
+                        return FutureBuilder<AppInfo?>(
+                          future: _getAppInfo(pkg),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData || snapshot.data == null) return const SizedBox.shrink();
+                            final app = snapshot.data!;
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.pop(context);
+                                LauncherService.startApp(pkg);
+                              },
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconShapeClipper(
+                                    shape: _iconShape,
+                                    size: 48,
+                                    child: app.icon != null
+                                        ? Image.memory(app.icon!, width: 48, height: 48, fit: BoxFit.cover)
+                                        : const Icon(Icons.android, size: 48),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  SizedBox(
+                                    width: 64,
+                                    child: Text(
+                                      app.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Center(
+                  child: Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                item.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  shadows: [
+                    Shadow(blurRadius: 4.0, color: Colors.black54, offset: Offset(1.0, 1.0)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       );
     } else {

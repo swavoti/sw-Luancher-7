@@ -19,6 +19,7 @@ class _HomeSettingsState extends State<HomeSettings> {
   int _gridColumns = 4;
   bool _showHiddenApps = false;
   bool _isDefaultLauncher = false;
+  bool _frostedGlassEnabled = false;
 
   @override
   void initState() {
@@ -39,9 +40,16 @@ class _HomeSettingsState extends State<HomeSettings> {
         _gridColumns = prefs.getInt('grid_columns') ?? 4;
         _showHiddenApps = prefs.getBool('show_hidden_apps') ?? false;
         _isDefaultLauncher = isDefault;
+        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? false;
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _toggleFrostedGlass(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('frosted_glass_enabled', value);
+    setState(() => _frostedGlassEnabled = value);
   }
 
   Future<void> _toggleNotificationDots(bool value) async {
@@ -79,6 +87,16 @@ class _HomeSettingsState extends State<HomeSettings> {
   Future<void> _toggleTimeWeather(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('show_time_weather', value);
+    final savedItems = prefs.getStringList('launcher_items') ?? [];
+    if (value) {
+      if (!savedItems.any((s) => s.contains('"type":"time_weather_widget"'))) {
+        savedItems.add('{"id":"time_weather_default","type":"time_weather_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Time & Weather"}');
+        await prefs.setStringList('launcher_items', savedItems);
+      }
+    } else {
+      savedItems.removeWhere((s) => s.contains('"type":"time_weather_widget"'));
+      await prefs.setStringList('launcher_items', savedItems);
+    }
     setState(() => _showTimeWeather = value);
   }
 
@@ -185,6 +203,18 @@ class _HomeSettingsState extends State<HomeSettings> {
                       ),
                     );
                   },
+                ),
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Text('Experimental', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.blur_on),
+                  title: const Text('Transparent Frosted Glass'),
+                  subtitle: const Text('Apply blur effect to drawer and sheets'),
+                  value: _frostedGlassEnabled,
+                  onChanged: _toggleFrostedGlass,
                 ),
                 const Divider(),
                 ListTile(

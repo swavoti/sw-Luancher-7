@@ -42,6 +42,7 @@ dependencies:
   path_provider: ^2.1.6
   webview_flutter: ^4.14.1
   path: ^1.9.1
+  material_3_expressive: any
 
 dev_dependencies:
   flutter_test:

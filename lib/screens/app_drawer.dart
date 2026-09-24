@@ -50,6 +50,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   String _iconShape = 'Circle';
+  bool _frostedGlassEnabled = false;
 
   // Grid scroll key
   final GlobalKey _gridKey = GlobalKey();
@@ -62,7 +63,7 @@ class _AppDrawerState extends State<AppDrawer> {
   void initState() {
     super.initState();
     _loadApps();
-    _loadIconShape();
+    _loadSettings();
     _searchController.addListener(_filterApps);
   }
 
@@ -72,11 +73,12 @@ class _AppDrawerState extends State<AppDrawer> {
     super.dispose();
   }
 
-  Future<void> _loadIconShape() async {
+  Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
         _iconShape = prefs.getString('icon_shape') ?? 'Circle';
+        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? false;
       });
     }
   }
@@ -124,168 +126,224 @@ class _AppDrawerState extends State<AppDrawer> {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
-          ),
-          child: CustomScrollView(
-            controller: widget.scrollController,
-              // AlwaysScrollableScrollPhysics lets the sheet collapse on
-              // drag-down even when the list is at the top — no more fighting
-              // the bouncing behaviour that traps the user mid-way.
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-                    child: Column(
-                      children: [
-                        // Search box — compact rect with rounded edges + mic
-                        SizedBox(
-                          height: 44,
-                          child: TextField(
-                            controller: _searchController,
-                            textAlignVertical: TextAlignVertical.center,
-                            style: const TextStyle(fontSize: 14),
-                            decoration: InputDecoration(
-                              hintText: 'Search apps',
-                              hintStyle: TextStyle(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant
-                                    .withValues(alpha: 0.65),
-                                fontSize: 14,
+    final childContent = CustomScrollView(
+      controller: widget.scrollController,
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      ),
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 44,
+                  child: TextField(
+                    controller: _searchController,
+                    textAlignVertical: TextAlignVertical.center,
+                    style: const TextStyle(fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search apps',
+                      hintStyle: TextStyle(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant
+                            .withValues(alpha: 0.65),
+                        fontSize: 14,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant,
+                        size: 20,
+                      ),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                size: 18,
                               ),
-                              prefixIcon: Icon(
-                                Icons.search_rounded,
+                              onPressed: () =>
+                                  _searchController.clear(),
+                            )
+                          : IconButton(
+                              icon: Icon(
+                                Icons.mic_rounded,
                                 color: Theme.of(context)
                                     .colorScheme
-                                    .onSurfaceVariant,
+                                    .primary,
                                 size: 20,
                               ),
-                              suffixIcon: _searchController.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(
-                                        Icons.close_rounded,
-                                        size: 18,
-                                      ),
-                                      onPressed: () =>
-                                          _searchController.clear(),
-                                    )
-                                  : IconButton(
-                                      icon: Icon(
-                                        Icons.mic_rounded,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
-                                        size: 20,
-                                      ),
-                                      onPressed:
-                                          LauncherService.openGoogleVoiceSearch,
-                                    ),
-                              filled: true,
-                              fillColor: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withValues(alpha: 0.55),
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: 1.5,
-                                ),
-                              ),
+                              onPressed:
+                                  LauncherService.openGoogleVoiceSearch,
                             ),
-                          ),
+                      filled: true,
+                      fillColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.55),
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 1.5,
                         ),
-                        const SizedBox(height: 14),
-                        // Suggested row (first 4 apps)
-                        if (_searchController.text.isEmpty &&
-                            _filteredApps.length >= 4) ...[
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: _filteredApps.take(4).map((app) {
-                              final notificationCount =
-                                  widget.notifications[app.packageName] ?? 0;
-                              return Expanded(
-                                child: _AppDrawerItem(
-                                  app: app,
-                                  notificationCount: notificationCount,
-                                  onCloseDrawer: widget.onClose,
-                                  iconShape: _iconShape,
-                                  onDragStarted: widget.onDragStarted,
-                                  onDragEnded: widget.onDragEnded,
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                          const SizedBox(height: 8),
-                          const Divider(height: 1),
-                          const SizedBox(height: 8),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
-                if (_isLoading)
-                  const SliverToBoxAdapter(child: SizedBox.shrink())
-                else if (_filteredApps.isEmpty)
-                  const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Center(child: Text('No apps found.')),
+                const SizedBox(height: 14),
+                if (_searchController.text.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        LauncherService.openUrlInBrowser(
+                          'https://www.google.com/search?q=${Uri.encodeComponent(_searchController.text)}',
+                          null,
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.travel_explore,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Text(
+                                'Search "${_searchController.text}" in Web',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 14,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  )
-                else
-                  SliverPadding(
-                    key: _gridKey,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 0, 24),
-                    sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: _gridColumns,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 8,
-                            childAspectRatio: 0.82,
-                          ),
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final app = _filteredApps[index];
-                        final notificationCount =
-                            widget.notifications[app.packageName] ?? 0;
-                        return _AppDrawerItem(
+                  ),
+                if (_searchController.text.isEmpty &&
+                    _filteredApps.length >= 4) ...[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: _filteredApps.take(4).map((app) {
+                      final notificationCount =
+                          widget.notifications[app.packageName] ?? 0;
+                      return Expanded(
+                        child: _AppDrawerItem(
                           app: app,
                           notificationCount: notificationCount,
                           onCloseDrawer: widget.onClose,
                           iconShape: _iconShape,
                           onDragStarted: widget.onDragStarted,
                           onDragEnded: widget.onDragEnded,
-                        );
-                      }, childCount: _filteredApps.length),
-                    ),
+                        ),
+                      );
+                    }).toList(),
                   ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                ],
               ],
             ),
           ),
         ),
+        if (_isLoading)
+          const SliverToBoxAdapter(child: SizedBox.shrink())
+        else if (_filteredApps.isEmpty)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: Text('No apps found.')),
+            ),
+          )
+        else
+          SliverPadding(
+            key: _gridKey,
+            padding: const EdgeInsets.fromLTRB(16, 0, 0, 24),
+            sliver: SliverGrid(
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: _gridColumns,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 0.82,
+                  ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final app = _filteredApps[index];
+                final notificationCount =
+                    widget.notifications[app.packageName] ?? 0;
+                return _AppDrawerItem(
+                  app: app,
+                  notificationCount: notificationCount,
+                  onCloseDrawer: widget.onClose,
+                  iconShape: _iconShape,
+                  onDragStarted: widget.onDragStarted,
+                  onDragEnded: widget.onDragEnded,
+                );
+              }, childCount: _filteredApps.length),
+            ),
+          ),
+      ],
+    );
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: _frostedGlassEnabled
+        ? BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+              ),
+              child: childContent,
+            ),
+          )
+        : Container(
+            color: Theme.of(context).colorScheme.surface,
+            child: childContent,
+          ),
     );
   }
 }
@@ -299,6 +357,7 @@ class _AppDrawerItem extends StatefulWidget {
   final String iconShape;
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
+  final void Function(Map<String, dynamic>)? onAddToHomeScreen;
 
   const _AppDrawerItem({
     required this.app,
@@ -307,6 +366,7 @@ class _AppDrawerItem extends StatefulWidget {
     required this.iconShape,
     this.onDragStarted,
     this.onDragEnded,
+    this.onAddToHomeScreen,
   });
 
   @override
@@ -317,6 +377,94 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  bool _dragStarted = false;
+
+  void _showContextMenu(BuildContext context) {
+    final app = widget.app;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return Container(
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: cs.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    if (app.icon != null)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.memory(app.icon!, width: 40, height: 40, fit: BoxFit.cover),
+                      )
+                    else
+                      Icon(Icons.android, size: 40, color: cs.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        app.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: cs.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.launch_rounded, color: cs.primary),
+                title: const Text('Open'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  LauncherService.startApp(app.packageName);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.info_outline_rounded, color: cs.primary),
+                title: const Text('App Info'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  LauncherService.openAppInfo(app.packageName);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                title: const Text('Uninstall', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  LauncherService.uninstallApp(app.packageName);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -330,13 +478,20 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
 
     return LongPressDraggable<Map<String, dynamic>>(
       data: appItemData,
-      delay: const Duration(milliseconds: 150),
+      delay: const Duration(milliseconds: 400),
       onDragStarted: () {
+        _dragStarted = true;
         widget.onCloseDrawer();
         widget.onDragStarted?.call(app.packageName);
       },
-      onDragEnd: (_) => widget.onDragEnded?.call(),
-      onDraggableCanceled: (_, _) => widget.onDragEnded?.call(),
+      onDragEnd: (_) {
+        _dragStarted = false;
+        widget.onDragEnded?.call();
+      },
+      onDraggableCanceled: (_, __) {
+        _dragStarted = false;
+        widget.onDragEnded?.call();
+      },
       feedback: Material(
         color: Colors.transparent,
         child: Opacity(
@@ -348,12 +503,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 shape: widget.iconShape,
                 size: 56,
                 child: icon != null
-                    ? Image.memory(
-                        icon,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                      )
+                    ? Image.memory(icon, width: 56, height: 56, fit: BoxFit.cover)
                     : const Icon(Icons.android, size: 56),
               ),
               const SizedBox(height: 4),
@@ -389,6 +539,12 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
       ),
       child: GestureDetector(
         onTap: () => LauncherService.startApp(app.packageName),
+        onLongPress: () {
+          // If drag didn't activate, show context menu
+          if (!_dragStarted) {
+            _showContextMenu(context);
+          }
+        },
         child: Column(
           children: [
             Stack(
@@ -397,12 +553,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                   shape: widget.iconShape,
                   size: 48,
                   child: icon != null
-                      ? Image.memory(
-                          icon,
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                        )
+                      ? Image.memory(icon, width: 48, height: 48, fit: BoxFit.cover)
                       : const Icon(Icons.android, size: 48),
                 ),
                 if (widget.notificationCount > 0)
@@ -415,10 +566,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                         color: Colors.red,
                         shape: BoxShape.circle,
                       ),
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                       child: Text(
                         '${widget.notificationCount}',
                         style: const TextStyle(

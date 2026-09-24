@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:installed_apps/installed_apps.dart';
 
 class EditIconsPage extends StatefulWidget {
   final String backgroundWallpaperPath;
@@ -20,6 +21,8 @@ class _EditIconsPageState extends State<EditIconsPage> {
     'Rounded Rectangle',
     'Teardrop',
   ];
+  bool _hasLawnicons = false;
+  bool _useLawnicons = false;
 
   @override
   void initState() {
@@ -29,8 +32,17 @@ class _EditIconsPageState extends State<EditIconsPage> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    bool hasLawnicons = false;
+    try {
+      final info = await InstalledApps.getAppInfo('app.lawnchair.lawnicons');
+      hasLawnicons = info != null;
+    } catch (e) {
+      hasLawnicons = false;
+    }
     setState(() {
       _selectedShape = prefs.getString('icon_shape') ?? 'Circle';
+      _hasLawnicons = hasLawnicons;
+      _useLawnicons = prefs.getBool('use_lawnicons') ?? false;
     });
   }
 
@@ -157,11 +169,19 @@ class _EditIconsPageState extends State<EditIconsPage> {
                         title: const Text('Lawnicons'),
                         subtitle: const Text('Requires Lawnicons app'),
                         trailing: Switch(
-                          value: false,
-                          onChanged: (val) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Lawnicons not found on device.')),
-                            );
+                          value: _useLawnicons,
+                          onChanged: (val) async {
+                            if (!_hasLawnicons) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Lawnicons not found on device.')),
+                              );
+                              return;
+                            }
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setBool('use_lawnicons', val);
+                            setState(() {
+                              _useLawnicons = val;
+                            });
                           },
                         ),
                       ),
