@@ -21,7 +21,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
   bool _loadingDone = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  bool _frostedGlassEnabled = false;
+  bool _frostedGlassEnabled = true;
 
   @override
   void initState() {
@@ -37,7 +37,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? false;
+        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
       });
     }
   }
@@ -221,11 +221,17 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: _frostedGlassEnabled
         ? BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
             child: Container(
               height: MediaQuery.of(context).size.height,
               decoration: BoxDecoration(
-                color: cs.surface.withValues(alpha: 0.65),
+                color: cs.surface.withValues(alpha: 0.25),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    width: 1,
+                  ),
+                ),
               ),
               child: childContent,
             ),

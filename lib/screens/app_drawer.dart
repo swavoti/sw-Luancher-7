@@ -50,7 +50,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   String _iconShape = 'Circle';
-  bool _frostedGlassEnabled = false;
+  bool _frostedGlassEnabled = true;
 
   // Grid scroll key
   final GlobalKey _gridKey = GlobalKey();
@@ -78,7 +78,7 @@ class _AppDrawerState extends State<AppDrawer> {
     if (mounted) {
       setState(() {
         _iconShape = prefs.getString('icon_shape') ?? 'Circle';
-        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? false;
+        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
       });
     }
   }
@@ -126,216 +126,238 @@ class _AppDrawerState extends State<AppDrawer> {
 
   @override
   Widget build(BuildContext context) {
-    final childContent = CustomScrollView(
-      controller: widget.scrollController,
-      physics: const AlwaysScrollableScrollPhysics(
-        parent: BouncingScrollPhysics(),
-      ),
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 44,
-                  child: TextField(
-                    controller: _searchController,
-                    textAlignVertical: TextAlignVertical.center,
-                    style: const TextStyle(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Search apps',
-                      hintStyle: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant
-                            .withValues(alpha: 0.65),
-                        fontSize: 14,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.search_rounded,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant,
-                        size: 20,
-                      ),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                size: 18,
-                              ),
-                              onPressed: () =>
-                                  _searchController.clear(),
-                            )
-                          : IconButton(
-                              icon: Icon(
-                                Icons.mic_rounded,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary,
-                                size: 20,
-                              ),
-                              onPressed:
-                                  LauncherService.openGoogleVoiceSearch,
-                            ),
-                      filled: true,
-                      fillColor: Theme.of(context)
+    final childContent = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+          child: Column(
+            children: [
+              SizedBox(
+                height: 44,
+                child: TextField(
+                  controller: _searchController,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: const TextStyle(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Search apps',
+                    hintStyle: TextStyle(
+                      color: Theme.of(context)
                           .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.55),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(
-                          color: Theme.of(context).colorScheme.primary,
-                          width: 1.5,
-                        ),
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.65),
+                      fontSize: 14,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant,
+                      size: 20,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                            ),
+                            onPressed: () =>
+                                _searchController.clear(),
+                          )
+                        : IconButton(
+                            icon: Icon(
+                              Icons.mic_rounded,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary,
+                              size: 20,
+                            ),
+                            onPressed:
+                                LauncherService.openGoogleVoiceSearch,
+                          ),
+                    filled: true,
+                    fillColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.55),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: Theme.of(context).colorScheme.primary,
+                        width: 1.5,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
-                if (_searchController.text.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        LauncherService.openUrlInBrowser(
-                          'https://www.google.com/search?q=${Uri.encodeComponent(_searchController.text)}',
-                          null,
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.travel_explore,
-                                color: Theme.of(context).colorScheme.primary,
-                                size: 20,
-                              ),
+              ),
+              const SizedBox(height: 14),
+              if (_searchController.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      LauncherService.openUrlInBrowser(
+                        'https://www.google.com/search?q=${Uri.encodeComponent(_searchController.text)}',
+                        null,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Text(
-                                'Search "${_searchController.text}" in Web',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                            child: Icon(
+                              Icons.travel_explore,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              'Search "${_searchController.text}" in Web',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            Icon(
-                              Icons.arrow_forward_ios,
-                              size: 14,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                          ],
-                        ),
+                          ),
+                          Icon(
+                            Icons.arrow_forward_ios,
+                            size: 14,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                if (_searchController.text.isEmpty &&
-                    _filteredApps.length >= 4) ...[
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: _filteredApps.take(4).map((app) {
-                      final notificationCount =
-                          widget.notifications[app.packageName] ?? 0;
-                      return Expanded(
-                        child: _AppDrawerItem(
-                          app: app,
-                          notificationCount: notificationCount,
-                          onCloseDrawer: widget.onClose,
-                          iconShape: _iconShape,
-                          onDragStarted: widget.onDragStarted,
-                          onDragEnded: widget.onDragEnded,
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 8),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-                ],
+                ),
+              if (_searchController.text.isEmpty &&
+                  _filteredApps.length >= 4) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: _filteredApps.take(4).map((app) {
+                    final notificationCount =
+                        widget.notifications[app.packageName] ?? 0;
+                    return Expanded(
+                      child: _AppDrawerItem(
+                        app: app,
+                        notificationCount: notificationCount,
+                        onCloseDrawer: widget.onClose,
+                        iconShape: _iconShape,
+                        onDragStarted: widget.onDragStarted,
+                        onDragEnded: widget.onDragEnded,
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
               ],
-            ),
+            ],
           ),
         ),
-        if (_isLoading)
-          const SliverToBoxAdapter(child: SizedBox.shrink())
-        else if (_filteredApps.isEmpty)
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: Center(child: Text('No apps found.')),
-            ),
-          )
-        else
-          SliverPadding(
-            key: _gridKey,
-            padding: const EdgeInsets.fromLTRB(16, 0, 0, 24),
-            sliver: SliverGrid(
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: _gridColumns,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 0.82,
-                  ),
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final app = _filteredApps[index];
-                final notificationCount =
-                    widget.notifications[app.packageName] ?? 0;
-                return _AppDrawerItem(
-                  app: app,
-                  notificationCount: notificationCount,
-                  onCloseDrawer: widget.onClose,
-                  iconShape: _iconShape,
-                  onDragStarted: widget.onDragStarted,
-                  onDragEnded: widget.onDragEnded,
-                );
-              }, childCount: _filteredApps.length),
-            ),
-          ),
+        Expanded(
+          child: _isLoading
+              ? const SizedBox.shrink()
+              : _filteredApps.isEmpty
+                  ? const Center(child: Text('No apps found.'))
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final gridWidth = constraints.maxWidth - 32; // padding
+                        final cellWidth = (gridWidth - (3 * 8)) / 4; // 3 crossAxisSpacing
+                        final cellHeight = cellWidth / 0.82;
+                        final rowHeight = cellHeight + 12; // mainAxisSpacing
+                        final rows = (constraints.maxHeight / rowHeight).floor().clamp(1, 10);
+                        final itemsPerPage = rows * 4;
+                        
+                        final gridApps = (_searchController.text.isEmpty && _filteredApps.length >= 4)
+                            ? _filteredApps.skip(4).toList()
+                            : _filteredApps;
+                            
+                        if (gridApps.isEmpty) return const SizedBox.shrink();
+                        
+                        final pages = (gridApps.length / itemsPerPage).ceil();
+                        
+                        return PageView.builder(
+                          itemCount: pages,
+                          itemBuilder: (context, pageIndex) {
+                            final start = pageIndex * itemsPerPage;
+                            final end = (start + itemsPerPage).clamp(0, gridApps.length);
+                            final pageApps = gridApps.sublist(start, end);
+                            
+                            return GridView.builder(
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 8,
+                                childAspectRatio: 0.82,
+                              ),
+                              itemCount: pageApps.length,
+                              itemBuilder: (context, index) {
+                                final app = pageApps[index];
+                                final notificationCount = widget.notifications[app.packageName] ?? 0;
+                                return _AppDrawerItem(
+                                  app: app,
+                                  notificationCount: notificationCount,
+                                  onCloseDrawer: widget.onClose,
+                                  iconShape: _iconShape,
+                                  onDragStarted: widget.onDragStarted,
+                                  onDragEnded: widget.onDragEnded,
+                                );
+                              }
+                            );
+                          }
+                        );
+                      },
+                    ),
+        ),
       ],
+
     );
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: _frostedGlassEnabled
         ? BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
             child: Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.65),
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.25),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    width: 1,
+                  ),
+                ),
               ),
               child: childContent,
             ),

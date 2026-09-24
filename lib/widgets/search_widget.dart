@@ -34,7 +34,9 @@ class _SearchWidgetState extends State<SearchWidget> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final borderRadius = _style == 'pill' ? 24.0 : 8.0;
+    final isPill = _style == 'pill';
+    final borderRadius = isPill ? 24.0 : 8.0;
+    final widgetHeight = isPill ? 30.0 : 36.0;
 
     return GestureDetector(
       onLongPress: () {
@@ -63,7 +65,7 @@ class _SearchWidgetState extends State<SearchWidget> {
         LauncherService.openUrlInBrowser('https://www.google.com', _browserPackage);
       },
       child: Container(
-        height: 36,
+        height: widgetHeight,
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(borderRadius),
@@ -72,9 +74,10 @@ class _SearchWidgetState extends State<SearchWidget> {
             width: 1,
           ),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: EdgeInsets.symmetric(horizontal: isPill ? 16 : 14),
         child: Row(
           children: [
+
             Icon(
               Icons.search_rounded,
               color: colorScheme.onSurfaceVariant,

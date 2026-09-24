@@ -316,26 +316,12 @@ class HomeScreenState extends State<HomeScreen> {
                   _buildMenuButton(
                     icon: Icons.wallpaper,
                     label: 'Wallpaper',
-                    onTap: () async {
+                    onTap: () {
                       Navigator.pop(context);
-                      Uint8List? screenshotBytes;
-                      try {
-                        final boundary = _repaintBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-                        if (boundary != null) {
-                          final image = await boundary.toImage(pixelRatio: 2.0);
-                          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-                          if (byteData != null) {
-                            screenshotBytes = byteData.buffer.asUint8List();
-                          }
-                        }
-                      } catch (e) {
-                        print('Error capturing screenshot: $e');
-                      }
-                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => WallpaperPage(homeScreenScreenshot: screenshotBytes),
+                          builder: (context) => const WallpaperPage(homeScreenScreenshot: null),
                         ),
                       );
                     },
@@ -1077,8 +1063,9 @@ class HomeScreenState extends State<HomeScreen> {
         return Container(
           margin: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.8),
+            color: Theme.of(context).colorScheme.primaryContainer,
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
           ),
           child: Center(
             child: Icon(
@@ -1089,25 +1076,13 @@ class HomeScreenState extends State<HomeScreen> {
           ),
         );
       }
-      return FutureBuilder(
-        future: Future.delayed(const Duration(milliseconds: 300)),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-          }
-          return Container(
-            margin: const EdgeInsets.all(4),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: AndroidView(
-                viewType: 'widget_view',
-                creationParams: {'appWidgetId': item.appWidgetId},
-                creationParamsCodec: const StandardMessageCodec(),
-              ),
-            ),
-          );
-        }
+      return Container(
+        margin: const EdgeInsets.all(4),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: _WidgetWrapper(appWidgetId: item.appWidgetId!),
+        ),
       );
     } else if (item.type == 'search_widget') {
       return Padding(
@@ -1235,81 +1210,87 @@ class HomeScreenState extends State<HomeScreen> {
         ),
       );
     } else {
+      Widget buildAppIcon(AppInfo app, int notificationCount) {
+        return Container(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                children: [
+                  IconShapeClipper(
+                    shape: _iconShape,
+                    size: 48,
+                    child: app.icon != null
+                        ? Image.memory(
+                            app.icon!,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                          )
+                        : const Icon(Icons.android, size: 48),
+                  ),
+                  if (notificationCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$notificationCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                app.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  shadows: [
+                    Shadow(
+                      blurRadius: 4.0,
+                      color: Colors.black54,
+                      offset: Offset(1.0, 1.0),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+      
+      final cachedApp = widget.appCache[item.packageName];
+      if (cachedApp != null) {
+        return buildAppIcon(cachedApp, widget.notifications[item.packageName] ?? 0);
+      }
+      
       return FutureBuilder<AppInfo?>(
         future: _getAppInfo(item.packageName),
         builder: (context, snapshot) {
           if (!snapshot.hasData || snapshot.data == null) {
             return const SizedBox.shrink();
           }
-          final app = snapshot.data!;
-          final notificationCount = widget.notifications[item.packageName] ?? 0;
-
-          return Container(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  children: [
-                    IconShapeClipper(
-                      shape: _iconShape,
-                      size: 48,
-                      child: app.icon != null
-                          ? Image.memory(
-                              app.icon!,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.cover,
-                            )
-                          : const Icon(Icons.android, size: 48),
-                    ),
-                    if (notificationCount > 0)
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            '$notificationCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  app.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    shadows: [
-                      Shadow(
-                        blurRadius: 4.0,
-                        color: Colors.black54,
-                        offset: Offset(1.0, 1.0),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
+          return buildAppIcon(snapshot.data!, widget.notifications[item.packageName] ?? 0);
         },
       );
     }
@@ -1485,6 +1466,29 @@ class HomeScreenState extends State<HomeScreen> {
           },
         );
       },
+    );
+  }
+}
+
+class _WidgetWrapper extends StatefulWidget {
+  final int appWidgetId;
+  const _WidgetWrapper({Key? key, required this.appWidgetId}) : super(key: key);
+
+  @override
+  State<_WidgetWrapper> createState() => _WidgetWrapperState();
+}
+
+class _WidgetWrapperState extends State<_WidgetWrapper> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return AndroidView(
+      viewType: 'widget_view',
+      creationParams: {'appWidgetId': widget.appWidgetId},
+      creationParamsCodec: const StandardMessageCodec(),
     );
   }
 }
