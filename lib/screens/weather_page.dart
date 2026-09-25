@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:swavoti/services/weather_service.dart';
+import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/widgets/weather_icon.dart';
 
 class WeatherPage extends StatefulWidget {
@@ -213,7 +214,47 @@ class _WeatherContent extends StatelessWidget {
                 ),
                 IconButton(
                   onPressed: () {
-                    // TODO: Implement city search
+                    showDialog(
+                      context: context,
+                      builder: (ctx) {
+                        final controller = TextEditingController();
+                        return AlertDialog(
+                          title: const Text('Search City'),
+                          content: TextField(
+                            controller: controller,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              hintText: 'Enter city name...',
+                              prefixIcon: Icon(Icons.search_rounded),
+                            ),
+                            onSubmitted: (value) {
+                              if (value.trim().isNotEmpty) {
+                                Navigator.pop(ctx);
+                                final query = Uri.encodeComponent('${value.trim()} weather');
+                                LauncherService.openUrlInBrowser('https://www.google.com/search?q=$query');
+                              }
+                            },
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () {
+                                final value = controller.text;
+                                if (value.trim().isNotEmpty) {
+                                  Navigator.pop(ctx);
+                                  final query = Uri.encodeComponent('${value.trim()} weather');
+                                  LauncherService.openUrlInBrowser('https://www.google.com/search?q=$query');
+                                }
+                              },
+                              child: const Text('Search'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
                   },
                   icon: const Icon(
                     Icons.search_rounded,

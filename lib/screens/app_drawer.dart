@@ -355,35 +355,30 @@ class _AppDrawerState extends State<AppDrawer> {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: _frostedGlassEnabled
-        ? SoftEdgeBlur(
-            edges: [
-              EdgeBlur(
-                type: EdgeType.topEdge,
-                size: 100,
-                sigma: 30,
-                controlPoints: [
-                  ControlPoint(
-                    position: 0.5,
-                    type: ControlPointType.visible,
-                  ),
-                  ControlPoint(
-                    position: 1,
-                    type: ControlPointType.transparent,
-                  )
-                ],
-              )
-            ],
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.25),
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
+        ? BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: SoftEdgeBlur(
+              edges: [
+                EdgeBlur(
+                  type: EdgeType.topEdge,
+                  size: 100,
+                  sigma: 30,
+                  controlPoints: [
+                    ControlPoint(
+                      position: 0.5,
+                      type: ControlPointType.visible,
+                    ),
+                    ControlPoint(
+                      position: 1,
+                      type: ControlPointType.transparent,
+                    ),
+                  ],
                 ),
+              ],
+              child: Container(
+                color: Colors.transparent,
+                child: childContent,
               ),
-              child: childContent,
             ),
           )
         : Container(

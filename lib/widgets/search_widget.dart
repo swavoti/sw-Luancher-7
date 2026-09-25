@@ -36,7 +36,7 @@ class _SearchWidgetState extends State<SearchWidget> {
     final colorScheme = Theme.of(context).colorScheme;
     final isPill = _style == 'pill';
     final borderRadius = isPill ? 24.0 : 8.0;
-    final widgetHeight = isPill ? 28.0 : 32.0;
+    final widgetHeight = isPill ? 44.0 : 48.0;
 
     return GestureDetector(
       onLongPress: () {
