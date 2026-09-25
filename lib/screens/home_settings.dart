@@ -90,7 +90,9 @@ class _HomeSettingsState extends State<HomeSettings> {
     final savedItems = prefs.getStringList('launcher_items') ?? [];
     if (value) {
       if (!savedItems.any((s) => s.contains('"type":"time_weather_widget"'))) {
-        savedItems.add('{"id":"time_weather_default","type":"time_weather_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Time & Weather"}');
+        savedItems.add(
+          '{"id":"time_weather_default","type":"time_weather_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Time & Weather"}',
+        );
         await prefs.setStringList('launcher_items', savedItems);
       }
     } else {
@@ -122,26 +124,34 @@ class _HomeSettingsState extends State<HomeSettings> {
                 SwitchListTile(
                   secondary: const Icon(Icons.notifications_outlined),
                   title: const Text('Notification Dots'),
-                  subtitle: const Text('Show badge on app icons for unread notifications'),
+                  subtitle: const Text(
+                    'Show badge on app icons for unread notifications',
+                  ),
                   value: _notificationDotsEnabled,
                   onChanged: _toggleNotificationDots,
                 ),
                 SwitchListTile(
                   secondary: const Icon(Icons.access_time_outlined),
                   title: const Text('Show Time & Weather'),
-                  subtitle: const Text('Display time/weather widget on home screen'),
+                  subtitle: const Text(
+                    'Display time/weather widget on home screen',
+                  ),
                   value: _showTimeWeather,
                   onChanged: _toggleTimeWeather,
                 ),
                 ListTile(
                   leading: const Icon(Icons.search_rounded),
                   title: const Text('Search Bar Settings'),
-                  subtitle: const Text('Configure search widget appearance and browser'),
+                  subtitle: const Text(
+                    'Configure search widget appearance and browser',
+                  ),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const SearchSettingsScreen()),
+                      MaterialPageRoute(
+                        builder: (_) => const SearchSettingsScreen(),
+                      ),
                     );
                   },
                 ),
@@ -154,7 +164,10 @@ class _HomeSettingsState extends State<HomeSettings> {
                   onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => FeedProviderScreen(currentProvider: _feedProvider)),
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            FeedProviderScreen(currentProvider: _feedProvider),
+                      ),
                     );
                     _loadSettings();
                   },
@@ -167,7 +180,10 @@ class _HomeSettingsState extends State<HomeSettings> {
                   onTap: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => GridSizeScreen(currentColumns: _gridColumns)),
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            GridSizeScreen(currentColumns: _gridColumns),
+                      ),
                     );
                     _loadSettings();
                   },
@@ -175,7 +191,9 @@ class _HomeSettingsState extends State<HomeSettings> {
                 SwitchListTile(
                   secondary: const Icon(Icons.visibility_outlined),
                   title: const Text('Show Hidden Apps'),
-                  subtitle: const Text('View apps you have hidden from the drawer'),
+                  subtitle: const Text(
+                    'View apps you have hidden from the drawer',
+                  ),
                   value: _showHiddenApps,
                   onChanged: _toggleShowHiddenApps,
                 ),
@@ -197,9 +215,8 @@ class _HomeSettingsState extends State<HomeSettings> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const EditIconsPage(
-                          backgroundWallpaperPath: '',
-                        ),
+                        builder: (_) =>
+                            const EditIconsPage(backgroundWallpaperPath: ''),
                       ),
                     );
                   },
@@ -207,12 +224,21 @@ class _HomeSettingsState extends State<HomeSettings> {
                 const Divider(),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Text('Experimental', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 12)),
+                  child: Text(
+                    'Experimental',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
                 SwitchListTile(
                   secondary: const Icon(Icons.blur_on),
                   title: const Text('Blur Wallpaper Background'),
-                  subtitle: const Text('App drawer shows wallpaper with blur when on; solid colour when off'),
+                  subtitle: const Text(
+                    'App drawer shows wallpaper with blur when on; solid colour when off',
+                  ),
                   value: _frostedGlassEnabled,
                   onChanged: _toggleFrostedGlass,
                 ),
@@ -220,7 +246,9 @@ class _HomeSettingsState extends State<HomeSettings> {
                 ListTile(
                   leading: const Icon(Icons.info_outline),
                   title: const Text('Go Launcher 7'),
-                  subtitle: const Text('Version 1.0.0 · co.za.launcher3.swavoti'),
+                  subtitle: const Text(
+                    'Version 1.0.0 · co.za.launcher3.swavoti',
+                  ),
                 ),
               ],
             ),
@@ -252,7 +280,9 @@ class FeedProviderScreen extends StatelessWidget {
           ),
           ListTile(
             title: const Text('Yahoo'),
-            trailing: currentProvider == 'yahoo' ? const Icon(Icons.check) : null,
+            trailing: currentProvider == 'yahoo'
+                ? const Icon(Icons.check)
+                : null,
             onTap: () async {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString('feed_provider', 'yahoo');

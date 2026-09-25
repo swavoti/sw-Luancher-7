@@ -135,7 +135,11 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_rounded, size: 64, color: Colors.white54),
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 64,
+              color: Colors.white54,
+            ),
             const SizedBox(height: 16),
             Text(
               message,
@@ -143,10 +147,7 @@ class _ErrorView extends StatelessWidget {
               style: const TextStyle(color: Colors.white70, fontSize: 15),
             ),
             const SizedBox(height: 24),
-            FilledButton.tonal(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
+            FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
           ],
         ),
       ),
@@ -230,8 +231,12 @@ class _WeatherContent extends StatelessWidget {
                             onSubmitted: (value) {
                               if (value.trim().isNotEmpty) {
                                 Navigator.pop(ctx);
-                                final query = Uri.encodeComponent('${value.trim()} weather');
-                                LauncherService.openUrlInBrowser('https://www.google.com/search?q=$query');
+                                final query = Uri.encodeComponent(
+                                  '${value.trim()} weather',
+                                );
+                                LauncherService.openUrlInBrowser(
+                                  'https://www.google.com/search?q=$query',
+                                );
                               }
                             },
                           ),
@@ -245,8 +250,12 @@ class _WeatherContent extends StatelessWidget {
                                 final value = controller.text;
                                 if (value.trim().isNotEmpty) {
                                   Navigator.pop(ctx);
-                                  final query = Uri.encodeComponent('${value.trim()} weather');
-                                  LauncherService.openUrlInBrowser('https://www.google.com/search?q=$query');
+                                  final query = Uri.encodeComponent(
+                                    '${value.trim()} weather',
+                                  );
+                                  LauncherService.openUrlInBrowser(
+                                    'https://www.google.com/search?q=$query',
+                                  );
                                 }
                               },
                               child: const Text('Search'),
@@ -334,9 +343,7 @@ class _WeatherContent extends StatelessWidget {
         const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
         // ── Hourly forecast (horizontal scroll) ─────────────────
-        SliverToBoxAdapter(
-          child: _SectionLabel(label: 'Today — Hourly'),
-        ),
+        SliverToBoxAdapter(child: _SectionLabel(label: 'Today — Hourly')),
         SliverToBoxAdapter(
           child: SizedBox(
             height: 120,
@@ -363,25 +370,20 @@ class _WeatherContent extends StatelessWidget {
         const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
         // ── Daily forecast ──────────────────────────────────────
-        SliverToBoxAdapter(
-          child: _SectionLabel(label: '7-Day Forecast'),
-        ),
+        SliverToBoxAdapter(child: _SectionLabel(label: '7-Day Forecast')),
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, i) {
-              final day = data.daily[i];
-              final isToday = i == 0;
-              return _DailyRow(
-                label: isToday ? 'Today' : weekdayShort(day.date),
-                date: day.date,
-                weatherCode: day.weatherCode,
-                tempMax: day.tempMax,
-                tempMin: day.tempMin,
-                precipProbability: day.precipitationProbabilityMax,
-              );
-            },
-            childCount: data.daily.length,
-          ),
+          delegate: SliverChildBuilderDelegate((context, i) {
+            final day = data.daily[i];
+            final isToday = i == 0;
+            return _DailyRow(
+              label: isToday ? 'Today' : weekdayShort(day.date),
+              date: day.date,
+              weatherCode: day.weatherCode,
+              tempMax: day.tempMax,
+              tempMin: day.tempMin,
+              precipProbability: day.precipitationProbabilityMax,
+            );
+          }, childCount: data.daily.length),
         ),
 
         const SliverToBoxAdapter(child: SizedBox(height: 48)),
@@ -443,9 +445,7 @@ class _HourlyTile extends StatelessWidget {
             ? Colors.white.withOpacity(0.2)
             : Colors.white.withOpacity(0.08),
         borderRadius: BorderRadius.circular(16),
-        border: highlight
-            ? Border.all(color: Colors.white30, width: 1)
-            : null,
+        border: highlight ? Border.all(color: Colors.white30, width: 1) : null,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -455,15 +455,10 @@ class _HourlyTile extends StatelessWidget {
             style: TextStyle(
               color: highlight ? Colors.white : Colors.white70,
               fontSize: 12,
-              fontWeight:
-                  highlight ? FontWeight.w600 : FontWeight.w400,
+              fontWeight: highlight ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
-          WeatherIcon(
-            weatherCode: weatherCode,
-            size: 30,
-            isNight: isNight,
-          ),
+          WeatherIcon(weatherCode: weatherCode, size: 30, isNight: isNight),
           Text(
             '${temperature.round()}°',
             style: const TextStyle(

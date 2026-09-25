@@ -119,7 +119,9 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
                 Text(
                   _formatDate(_currentTime),
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.8),
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
@@ -140,7 +142,8 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
                         WeatherIcon(
                           weatherCode: _weatherData!.weatherCode,
                           size: 20,
-                          isNight: _currentTime.hour < 6 || _currentTime.hour >= 20,
+                          isNight:
+                              _currentTime.hour < 6 || _currentTime.hour >= 20,
                         ),
                         const SizedBox(width: 4),
                         Text(
@@ -160,7 +163,6 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
           ],
         ),
       ),
-
     );
   }
 }

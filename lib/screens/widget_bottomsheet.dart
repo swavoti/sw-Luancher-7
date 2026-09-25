@@ -26,7 +26,9 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
   void initState() {
     super.initState();
     _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
+      setState(
+        () => _searchQuery = _searchController.text.trim().toLowerCase(),
+      );
     });
     _loadSettings();
     _loadWidgetsIncremental();
@@ -92,9 +94,9 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
             children: [
               Text(
                 'Widgets',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
               if (_loadingDone) ...[
                 const SizedBox(width: 8),
@@ -131,9 +133,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
             style: TextStyle(fontSize: 15, color: cs.onSurface),
             decoration: InputDecoration(
               hintText: 'Search widgets',
-              hintStyle: TextStyle(
-                color: cs.onSurfaceVariant.withOpacity(0.7),
-              ),
+              hintStyle: TextStyle(color: cs.onSurfaceVariant.withOpacity(0.7)),
               prefixIcon: Icon(
                 Icons.search_rounded,
                 color: cs.onSurfaceVariant,
@@ -219,10 +219,10 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: Container(
-          height: MediaQuery.of(context).size.height,
-          color: cs.surfaceContainerLow,
-          child: childContent,
-        ),
+        height: MediaQuery.of(context).size.height,
+        color: cs.surfaceContainerLow,
+        child: childContent,
+      ),
     );
   }
 }
@@ -262,8 +262,8 @@ class _AppWidgetGroup extends StatelessWidget {
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.memory(
-                        snapshot.data!.icon!, 
-                        width: 32, 
+                        snapshot.data!.icon!,
+                        width: 32,
                         height: 32,
                         fit: BoxFit.cover,
                         cacheWidth: 96,
@@ -421,10 +421,7 @@ class _WidgetRow extends StatelessWidget {
               ),
               clipBehavior: Clip.antiAlias,
               child: previewBytes != null
-                  ? Image.memory(
-                      previewBytes!,
-                      fit: BoxFit.cover,
-                    )
+                  ? Image.memory(previewBytes!, fit: BoxFit.cover)
                   : Icon(
                       Icons.crop_square_rounded,
                       size: 24,

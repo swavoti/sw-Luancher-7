@@ -32,10 +32,7 @@ class _WorkspaceItemData {
   final String packageName;
   final String label;
 
-  _WorkspaceItemData({
-    required this.packageName,
-    required this.label,
-  });
+  _WorkspaceItemData({required this.packageName, required this.label});
 
   Map<String, dynamic> toMap() => <String, dynamic>{
     'type': 'app',
@@ -132,8 +129,6 @@ class _AppDrawerState extends State<AppDrawer> {
     });
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final childContent = Column(
@@ -147,11 +142,14 @@ class _AppDrawerState extends State<AppDrawer> {
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    onTap: () => FocusScope.of(context).requestFocus(FocusNode()),
+                    onTap: () =>
+                        FocusScope.of(context).requestFocus(FocusNode()),
                     borderRadius: BorderRadius.circular(28),
                     child: Ink(
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(28),
                       ),
                       child: Row(
@@ -159,7 +157,9 @@ class _AppDrawerState extends State<AppDrawer> {
                           const SizedBox(width: 16),
                           Icon(
                             Icons.search_rounded,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                             size: 20,
                           ),
                           const SizedBox(width: 12),
@@ -174,7 +174,9 @@ class _AppDrawerState extends State<AppDrawer> {
                               decoration: InputDecoration(
                                 hintText: 'Search apps',
                                 hintStyle: TextStyle(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                   fontSize: 15,
                                 ),
                                 border: InputBorder.none,
@@ -184,20 +186,26 @@ class _AppDrawerState extends State<AppDrawer> {
                             ),
                           ),
                           _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.close_rounded, size: 18),
-                                onPressed: () => _searchController.clear(),
-                                padding: EdgeInsets.zero,
-                              )
-                            : IconButton(
-                                icon: Icon(
-                                  Icons.mic_rounded,
-                                  color: Theme.of(context).colorScheme.primary,
-                                  size: 20,
+                              ? IconButton(
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                  ),
+                                  onPressed: () => _searchController.clear(),
+                                  padding: EdgeInsets.zero,
+                                )
+                              : IconButton(
+                                  icon: Icon(
+                                    Icons.mic_rounded,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                    size: 20,
+                                  ),
+                                  onPressed:
+                                      LauncherService.openGoogleVoiceSearch,
+                                  padding: EdgeInsets.zero,
                                 ),
-                                onPressed: LauncherService.openGoogleVoiceSearch,
-                                padding: EdgeInsets.zero,
-                              ),
                           const SizedBox(width: 8),
                         ],
                       ),
@@ -218,9 +226,15 @@ class _AppDrawerState extends State<AppDrawer> {
                       );
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Row(
@@ -228,7 +242,9 @@ class _AppDrawerState extends State<AppDrawer> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -253,7 +269,9 @@ class _AppDrawerState extends State<AppDrawer> {
                           Icon(
                             Icons.arrow_forward_ios,
                             size: 14,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
                         ],
                       ),
@@ -267,90 +285,108 @@ class _AppDrawerState extends State<AppDrawer> {
           child: _isLoading
               ? const SizedBox.shrink()
               : _filteredApps.isEmpty
-                  ? const Center(child: Text('No apps found.'))
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        final gridWidth = constraints.maxWidth - 32; // padding
-                        final cellWidth = (gridWidth - (3 * 8)) / 4; // 3 crossAxisSpacing
-                        final cellHeight = cellWidth / 0.82;
-                        final rowHeight = cellHeight + 12; // mainAxisSpacing
-                        final rows = (constraints.maxHeight / rowHeight).floor().clamp(1, 10);
-                        final itemsPerPage = rows * 4;
-                        
-                        final gridApps = _filteredApps;
-                            
-                        if (gridApps.isEmpty) return const SizedBox.shrink();
-                        
-                        final pages = (gridApps.length / itemsPerPage).ceil();
-                        
-                        return Column(
-                          children: [
-                            Expanded(
-                              child: PageView.builder(
-                                itemCount: pages,
-                                onPageChanged: (page) {
-                                  setState(() {
-                                    _currentPage = page;
-                                  });
-                                },
-                                itemBuilder: (context, pageIndex) {
-                                  final start = pageIndex * itemsPerPage;
-                                  final end = (start + itemsPerPage).clamp(0, gridApps.length);
-                                  final pageApps = gridApps.sublist(start, end);
-                                  
-                                  return GridView.builder(
-                                    physics: const NeverScrollableScrollPhysics(),
-                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              ? const Center(child: Text('No apps found.'))
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final gridWidth = constraints.maxWidth - 32; // padding
+                    final cellWidth =
+                        (gridWidth - (3 * 8)) / 4; // 3 crossAxisSpacing
+                    final cellHeight = cellWidth / 0.82;
+                    final rowHeight = cellHeight + 12; // mainAxisSpacing
+                    final rows = (constraints.maxHeight / rowHeight)
+                        .floor()
+                        .clamp(1, 10);
+                    final itemsPerPage = rows * 4;
+
+                    final gridApps = _filteredApps;
+
+                    if (gridApps.isEmpty) return const SizedBox.shrink();
+
+                    final pages = (gridApps.length / itemsPerPage).ceil();
+
+                    return Column(
+                      children: [
+                        Expanded(
+                          child: PageView.builder(
+                            itemCount: pages,
+                            onPageChanged: (page) {
+                              setState(() {
+                                _currentPage = page;
+                              });
+                            },
+                            itemBuilder: (context, pageIndex) {
+                              final start = pageIndex * itemsPerPage;
+                              final end = (start + itemsPerPage).clamp(
+                                0,
+                                gridApps.length,
+                              );
+                              final pageApps = gridApps.sublist(start, end);
+
+                              return GridView.builder(
+                                physics: const NeverScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
                                       crossAxisCount: 4,
                                       mainAxisSpacing: 12,
                                       crossAxisSpacing: 8,
                                       childAspectRatio: 0.82,
                                     ),
-                                    itemCount: pageApps.length,
-                                    itemBuilder: (context, index) {
-                                      final app = pageApps[index];
-                                      final notificationCount = widget.notifications[app.packageName] ?? 0;
-                                      return _AppDrawerItem(
-                                        app: app,
-                                        notificationCount: notificationCount,
-                                        onCloseDrawer: widget.onClose,
-                                        iconShape: _iconShape,
-                                        onDragStarted: widget.onDragStarted,
-                                        onDragEnded: widget.onDragEnded,
-                                      );
-                                    }
+                                itemCount: pageApps.length,
+                                itemBuilder: (context, index) {
+                                  final app = pageApps[index];
+                                  final notificationCount =
+                                      widget.notifications[app.packageName] ??
+                                      0;
+                                  return _AppDrawerItem(
+                                    app: app,
+                                    notificationCount: notificationCount,
+                                    onCloseDrawer: widget.onClose,
+                                    iconShape: _iconShape,
+                                    onDragStarted: widget.onDragStarted,
+                                    onDragEnded: widget.onDragEnded,
                                   );
-                                }
-                              ),
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        if (pages > 1)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(pages, (index) {
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _currentPage == index
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.2),
+                                  ),
+                                );
+                              }),
                             ),
-                            if (pages > 1)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: List.generate(pages, (index) {
-                                    return Container(
-                                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: _currentPage == index
-                                            ? Theme.of(context).colorScheme.primary
-                                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                                      ),
-                                    );
-                                  }),
-                                ),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
         ),
       ],
-
     );
 
     return ClipRRect(
@@ -372,9 +408,7 @@ class _AppDrawerState extends State<AppDrawer> {
               )
             else
               Positioned.fill(
-                child: Container(
-                  color: Theme.of(context).colorScheme.surface,
-                ),
+                child: Container(color: Theme.of(context).colorScheme.surface),
               ),
             childContent,
           ],
@@ -448,7 +482,13 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                     if (app.icon != null)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(app.icon!, width: 40, height: 40, fit: BoxFit.cover, cacheWidth: 120),
+                        child: Image.memory(
+                          app.icon!,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          cacheWidth: 120,
+                        ),
                       )
                     else
                       Icon(Icons.android, size: 40, color: cs.primary),
@@ -487,8 +527,14 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-                title: const Text('Uninstall', style: TextStyle(color: Colors.red)),
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.red,
+                ),
+                title: const Text(
+                  'Uninstall',
+                  style: TextStyle(color: Colors.red),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   LauncherService.uninstallApp(app.packageName);
@@ -539,7 +585,13 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 shape: widget.iconShape,
                 size: 56,
                 child: icon != null
-                    ? Image.memory(icon, width: 56, height: 56, fit: BoxFit.cover, cacheWidth: 168)
+                    ? Image.memory(
+                        icon,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        cacheWidth: 168,
+                      )
                     : const Icon(Icons.android, size: 56),
               ),
               const SizedBox(height: 4),
@@ -589,7 +641,13 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                   shape: widget.iconShape,
                   size: 48,
                   child: icon != null
-                      ? Image.memory(icon, width: 48, height: 48, fit: BoxFit.cover, cacheWidth: 144)
+                      ? Image.memory(
+                          icon,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          cacheWidth: 144,
+                        )
                       : const Icon(Icons.android, size: 48),
                 ),
                 if (widget.notificationCount > 0)
@@ -602,7 +660,10 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                         color: Colors.red,
                         shape: BoxShape.circle,
                       ),
-                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
                       child: Text(
                         '${widget.notificationCount}',
                         style: const TextStyle(

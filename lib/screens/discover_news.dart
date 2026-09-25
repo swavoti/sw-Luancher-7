@@ -82,7 +82,11 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.wifi_off, size: 64, color: Colors.white54),
+                      const Icon(
+                        Icons.wifi_off,
+                        size: 64,
+                        color: Colors.white54,
+                      ),
                       const SizedBox(height: 16),
                       const Text(
                         'No Internet Connection',

@@ -53,38 +53,44 @@ class _BrowserSelectionScreenState extends State<BrowserSelectionScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _browsers.isEmpty
-              ? const Center(child: Text('No browsers found.'))
-              : ListView.builder(
-                  itemCount: _browsers.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Colors.transparent,
-                          child: Icon(Icons.language),
-                        ),
-                        title: const Text('System Default'),
-                        trailing: _selectedPackage == null || _selectedPackage!.isEmpty
-                            ? const Icon(Icons.check)
-                            : null,
-                        onTap: () => _selectBrowser(''),
-                      );
-                    }
-                    
-                    final browser = _browsers[index - 1];
-                    final isSelected = _selectedPackage == browser['packageName'];
-                    final iconBytes = browser['icon'] as Uint8List?;
+          ? const Center(child: Text('No browsers found.'))
+          : ListView.builder(
+              itemCount: _browsers.length + 1,
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  return ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Colors.transparent,
+                      child: Icon(Icons.language),
+                    ),
+                    title: const Text('System Default'),
+                    trailing:
+                        _selectedPackage == null || _selectedPackage!.isEmpty
+                        ? const Icon(Icons.check)
+                        : null,
+                    onTap: () => _selectBrowser(''),
+                  );
+                }
 
-                    return ListTile(
-                      leading: iconBytes != null
-                          ? Image.memory(iconBytes, width: 40, height: 40, cacheWidth: 120)
-                          : const Icon(Icons.android, size: 40),
-                      title: Text(browser['label'] ?? 'Unknown Browser'),
-                      trailing: isSelected ? const Icon(Icons.check) : null,
-                      onTap: () => _selectBrowser(browser['packageName']),
-                    );
-                  },
-                ),
+                final browser = _browsers[index - 1];
+                final isSelected = _selectedPackage == browser['packageName'];
+                final iconBytes = browser['icon'] as Uint8List?;
+
+                return ListTile(
+                  leading: iconBytes != null
+                      ? Image.memory(
+                          iconBytes,
+                          width: 40,
+                          height: 40,
+                          cacheWidth: 120,
+                        )
+                      : const Icon(Icons.android, size: 40),
+                  title: Text(browser['label'] ?? 'Unknown Browser'),
+                  trailing: isSelected ? const Icon(Icons.check) : null,
+                  onTap: () => _selectBrowser(browser['packageName']),
+                );
+              },
+            ),
     );
   }
 }

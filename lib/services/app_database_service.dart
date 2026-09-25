@@ -46,8 +46,8 @@ class AppDatabaseService {
         // Integrity check — if corrupt, nuke and recreate table
         try {
           final result = await db.rawQuery('PRAGMA integrity_check');
-          final ok = result.isNotEmpty &&
-              result.first.values.first.toString() == 'ok';
+          final ok =
+              result.isNotEmpty && result.first.values.first.toString() == 'ok';
           if (!ok) {
             debugPrint('AppDatabaseService: DB corrupt — dropping table');
             await db.execute('DROP TABLE IF EXISTS apps');
@@ -69,8 +69,12 @@ class AppDatabaseService {
       return await _open();
     } catch (e) {
       // If we can't open at all, delete and recreate
-      debugPrint('AppDatabaseService: Failed to open DB ($e) — deleting and recreating');
-      try { File(path).deleteSync(); } catch (_) {}
+      debugPrint(
+        'AppDatabaseService: Failed to open DB ($e) — deleting and recreating',
+      );
+      try {
+        File(path).deleteSync();
+      } catch (_) {}
       _iconCache.clear();
       return await _open();
     }
@@ -136,7 +140,9 @@ class AppDatabaseService {
       if (blob == null || blob.isEmpty) {
         try {
           final appInfo = await InstalledApps.getAppInfo(packageName);
-          if (appInfo != null && appInfo.icon != null && appInfo.icon!.isNotEmpty) {
+          if (appInfo != null &&
+              appInfo.icon != null &&
+              appInfo.icon!.isNotEmpty) {
             blob = appInfo.icon;
             // Cache it in SQLite for next time
             await db.update(

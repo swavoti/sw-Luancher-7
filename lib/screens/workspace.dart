@@ -23,7 +23,8 @@ class _WorkspaceState extends State<Workspace>
   Map<String, int> _notifications = {};
   StreamSubscription<Map<String, int>>? _notificationSubscription;
 
-  final GlobalKey<HomeScreenState> _homeScreenKey = GlobalKey<HomeScreenState>();
+  final GlobalKey<HomeScreenState> _homeScreenKey =
+      GlobalKey<HomeScreenState>();
 
   // ── Custom drawer animation ──────────────────────────────────────────────
   late AnimationController _drawerController;
@@ -53,13 +54,14 @@ class _WorkspaceState extends State<Workspace>
     WidgetsBinding.instance.addObserver(this);
     _checkDefaultLauncher();
 
-    _drawerController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 340),
-      value: 0.0,
-    )..addListener(() {
-        if (mounted) setState(() => _drawerDrag = _drawerController.value);
-      });
+    _drawerController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 340),
+          value: 0.0,
+        )..addListener(() {
+          if (mounted) setState(() => _drawerDrag = _drawerController.value);
+        });
 
     _discoverController = AnimationController(
       vsync: this,
@@ -184,7 +186,8 @@ class _WorkspaceState extends State<Workspace>
   // Handle vertical drag on the drawer itself (for closing)
   void _onDrawerDragStart(DragStartDetails details) {
     // Only handle if the inner scroll is at the top
-    final atTop = !_drawerScrollController.hasClients ||
+    final atTop =
+        !_drawerScrollController.hasClients ||
         _drawerScrollController.position.pixels <= 0;
     if (!atTop) return;
     _dragStartY = details.globalPosition.dy;
@@ -250,8 +253,10 @@ class _WorkspaceState extends State<Workspace>
                   child: Transform.scale(
                     scale: 1.0 - 0.05 * _drawerDrag,
                     child: Opacity(
-                      opacity: ((1.0 - _drawerDrag * 3.0) * (1.0 - discoverExtent * 0.7))
-                          .clamp(0.0, 1.0),
+                      opacity:
+                          ((1.0 - _drawerDrag * 3.0) *
+                                  (1.0 - discoverExtent * 0.7))
+                              .clamp(0.0, 1.0),
                       child: child,
                     ),
                   ),
@@ -351,9 +356,7 @@ class _DragBubble extends StatelessWidget {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      decoration: const BoxDecoration(
-        color: Colors.transparent,
-      ),
+      decoration: const BoxDecoration(color: Colors.transparent),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -371,7 +374,9 @@ class _DragBubble extends StatelessWidget {
                 icon: Icons.info_outline_rounded,
                 label: 'App Info',
                 color: isHovered ? cs.onPrimaryContainer : cs.primary,
-                backgroundColor: isHovered ? cs.primaryContainer : Colors.transparent,
+                backgroundColor: isHovered
+                    ? cs.primaryContainer
+                    : Colors.transparent,
                 onTap: () {
                   LauncherService.openAppInfo(packageName);
                   onDragEnded();
@@ -379,11 +384,7 @@ class _DragBubble extends StatelessWidget {
               );
             },
           ),
-          Container(
-            width: 1,
-            height: 40,
-            color: cs.outlineVariant,
-          ),
+          Container(width: 1, height: 40, color: cs.outlineVariant),
           // Uninstall drop target
           DragTarget<Map<String, dynamic>>(
             onWillAcceptWithDetails: (_) => true,
@@ -397,7 +398,9 @@ class _DragBubble extends StatelessWidget {
                 icon: Icons.delete_outline_rounded,
                 label: 'Uninstall',
                 color: isHovered ? Colors.white : Colors.red.shade400,
-                backgroundColor: isHovered ? Colors.red.shade400 : Colors.transparent,
+                backgroundColor: isHovered
+                    ? Colors.red.shade400
+                    : Colors.transparent,
                 onTap: () {
                   LauncherService.uninstallApp(packageName);
                   onDragEnded();
@@ -474,29 +477,22 @@ class _DefaultLauncherBanner extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: SoftEdgeBlur(
-            edges: [
-              EdgeBlur(
-                type: EdgeType.topEdge,
-                size: 100,
-                sigma: 30,
-                controlPoints: [
-                  ControlPoint(
-                    position: 0.5,
-                    type: ControlPointType.visible,
-                  ),
-                  ControlPoint(
-                    position: 1,
-                    type: ControlPointType.transparent,
-                  )
-                ],
-              )
+        edges: [
+          EdgeBlur(
+            type: EdgeType.topEdge,
+            size: 100,
+            sigma: 30,
+            controlPoints: [
+              ControlPoint(position: 0.5, type: ControlPointType.visible),
+              ControlPoint(position: 1, type: ControlPointType.transparent),
             ],
+          ),
+        ],
         child: Container(
           decoration: BoxDecoration(
-            color: Theme.of(context)
-                .colorScheme
-                .primaryContainer
-                .withValues(alpha: 0.9),
+            color: Theme.of(
+              context,
+            ).colorScheme.primaryContainer.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(20),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -522,7 +518,10 @@ class _DefaultLauncherBanner extends StatelessWidget {
               FilledButton.tonal(
                 onPressed: onSetDefault,
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   textStyle: const TextStyle(fontSize: 12),

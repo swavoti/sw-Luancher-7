@@ -133,7 +133,9 @@ class WeatherService {
       // Hourly — next 24 entries from now
       final hourlyTimes = List<String>.from(data['hourly']['time']);
       final hourlyTemps = List<num>.from(data['hourly']['temperature_2m']);
-      final hourlyPrecip = List<num>.from(data['hourly']['precipitation_probability']);
+      final hourlyPrecip = List<num>.from(
+        data['hourly']['precipitation_probability'],
+      );
       final hourlyCodes = List<num>.from(data['hourly']['weathercode']);
 
       final now = DateTime.now();
@@ -142,12 +144,14 @@ class WeatherService {
         final t = DateTime.tryParse(hourlyTimes[i]);
         if (t == null) continue;
         if (t.isBefore(now)) continue;
-        hourlyForecasts.add(HourlyForecast(
-          time: t,
-          temperature: hourlyTemps[i].toDouble(),
-          weatherCode: hourlyCodes[i].toInt(),
-          precipitationProbability: hourlyPrecip[i].toDouble(),
-        ));
+        hourlyForecasts.add(
+          HourlyForecast(
+            time: t,
+            temperature: hourlyTemps[i].toDouble(),
+            weatherCode: hourlyCodes[i].toInt(),
+            precipitationProbability: hourlyPrecip[i].toDouble(),
+          ),
+        );
         if (hourlyForecasts.length >= 24) break;
       }
 
@@ -156,19 +160,23 @@ class WeatherService {
       final dailyMax = List<num>.from(data['daily']['temperature_2m_max']);
       final dailyMin = List<num>.from(data['daily']['temperature_2m_min']);
       final dailyCodes = List<num>.from(data['daily']['weathercode']);
-      final dailyPrecip = List<num>.from(data['daily']['precipitation_probability_max']);
+      final dailyPrecip = List<num>.from(
+        data['daily']['precipitation_probability_max'],
+      );
 
       final List<DailyForecast> dailyForecasts = [];
       for (int i = 0; i < dailyDates.length; i++) {
         final d = DateTime.tryParse(dailyDates[i]);
         if (d == null) continue;
-        dailyForecasts.add(DailyForecast(
-          date: d,
-          tempMax: dailyMax[i].toDouble(),
-          tempMin: dailyMin[i].toDouble(),
-          weatherCode: dailyCodes[i].toInt(),
-          precipitationProbabilityMax: dailyPrecip[i].toDouble(),
-        ));
+        dailyForecasts.add(
+          DailyForecast(
+            date: d,
+            tempMax: dailyMax[i].toDouble(),
+            tempMin: dailyMin[i].toDouble(),
+            weatherCode: dailyCodes[i].toInt(),
+            precipitationProbabilityMax: dailyPrecip[i].toDouble(),
+          ),
+        );
       }
 
       return FullWeatherData(

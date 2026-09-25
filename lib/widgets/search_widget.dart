@@ -44,7 +44,9 @@ class _SearchWidgetState extends State<SearchWidget> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Remove Search Widget?'),
-            content: const Text('You can re-enable this later in Home Settings.'),
+            content: const Text(
+              'You can re-enable this later in Home Settings.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -55,14 +57,20 @@ class _SearchWidgetState extends State<SearchWidget> {
                   Navigator.pop(context);
                   widget.onRemove();
                 },
-                child: const Text('Remove', style: TextStyle(color: Colors.red)),
+                child: const Text(
+                  'Remove',
+                  style: TextStyle(color: Colors.red),
+                ),
               ),
             ],
           ),
         );
       },
       onTap: () {
-        LauncherService.openUrlInBrowser('https://www.google.com', _browserPackage);
+        LauncherService.openUrlInBrowser(
+          'https://www.google.com',
+          _browserPackage,
+        );
       },
       child: Center(
         child: Container(
@@ -70,41 +78,37 @@ class _SearchWidgetState extends State<SearchWidget> {
           decoration: BoxDecoration(
             color: colorScheme.surface,
             borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(
-              color: colorScheme.outlineVariant,
-              width: 1,
-            ),
+            border: Border.all(color: colorScheme.outlineVariant, width: 1),
           ),
           padding: EdgeInsets.symmetric(horizontal: isPill ? 16 : 14),
-        child: Row(
-          children: [
-
-            Icon(
-              Icons.search_rounded,
-              color: colorScheme.onSurfaceVariant,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Search',
-                style: TextStyle(
-                  color: colorScheme.onSurfaceVariant,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-            GestureDetector(
-              onTap: LauncherService.openGoogleVoiceSearch,
-              child: Icon(
-                Icons.mic_rounded,
+          child: Row(
+            children: [
+              Icon(
+                Icons.search_rounded,
                 color: colorScheme.onSurfaceVariant,
                 size: 16,
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Search',
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: LauncherService.openGoogleVoiceSearch,
+                child: Icon(
+                  Icons.mic_rounded,
+                  color: colorScheme.onSurfaceVariant,
+                  size: 16,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

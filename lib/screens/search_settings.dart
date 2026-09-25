@@ -25,7 +25,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final savedItems = prefs.getStringList('launcher_items') ?? [];
-    
+
     bool hasSearchWidget = false;
     for (final jsonStr in savedItems) {
       if (jsonStr.contains('"type":"search_widget"')) {
@@ -46,17 +46,23 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   Future<void> _toggleSearchWidget(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     final savedItems = prefs.getStringList('launcher_items') ?? [];
-    
+
     if (value) {
-      if (!savedItems.any((jsonStr) => jsonStr.contains('"type":"search_widget"'))) {
-        savedItems.add('{"id":"search_default","type":"search_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Search"}');
+      if (!savedItems.any(
+        (jsonStr) => jsonStr.contains('"type":"search_widget"'),
+      )) {
+        savedItems.add(
+          '{"id":"search_default","type":"search_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Search"}',
+        );
         await prefs.setStringList('launcher_items', savedItems);
       }
     } else {
-      savedItems.removeWhere((jsonStr) => jsonStr.contains('"type":"search_widget"'));
+      savedItems.removeWhere(
+        (jsonStr) => jsonStr.contains('"type":"search_widget"'),
+      );
       await prefs.setStringList('launcher_items', savedItems);
     }
-    
+
     setState(() => _showSearchWidget = value);
   }
 
@@ -82,7 +88,11 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
             padding: EdgeInsets.only(left: 4, bottom: 8),
             child: Text(
               'Preview',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey,
+              ),
             ),
           ),
           Container(
@@ -91,12 +101,10 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: PointerInterceptor(
-              child: SearchWidget(onRemove: () {}),
-            ),
+            child: PointerInterceptor(child: SearchWidget(onRemove: () {})),
           ),
           const SizedBox(height: 24),
-          
+
           SwitchListTile(
             title: const Text('Show Search Bar'),
             subtitle: const Text('Display search widget on home screen'),
@@ -104,7 +112,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
             onChanged: _toggleSearchWidget,
           ),
           const Divider(),
-          
+
           ListTile(
             title: const Text('Bar Style'),
             subtitle: Text(_searchBarStyle.toUpperCase()),
@@ -134,7 +142,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
             ],
           ),
           const Divider(),
-          
+
           ListTile(
             title: const Text('Default Browser'),
             subtitle: const Text('Choose app to open search results'),
@@ -142,7 +150,9 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
             onTap: () async {
               await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const BrowserSelectionScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const BrowserSelectionScreen(),
+                ),
               );
               _loadSettings();
             },
@@ -160,9 +170,6 @@ class PointerInterceptor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AbsorbPointer(
-      absorbing: true,
-      child: child,
-    );
+    return AbsorbPointer(absorbing: true, child: child);
   }
 }

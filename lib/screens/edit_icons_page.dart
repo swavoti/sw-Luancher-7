@@ -9,7 +9,11 @@ class EditIconsPage extends StatefulWidget {
   final String backgroundWallpaperPath;
   final Uint8List? homeScreenScreenshot;
 
-  const EditIconsPage({super.key, required this.backgroundWallpaperPath, this.homeScreenScreenshot});
+  const EditIconsPage({
+    super.key,
+    required this.backgroundWallpaperPath,
+    this.homeScreenScreenshot,
+  });
 
   @override
   State<EditIconsPage> createState() => _EditIconsPageState();
@@ -131,47 +135,53 @@ class _EditIconsPageState extends State<EditIconsPage> {
                 ),
                 const Spacer(),
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-                  child: _frostedGlassEnabled 
-                    ? SoftEdgeBlur(
-            edges: [
-              EdgeBlur(
-                type: EdgeType.topEdge,
-                size: 100,
-                sigma: 30,
-                controlPoints: [
-                  ControlPoint(
-                    position: 0.5,
-                    type: ControlPointType.visible,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(32),
                   ),
-                  ControlPoint(
-                    position: 1,
-                    type: ControlPointType.transparent,
-                  )
-                ],
-              )
-            ],
-                        child: Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.25),
-                            border: Border(
-                              top: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                width: 1,
+                  child: _frostedGlassEnabled
+                      ? SoftEdgeBlur(
+                          edges: [
+                            EdgeBlur(
+                              type: EdgeType.topEdge,
+                              size: 100,
+                              sigma: 30,
+                              controlPoints: [
+                                ControlPoint(
+                                  position: 0.5,
+                                  type: ControlPointType.visible,
+                                ),
+                                ControlPoint(
+                                  position: 1,
+                                  type: ControlPointType.transparent,
+                                ),
+                              ],
+                            ),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surface.withValues(alpha: 0.25),
+                              border: Border(
+                                top: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                  width: 1,
+                                ),
                               ),
                             ),
+                            child: _buildPanelContent(),
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.9),
                           ),
                           child: _buildPanelContent(),
                         ),
-                      )
-                    : Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-                        ),
-                        child: _buildPanelContent(),
-                      ),
                 ),
               ],
             ),
@@ -205,10 +215,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
           }).toList(),
         ),
         const SizedBox(height: 24),
-        Text(
-          'Icon Pack',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
+        Text('Icon Pack', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -219,7 +226,9 @@ class _EditIconsPageState extends State<EditIconsPage> {
             onChanged: (val) async {
               if (!_hasLawnicons) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Lawnicons not found on device.')),
+                  const SnackBar(
+                    content: Text('Lawnicons not found on device.'),
+                  ),
                 );
                 return;
               }

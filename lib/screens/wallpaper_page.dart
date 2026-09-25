@@ -280,7 +280,8 @@ class _WallpaperPageState extends State<WallpaperPage> {
                             MaterialPageRoute(
                               builder: (_) => EditIconsPage(
                                 backgroundWallpaperPath: _currentPreview,
-                                homeScreenScreenshot: widget.homeScreenScreenshot,
+                                homeScreenScreenshot:
+                                    widget.homeScreenScreenshot,
                               ),
                             ),
                           );
@@ -337,10 +338,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
             fit: StackFit.expand,
             children: [
               if (widget.homeScreenScreenshot != null)
-                Image.memory(
-                  widget.homeScreenScreenshot!,
-                  fit: BoxFit.cover,
-                ),
+                Image.memory(widget.homeScreenScreenshot!, fit: BoxFit.cover),
             ],
           ),
         ),
