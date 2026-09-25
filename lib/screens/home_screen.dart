@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
@@ -12,9 +15,6 @@ import 'package:swavoti/screens/discover_news.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
-import 'dart:async';
-import 'dart:ui' as ui;
-import 'package:flutter/rendering.dart';
 
 class LauncherItem {
   final String id;
@@ -106,7 +106,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   List<LauncherItem> _items = [];
   bool _showTimeWeather = true;
   bool _isDragging = false;
@@ -114,6 +114,13 @@ class HomeScreenState extends State<HomeScreen> {
   bool _isWorkspaceOverviewMode = false;
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
+
+  // Nova technique: custom fade-in animation triggered on onHomeResumed.
+  // This fires faster than the system's QuickStep fallback, masking the jank.
+  static const _homeEventChannel = EventChannel('co.za.launcher3.swavoti/home_events');
+  late final AnimationController _fadeController;
+  late final Animation<double> _fadeAnimation;
+  StreamSubscription<dynamic>? _homeEventSub;
 
   // Grid Configuration
   final int _columns = 4;
@@ -137,15 +144,55 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    LauncherService.preloadWidgets();
+
+    // Set up the Nova-style fade-in animation (200ms, fast enough to beat jank)
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+      value: 1.0, // Start fully visible on first build
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOut,
+    );
+
+    // Listen to native onResume / onNewIntent events from Kotlin.
+    // Two distinct events are sent:
+    //   'onHomeGesture' — swipe-home in progress: DO NOT animate, go static
+    //                     immediately. Any layout work here blocks the main
+    //                     thread and causes the system to abort and snap-back.
+    //   'onHomeResumed' — regular foreground resume: play subtle fade-in.
+    _homeEventSub = _homeEventChannel.receiveBroadcastStream().listen((event) {
+      if (!mounted) return;
+      if (event == 'onHomeGesture') {
+        // Snap to fully visible with zero animation — static layout is what
+        // the system needs to see to confirm our window is ready.
+        _fadeController.value = 1.0;
+      } else if (event == 'onHomeResumed') {
+        _fadeController.forward(from: 0.0);
+      }
+    });
+
+    // These are pure synchronous reads from SharedPreferences (already in
+    // memory) — zero I/O, safe to call in initState.
     _loadItemsSync();
     _loadSettingsSync();
     _workspaceController = PageController(initialPage: 0);
     _workspaceController.addListener(_onWorkspaceScroll);
+
+    // Defer any work that touches platform channels until after the first
+    // frame is fully painted. This keeps initState completely idle, which
+    // is critical for the gesture snap-back fix — the system must see a
+    // completely static layout the moment the window hand-off completes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      LauncherService.preloadWidgets();
+    });
   }
 
   @override
   void dispose() {
+    _homeEventSub?.cancel();
+    _fadeController.dispose();
     _workspaceController.removeListener(_onWorkspaceScroll);
     _workspaceController.dispose();
     super.dispose();
@@ -206,13 +253,22 @@ class HomeScreenState extends State<HomeScreen> {
 
   Future<void> _reloadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _showTimeWeather = prefs.getBool('show_time_weather') ?? true;
-        _iconShape = prefs.getString('icon_shape') ?? 'Circle';
-        _loadItemsFromPrefs(prefs);
-      });
+    if (!mounted) return;
+    // Pull out the default-wallpaper check BEFORE setState so we never
+    // call async methods inside a setState closure.
+    final needsDefaultLayout = (prefs.getStringList('launcher_items') ?? []).isEmpty ||
+        !(prefs.getStringList('launcher_items') ?? []).any(
+          (s) => s.contains('"page":-1'),
+        );
+    if (needsDefaultLayout) {
+      _applyDefaultWallpaper();
     }
+    if (!mounted) return;
+    setState(() {
+      _showTimeWeather = prefs.getBool('show_time_weather') ?? true;
+      _iconShape = prefs.getString('icon_shape') ?? 'Circle';
+      _loadItemsFromPrefs(prefs);
+    });
   }
 
   void _loadItemsFromPrefs(SharedPreferences prefs) {
@@ -222,7 +278,8 @@ class HomeScreenState extends State<HomeScreen> {
         .toList();
 
     if (!loadedItems.any((i) => i.page == -1)) {
-      _applyDefaultWallpaper();
+      // Note: _applyDefaultWallpaper is intentionally NOT called here.
+      // It must be called before setState to avoid async-inside-setState crash.
 
       // Dock
       final dock = [
@@ -275,38 +332,39 @@ class HomeScreenState extends State<HomeScreen> {
         ),
       );
 
-      // Page 1: 16 nicely ordered apps starting from the top
-      final page1Apps = [
-        'com.google.android.gm',
-        'com.google.android.apps.maps',
-        'com.google.android.apps.photos',
-        'com.google.android.music',
-        'com.spotify.music',
-        'com.whatsapp',
-        'com.facebook.katana',
-        'com.instagram.android',
-        'com.twitter.android',
-        'com.snapchat.android',
-        'com.netflix.mediaclient',
-        'com.google.android.keep',
-        'com.google.android.calendar',
-        'com.google.android.apps.docs',
-        'com.android.settings',
-        'com.android.vending',
-      ];
-      for (int i = 0; i < page1Apps.length; i++) {
+      // Page 1: 4 real user apps from the actual device, placed in a clean
+      // left-to-right row. Excludes dock apps and system-only packages.
+      final dockPackages = {
+        'com.google.android.dialer',
+        'com.google.android.apps.messaging',
+        'com.android.chrome',
+        'com.google.android.youtube',
+      };
+      final userApps = widget.appCache.values
+          .where((app) =>
+              !dockPackages.contains(app.packageName) &&
+              !app.packageName.startsWith('android') &&
+              app.packageName != 'co.za.launcher3.swavoti')
+          .toList();
+
+      // Pick up to 4, in alphabetical order for consistency
+      userApps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final page1Pick = userApps.take(4).toList();
+
+      for (int i = 0; i < page1Pick.length; i++) {
         loadedItems.add(
           LauncherItem(
             id: 'p1_app_$i',
             type: 'app',
-            packageName: page1Apps[i],
-            label: 'App',
-            x: i % 4,
-            y: i ~/ 4,
+            packageName: page1Pick[i].packageName,
+            label: page1Pick[i].name,
+            x: i, // clean left-to-right: 0, 1, 2, 3
+            y: 0,
             page: 1,
           ),
         );
       }
+
     }
     _items = loadedItems;
   }
@@ -503,7 +561,13 @@ class HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
-    return Stack(
+    // Wrap everything in our own FadeTransition.
+    // When onHomeResumed fires from Kotlin, _fadeController plays forward(from:0)
+    // producing a fast 200ms alpha fade-in that visually masks the system's
+    // janky QuickStep fallback animation — identical to Nova's technique.
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: Stack(
       children: [
         // The Workspace
         GestureDetector(
@@ -1182,9 +1246,13 @@ class HomeScreenState extends State<HomeScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const HomeSettings()),
-                      ).then((_) {
+                      ).then((_) async {
+                        // Reload settings FIRST before notifying parent.
+                        // Calling onSettingsChanged() first triggers a parent
+                        // rebuild while we are still in our own setState cycle,
+                        // which causes a crash on back-navigation.
+                        await _reloadSettings();
                         widget.onSettingsChanged();
-                        _reloadSettings();
                       });
                     },
                   ),
@@ -1194,7 +1262,8 @@ class HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
-    );
+    ), // end Stack
+    ); // end FadeTransition
   }
 
   Widget _buildItemContent(

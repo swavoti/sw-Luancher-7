@@ -219,26 +219,41 @@ class _EditIconsPageState extends State<EditIconsPage> {
         const SizedBox(height: 8),
         ListTile(
           contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.palette_outlined),
           title: const Text('Lawnicons'),
-          subtitle: const Text('Requires Lawnicons app'),
-          trailing: Switch(
-            value: _useLawnicons,
-            onChanged: (val) async {
-              if (!_hasLawnicons) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Lawnicons not found on device.'),
-                  ),
-                );
-                return;
-              }
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setBool('use_lawnicons', val);
-              setState(() {
-                _useLawnicons = val;
-              });
-            },
+          subtitle: Text(
+            _hasLawnicons
+                ? 'Lawnicons is installed — toggle to use it'
+                : 'Lawnicons app is not installed on this device',
+            style: TextStyle(
+              color: _hasLawnicons ? null : Theme.of(context).colorScheme.error,
+              fontSize: 12,
+            ),
           ),
+          trailing: _hasLawnicons
+              ? Switch(
+                  value: _useLawnicons,
+                  onChanged: (val) async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('use_lawnicons', val);
+                    setState(() => _useLawnicons = val);
+                  },
+                )
+              : TextButton(
+                  onPressed: () {
+                    // Open Play Store to Lawnicons listing
+                    InstalledApps.startApp('com.android.vending').then((_) {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Search "Lawnicons" on the Play Store to install it.',
+                        ),
+                        duration: Duration(seconds: 4),
+                      ),
+                    );
+                  },
+                  child: const Text('Install'),
+                ),
         ),
         const SizedBox(height: 24),
         ElevatedButton(

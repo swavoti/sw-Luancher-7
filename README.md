@@ -20,17 +20,25 @@ You can download the latest APK from the [Releases page on GitHub](https://githu
 - **Fast App Drawer:** Ultra-fast, lazy-loaded app drawer with rapid searching and instant access to all installed applications.
 - **Zero Bloatware:** Minimal RAM usage, extremely light on battery, and stripped down to only what a launcher actually needs.
 
-## Known Limitations
+## Known Limitations & Patches
 
-### Android 10+ Gesture Navigation Issues
-If you experience lag, flashing screens, or choppiness when swiping up to go home on Android 10+, **this is a known Android OS limitation, not a bug in SW Launcher 7.** 
+### Android 10+ Gesture Navigation
 
-Starting in Android 10, Google integrated the gesture and multitasking engine directly into the stock manufacturer launcher (QuickStep). Because Google has not released a public API for third-party launchers to use this engine, custom launchers cannot flawlessly handle the swipe-up home gesture.
+Starting in Android 10, Google baked the gesture navigation engine directly into the stock manufacturer launcher (QuickStep). Third-party launchers have no official API to integrate with this engine, which causes jank, flashing, and in some cases a full "snap-back" where the previous app rubber-bands back into view.
 
-**Solutions:**
-1. **Switch to 3-button navigation** in your Android settings (Recommended for maximum stability).
-2. **Root your device** and use third-party modules to force system gestures to route to the custom launcher (Not recommended for most users).
-3. **Accept the animation jank** when swiping home.
+SW Launcher 7 has implemented the following patches to minimize these issues as much as possible:
+
+**Snap-Back & Jank Patches (applied internally):**
+- **GestureNavContract strip** — Android sends a hidden `GESTURE_NAV_CONTRACT_CALLBACK` extra inside the swipe-home intent and waits for an AIDL response we cannot provide. We now strip this extra before the system ever processes it, stopping the timeout that causes the snap-back.
+- **GPU hardware layer caching** — The root view is pinned into GPU memory on every `onResume` and `onNewIntent`. The system sees a pre-rendered window immediately, passing the gesture hand-off check without requiring a layout pass.
+- **Gesture vs. resume signal split** — The launcher distinguishes between a swipe-home gesture and a regular foreground resume. On a gesture, all Dart-side entrance animations are bypassed completely (any animation during a gesture hand-off blocks the main thread and triggers snap-back). On a normal resume, a subtle 200ms fade-in plays.
+- **Pre-warmed Flutter engine** — The Dart VM is initialized at process start via `FlutterEngineCache`, not when the activity launches. This eliminates the engine cold-start latency that makes Flutter launchers harder to integrate with system gestures.
+- **Deferred post-frame work** — Any platform channel calls (widget preloading etc.) are deferred to `addPostFrameCallback` so `initState` is completely idle when the system inspects the window.
+
+**If you still experience issues:**
+1. Switch to 3-button navigation in your Android settings (most stable option).
+2. Root your device and use QuickSwitch modules (not recommended for most users).
+
 ## Tech Stack
 
 | Component | Technology |

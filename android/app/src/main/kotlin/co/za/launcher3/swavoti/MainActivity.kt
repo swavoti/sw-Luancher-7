@@ -30,6 +30,10 @@ class MainActivity : FlutterActivity() {
     private val WIDGET_CHANNEL = "co.za.launcher3.swavoti/widgets"
     private val SYSTEM_CHANNEL = "co.za.launcher3.swavoti/system"
     private val NOTIFICATION_CHANNEL = "co.za.launcher3.swavoti/notifications"
+    private val HOME_EVENT_CHANNEL = "co.za.launcher3.swavoti/home_events"
+
+    // Sink for firing events to Dart the instant we resume to foreground
+    private var homeEventSink: EventChannel.EventSink? = null
 
     private val appWidgetManager: AppWidgetManager
         get() = goApp.appWidgetManager
@@ -62,6 +66,42 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // ── Snap-Back Fix: Keep desktop cached in GPU memory ────────────────────
+    // The "app snap back" race condition happens because the system checks
+    // whether our window is rendered before it finishes its own animation.
+    // By switching to LAYER_TYPE_HARDWARE on every resume, our layout is kept
+    // alive in the GPU layer from the previous frame and the system sees us as
+    // instantly ready — no layout pass required.
+    override fun onResume() {
+        super.onResume()
+        // Cache the entire root view in GPU hardware layer so no layout pass
+        // is needed when the system checks if we are ready to receive the window.
+        window.decorView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        // Signal Dart: normal resume (play subtle fade-in)
+        homeEventSink?.success("onHomeResumed")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        // ── Strip GestureNavContract BEFORE super() sees it ──────────────────
+        // The system sends android.intent.extra.GESTURE_NAV_CONTRACT_CALLBACK
+        // inside this intent and waits for an AIDL Rect callback in return.
+        // Since we cannot implement that hidden API, we strip the extra now.
+        // Without this, the system times out waiting for our Rect response and
+        // snaps the app back open — this single line stops that entire loop.
+        intent.removeExtra("android.intent.extra.GESTURE_NAV_CONTRACT_CALLBACK")
+
+        super.onNewIntent(intent)
+
+        // Force GPU layer before the system animation completes its hand-off.
+        // This is the most critical call — onNewIntent fires when a HOME gesture
+        // is in progress, so we must be in GPU memory before the system checks.
+        window.decorView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
+        // Signal Dart: gesture transition — Dart must NOT run entrance animations
+        // that block the main thread, or the system will abort and snap-back.
+        homeEventSink?.success("onHomeGesture")
+    }
+
     override fun getCachedEngineId(): String = GoLauncherApplication.ENGINE_ID
 
     override fun shouldDestroyEngineWithHost(): Boolean = false
@@ -88,6 +128,18 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             // Already registered on the cached engine.
         }
+
+        // Home events channel — fires 'onHomeResumed' to Dart every time the
+        // OS routes a swipe-home gesture to this Activity.
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, HOME_EVENT_CHANNEL)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    homeEventSink = events
+                }
+                override fun onCancel(arguments: Any?) {
+                    homeEventSink = null
+                }
+            })
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {

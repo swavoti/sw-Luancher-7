@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:installed_apps/app_info.dart';
+import 'package:installed_apps/installed_apps.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
@@ -94,15 +95,21 @@ class _AppDrawerState extends State<AppDrawer> {
       return apps.where((a) => !hidden.contains(a.packageName)).toList();
     }
 
+    // Try fast DB path first
     final metaApps = filterApps(await AppDatabaseService.getAppMetadata());
-    if (metaApps.isNotEmpty && mounted) {
+    if (mounted) {
       setState(() {
-        _apps = metaApps;
-        _filteredApps = metaApps;
-        _isLoading = false;
+        if (metaApps.isNotEmpty) {
+          _apps = metaApps;
+          _filteredApps = metaApps;
+        }
+        // Always unblock the loading state — fresh sync below will populate
+        // if the DB happened to be empty (first install / post-wipe).
+        _isLoading = metaApps.isEmpty; // keep spinner only if truly empty
       });
     }
 
+    // Always run fresh sync from the OS
     AppDatabaseService.syncAppsBackground().then((freshApps) {
       if (!mounted) return;
       if (freshApps.isNotEmpty) {
@@ -113,11 +120,26 @@ class _AppDrawerState extends State<AppDrawer> {
           _isLoading = false;
         });
       } else {
-        setState(() {
-          _isLoading = false;
+        // syncAppsBackground returned empty — fall back to direct OS fetch
+        // as a last resort so the drawer is never permanently stuck.
+        InstalledApps.getInstalledApps(
+          excludeSystemApps: false,
+          excludeNonLaunchableApps: true,
+          withIcon: false,
+        ).then((osFresh) {
+          if (!mounted) return;
+          final apps = filterApps(osFresh);
+          setState(() {
+            _apps = apps;
+            _filteredApps = apps;
+            _isLoading = false;
+          });
+        }).catchError((_) {
+          if (mounted) setState(() => _isLoading = false);
         });
       }
     });
+
   }
 
   void _filterApps() {

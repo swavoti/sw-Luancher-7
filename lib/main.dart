@@ -18,7 +18,11 @@ void main() {
   );
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  runApp(const SwavotiApp());
+  // Warm up SharedPreferences before runApp so it's already in the instance
+  // cache when the widget tree first builds. This eliminates one async round-
+  // trip from the hot path and is safe because ensureInitialized() is called
+  // above.
+  SharedPreferences.getInstance().then((_) => runApp(const SwavotiApp()));
 }
 
 class SwavotiApp extends StatefulWidget {
@@ -38,25 +42,22 @@ class _SwavotiAppState extends State<SwavotiApp> {
     _hydrate();
   }
 
+  /// Paint a transparent frame FIRST (0ms), then load data in the background.
+  /// This is the Nova technique: never block the first frame for I/O.
   Future<void> _hydrate() async {
-    final results = await Future.wait([
-      SharedPreferences.getInstance(),
-      AppDatabaseService.getAppMetadata(),
-    ]);
+    // SharedPreferences is already warm from the pre-runApp call in main().
+    final prefs = await SharedPreferences.getInstance();
 
-    final prefs = results[0] as SharedPreferences;
-    final List<AppInfo> cachedApps = results[1] as List<AppInfo>;
-    final Map<String, AppInfo> appCache = {
-      for (final app in cachedApps) app.packageName: app,
-    };
+    // Show the UI immediately with whatever we have.
+    if (mounted) setState(() => _prefs = prefs);
 
-    if (!mounted) return;
-    setState(() {
-      _prefs = prefs;
-      _appCache = appCache;
-    });
+    // Load app metadata and fresh sync concurrently — both happen off-frame.
+    final cachedApps = await AppDatabaseService.getAppMetadata();
+    final appCache = {for (final app in cachedApps) app.packageName: app};
 
-    // Sync fresh apps in background (won't block startup)
+    if (mounted) setState(() => _appCache = appCache);
+
+    // Sync fresh data from OS in background (never blocks paint).
     AppDatabaseService.syncAppsBackground();
   }
 
