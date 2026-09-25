@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -220,8 +221,24 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: _frostedGlassEnabled
-        ? BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+        ? SoftEdgeBlur(
+            edges: [
+              EdgeBlur(
+                type: EdgeType.topEdge,
+                size: 100,
+                sigma: 30,
+                controlPoints: [
+                  ControlPoint(
+                    position: 0.5,
+                    type: ControlPointType.visible,
+                  ),
+                  ControlPoint(
+                    position: 1,
+                    type: ControlPointType.transparent,
+                  )
+                ],
+              )
+            ],
             child: Container(
               height: MediaQuery.of(context).size.height,
               decoration: BoxDecoration(

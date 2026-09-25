@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:installed_apps/installed_apps.dart';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 class EditIconsPage extends StatefulWidget {
   final String backgroundWallpaperPath;
@@ -132,8 +133,24 @@ class _EditIconsPageState extends State<EditIconsPage> {
                 ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
                   child: _frostedGlassEnabled 
-                    ? BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                    ? SoftEdgeBlur(
+            edges: [
+              EdgeBlur(
+                type: EdgeType.topEdge,
+                size: 100,
+                sigma: 30,
+                controlPoints: [
+                  ControlPoint(
+                    position: 0.5,
+                    type: ControlPointType.visible,
+                  ),
+                  ControlPoint(
+                    position: 1,
+                    type: ControlPointType.transparent,
+                  )
+                ],
+              )
+            ],
                         child: Container(
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(

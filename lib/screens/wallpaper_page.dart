@@ -257,10 +257,10 @@ class _WallpaperPageState extends State<WallpaperPage> {
                   padding: const EdgeInsets.all(32.0),
                   child: Column(
                     children: [
-                      ElevatedButton.icon(
+                      OutlinedButton.icon(
                         icon: const Icon(Icons.edit),
                         label: const Text('Edit App Icons'),
-                        style: ElevatedButton.styleFrom(
+                        style: OutlinedButton.styleFrom(
                           minimumSize: const Size(double.infinity, 56),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -279,10 +279,10 @@ class _WallpaperPageState extends State<WallpaperPage> {
                         },
                       ),
                       const SizedBox(height: 16),
-                      ElevatedButton.icon(
+                      OutlinedButton.icon(
                         icon: const Icon(Icons.photo_library),
                         label: const Text('Change Wallpaper'),
-                        style: ElevatedButton.styleFrom(
+                        style: OutlinedButton.styleFrom(
                           minimumSize: const Size(double.infinity, 56),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),

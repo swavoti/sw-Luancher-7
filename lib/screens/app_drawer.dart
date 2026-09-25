@@ -5,6 +5,8 @@ import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
+
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -178,8 +180,7 @@ class _AppDrawerState extends State<AppDrawer> {
                     filled: true,
                     fillColor: Theme.of(context)
                         .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.55),
+                        .surfaceContainerHighest,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -354,8 +355,24 @@ class _AppDrawerState extends State<AppDrawer> {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: _frostedGlassEnabled
-        ? BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+        ? SoftEdgeBlur(
+            edges: [
+              EdgeBlur(
+                type: EdgeType.topEdge,
+                size: 100,
+                sigma: 30,
+                controlPoints: [
+                  ControlPoint(
+                    position: 0.5,
+                    type: ControlPointType.visible,
+                  ),
+                  ControlPoint(
+                    position: 1,
+                    type: ControlPointType.transparent,
+                  )
+                ],
+              )
+            ],
             child: Container(
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.25),

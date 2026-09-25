@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:swavoti/services/launcher_service.dart';
@@ -472,8 +473,24 @@ class _DefaultLauncherBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+      child: SoftEdgeBlur(
+            edges: [
+              EdgeBlur(
+                type: EdgeType.topEdge,
+                size: 100,
+                sigma: 30,
+                controlPoints: [
+                  ControlPoint(
+                    position: 0.5,
+                    type: ControlPointType.visible,
+                  ),
+                  ControlPoint(
+                    position: 1,
+                    type: ControlPointType.transparent,
+                  )
+                ],
+              )
+            ],
         child: Container(
           decoration: BoxDecoration(
             color: Theme.of(context)

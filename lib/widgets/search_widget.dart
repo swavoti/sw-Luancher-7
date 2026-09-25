@@ -64,17 +64,18 @@ class _SearchWidgetState extends State<SearchWidget> {
       onTap: () {
         LauncherService.openUrlInBrowser('https://www.google.com', _browserPackage);
       },
-      child: Container(
-        height: widgetHeight,
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(borderRadius),
-          border: Border.all(
-            color: colorScheme.outlineVariant,
-            width: 1,
+      child: Center(
+        child: Container(
+          height: widgetHeight,
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: Border.all(
+              color: colorScheme.outlineVariant,
+              width: 1,
+            ),
           ),
-        ),
-        padding: EdgeInsets.symmetric(horizontal: isPill ? 16 : 14),
+          padding: EdgeInsets.symmetric(horizontal: isPill ? 16 : 14),
         child: Row(
           children: [
 
@@ -103,6 +104,7 @@ class _SearchWidgetState extends State<SearchWidget> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

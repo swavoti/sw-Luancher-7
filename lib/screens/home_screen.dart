@@ -260,7 +260,7 @@ class HomeScreenState extends State<HomeScreen> {
           packageName: '',
           label: 'Search',
           x: 0,
-          y: 1,
+          y: 4,
           spanX: 4,
           spanY: 1,
           page: 0,
