@@ -70,24 +70,29 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.value }}
           name: "Go Launcher 7 ${{ steps.tag.outputs.value }}"
-          prerelease: ${{ contains(steps.tag.outputs.value, 'alpha') || contains(steps.tag.outputs.value, 'beta') || contains(steps.tag.outputs.value, 'rc') || contains(github.ref, 'heads/main') || contains(github.ref, 'heads/master') }}
+          prerelease: false
+          make_latest: true
           body: |
-            ## 🚀 Go Launcher 7 ${{ steps.tag.outputs.value }}
+            ## Go Launcher 7 ${{ steps.tag.outputs.value }}
 
-            ### ✨ What's New & Fixed
-            - **Massive Performance Boost:** Fixed major memory leaks! App drawer icons and the Discover news page now use 90% less RAM on low-end devices.
-            - **Silky Smooth Scrolling:** Switched to native Android Clamping scroll physics across the board for zero stutter.
-            - **Wallpaper Blur:** The app drawer now beautifully blurs your actual saved wallpaper in real-time instead of using a fake frosted overlay.
-            - **New Folders:** Replaced the boring folder icon with a beautiful native Android 2x2 grid preview of apps inside the folder.
-            - **Workspace Overview Menu:** Long-pressing the home screen now opens a stunning paginated card overview of all your workspaces!
-            - **Discover Page:** The Discover news swipe is now a seamless same-page transition.
-            - **Rock Solid Cache:** Rewrote the internal SQLite database with WAL and integrity checks to guarantee your icons never corrupt or fail to load again!
-            - **First Launch Experience:** Fresh installs now automatically configure the first 3 workspaces with your default apps and a gorgeous default wallpaper.
+            ### What's New & Fixed
+            - Fixed a huge memory leak. App drawer icons and the Discover news page should now use significantly less RAM on low-end devices.
+            - Switched the scroll physics to native Android clamping so scrolling feels a lot smoother everywhere.
+            - The app drawer background now actually blurs your current wallpaper instead of just using a flat frosted overlay.
+            - Folder icons on the home screen now show a proper 2x2 grid preview of the apps inside them.
+            - Long-pressing the home screen now opens a new paginated card overview for all your workspaces.
+            - The Discover news page swipe transition feels like part of the same page now instead of sliding over the top.
+            - Rewrote the app caching database. It now uses WAL mode and integrity checks to stop the icons from corrupting or disappearing randomly.
+            - Fresh installs will now auto-populate the first 3 workspaces with default apps and a nice wallpaper out of the box.
 
-            ### ⬇️ Install
+            ### Known Issues
+            - We still haven't been able to properly diagnose why the widget bottom sheet feels sluggish. We're looking into it.
+
+            ### Install
             Download `swavoti-launcher-${{ steps.tag.outputs.value }}.apk` below and install on your Android device.
 
-            > **Note**: You may need to enable *Install from unknown sources* in your device settings.
+            > **Note**: You may need to enable *Install from unknown sources* in your device settings. 
+            > **Warning**: Google Play Protect occasionally flags unknown launchers. You may need to temporarily turn off Play Protect in the Play Store settings to successfully install the app.
           draft: false
           files: |
             build/app/outputs/flutter-apk/swavoti-launcher-${{ steps.tag.outputs.value }}.apk

@@ -264,7 +264,7 @@ class MainActivity : FlutterActivity() {
                             val roleManager = getSystemService(android.app.role.RoleManager::class.java)
                             if (roleManager != null && !roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
                                 val roleIntent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME)
-                                startActivity(roleIntent)
+                                startActivityForResult(roleIntent, 999)
                             }
                         } else {
                             val intent = Intent(Settings.ACTION_HOME_SETTINGS)

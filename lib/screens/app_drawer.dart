@@ -108,12 +108,18 @@ class _AppDrawerState extends State<AppDrawer> {
 
     AppDatabaseService.syncAppsBackground().then((freshApps) {
       if (!mounted) return;
-      final apps = filterApps(freshApps);
-      setState(() {
-        _apps = apps;
-        _filteredApps = apps;
-        _isLoading = false;
-      });
+      if (freshApps.isNotEmpty) {
+        final apps = filterApps(freshApps);
+        setState(() {
+          _apps = apps;
+          _filteredApps = apps;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     });
   }
 

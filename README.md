@@ -2,20 +2,35 @@
 
 A lightweight, bloat-free Android home screen launcher built with Flutter and Material 3. It natively extracts dynamic colors from your active wallpaper using the Monet color system to give your device a cohesive, clean look.
 
-![SW Launcher 7 Preview](https://raw.githubusercontent.com/swavoti/flutter-launcher-app/refs/heads/main/assets/Screenshot_20260823-160635.png)
+![SW Launcher 7 Preview](https://raw.githubusercontent.com/swavoti/sw-Luancher-7/refs/heads/main/Screenshot_20260925-135043%20(1).png)
 
 ## Download
 
-[📥 Download Latest APK](https://api.codemagic.io//artifacts/.eJwVwUmSgjAAAMC_eKcKIUg4eICAyoDKTvBCscgiDDGsmtdPTfeuVv9ptN2M3HN-mWqBbPFH3XSWrq9fYqJyQNlYDDrfqwqSiLT2gMffYTa5bHgQ1At9VahYxi8TvGJ8jtPrgtilmTuDZgFOJH8O9oM9c4cTb1pA8xlxv23BC7ogjZzs2FQeWqL8kFIR6349vJs40oJ8JaKZ87m7F_kEgpSWdpQ-Rur3yHCeTELOA3blggLI3ZqwNNzIKsYzuwmXRLbxOiQ6s3F8m59XbvOoQjCoTnCdi64cD-GEtrPbaWF1n6B1gpL-sRqyZE5EPLaF6ZtNLUwC5GtLTz_b8bj7A1ekYs8.fNGfWubnxUqoRNT7hVhUMJwL-XY)
+You can download the latest APK from the [Releases page on GitHub](https://github.com/swavoti/sw-Luancher-7/releases).
 
 ## Features
 
 - **Monet Dynamic Themes:** Automatically extracts key colors from your current wallpaper and applies a complete Material 3 palette across the entire launcher.
-- **Widget Support:** Add, resize, and manage essential system and third-party Android widgets.
-- **Pure Material 3 UI:** Built with Flutter's native Material 3 design system for fluid, modern UI components.
-- **Zero Bloatware:** Minimal RAM usage, light on battery, and stripped down to only what a launcher actually needs.
-- **Fast App Drawer:** Rapid searching and quick access to all installed applications.
+- **Native Widget Support:** Add, resize, and manage essential system and third-party Android widgets seamlessly via Platform Views.
+- **Workspace Management:** Interactive animated overview mode to easily manage, add, or remove multiple home screen pages.
+- **Icon Customization:** Built-in tools to seamlessly rename apps and swap out individual app icons directly from your home screen.
+- **Integrated Wallpaper Engine:** Browse, preview, and set curated, high-quality home and lock screen wallpapers without leaving the app.
+- **Discover News Feed:** Swipe right from your main home screen to access a beautifully integrated daily news feed.
+- **Live Weather Dashboard:** Built-in weather page to quickly check current conditions and local forecasts.
+- **Fast App Drawer:** Ultra-fast, lazy-loaded app drawer with rapid searching and instant access to all installed applications.
+- **Zero Bloatware:** Minimal RAM usage, extremely light on battery, and stripped down to only what a launcher actually needs.
 
+## Known Limitations
+
+### Android 10+ Gesture Navigation Issues
+If you experience lag, flashing screens, or choppiness when swiping up to go home on Android 10+, **this is a known Android OS limitation, not a bug in SW Launcher 7.** 
+
+Starting in Android 10, Google integrated the gesture and multitasking engine directly into the stock manufacturer launcher (QuickStep). Because Google has not released a public API for third-party launchers to use this engine, custom launchers cannot flawlessly handle the swipe-up home gesture.
+
+**Solutions:**
+1. **Switch to 3-button navigation** in your Android settings (Recommended for maximum stability).
+2. **Root your device** and use third-party modules to force system gestures to route to the custom launcher (Not recommended for most users).
+3. **Accept the animation jank** when swiping home.
 ## Tech Stack
 
 | Component | Technology |

@@ -112,7 +112,7 @@ class AppDatabaseService {
   }
 
   /// Loads the icon blob for [packageName], checking the in-memory cache
-  /// first, then falling back to SQLite.
+  /// Load an icon from memory cache, database, or lazily fetch from the OS.
   static Future<Uint8List?> loadIcon(String packageName) async {
     final cached = _iconCache[packageName];
     if (cached != null) return cached;
@@ -126,9 +126,29 @@ class AppDatabaseService {
         whereArgs: [packageName],
         limit: 1,
       );
-      if (rows.isEmpty) return null;
 
-      final blob = rows.first['icon'] as Uint8List?;
+      Uint8List? blob;
+      if (rows.isNotEmpty) {
+        blob = rows.first['icon'] as Uint8List?;
+      }
+
+      // Lazy fetch icon if not in database
+      if (blob == null || blob.isEmpty) {
+        try {
+          final appInfo = await InstalledApps.getAppInfo(packageName);
+          if (appInfo != null && appInfo.icon != null && appInfo.icon!.isNotEmpty) {
+            blob = appInfo.icon;
+            // Cache it in SQLite for next time
+            await db.update(
+              'apps',
+              {'icon': blob},
+              where: 'packageName = ?',
+              whereArgs: [packageName],
+            );
+          }
+        } catch (_) {}
+      }
+
       if (blob == null || blob.isEmpty) return null;
 
       if (_iconCache.length >= _iconCacheMax) {
@@ -143,33 +163,31 @@ class AppDatabaseService {
   }
 
   /// Scan system for installed apps in the background, update SQLite cache.
-  /// Returns the updated list.
+  /// Returns the updated list instantly without icons (icons are lazy-loaded).
   static Future<List<AppInfo>> syncAppsBackground() async {
     try {
+      // Fetch list without icons to prevent TransactionTooLargeException and keep it ultra-fast
       final apps = await InstalledApps.getInstalledApps(
         excludeSystemApps: false,
         excludeNonLaunchableApps: true,
-        withIcon: true,
+        withIcon: false,
       );
       apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
       final db = await database;
       final batch = db.batch();
 
-      // Clear and reinsert to handle uninstalled apps cleanly
       batch.delete('apps');
+
       for (final app in apps) {
-        final icon = app.icon;
         batch.insert('apps', {
           'packageName': app.packageName,
           'name': app.name,
-          // Only store non-empty, valid blobs
-          'icon': (icon != null && icon.isNotEmpty) ? icon : null,
+          'icon': null, // Icons will be populated lazily
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
-      await batch.commit(noResult: true);
 
-      // Icons may have changed; drop stale in-memory cache.
+      await batch.commit(noResult: true);
       _iconCache.clear();
 
       return apps;
