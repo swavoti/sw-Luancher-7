@@ -249,7 +249,7 @@ class _WorkspaceState extends State<Workspace>
                   child: Transform.scale(
                     scale: 1.0 - 0.05 * _drawerDrag,
                     child: Opacity(
-                      opacity: ((1.0 - _drawerDrag * 0.5) * (1.0 - discoverExtent * 0.7))
+                      opacity: ((1.0 - _drawerDrag * 3.0) * (1.0 - discoverExtent * 0.7))
                           .clamp(0.0, 1.0),
                       child: child,
                     ),
@@ -350,16 +350,8 @@ class _DragBubble extends StatelessWidget {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-        ],
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: Row(

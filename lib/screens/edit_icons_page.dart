@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -23,6 +24,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
   ];
   bool _hasLawnicons = false;
   bool _useLawnicons = false;
+  bool _frostedGlassEnabled = true;
 
   @override
   void initState() {
@@ -43,6 +45,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
       _selectedShape = prefs.getString('icon_shape') ?? 'Circle';
       _hasLawnicons = hasLawnicons;
       _useLawnicons = prefs.getBool('use_lawnicons') ?? false;
+      _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
     });
   }
 
@@ -126,81 +129,100 @@ class _EditIconsPageState extends State<EditIconsPage> {
                   ],
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surface.withOpacity(0.9),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(32),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Select Icon Shape',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: _shapes.map((shape) {
-                          final isSelected = _selectedShape == shape;
-                          return ChoiceChip(
-                            label: Text(shape),
-                            selected: isSelected,
-                            onSelected: (selected) {
-                              if (selected) _saveShape(shape);
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Icon Pack',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Lawnicons'),
-                        subtitle: const Text('Requires Lawnicons app'),
-                        trailing: Switch(
-                          value: _useLawnicons,
-                          onChanged: (val) async {
-                            if (!_hasLawnicons) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Lawnicons not found on device.')),
-                              );
-                              return;
-                            }
-                            final prefs = await SharedPreferences.getInstance();
-                            await prefs.setBool('use_lawnicons', val);
-                            setState(() {
-                              _useLawnicons = val;
-                            });
-                          },
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+                  child: _frostedGlassEnabled 
+                    ? BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 40, sigmaY: 40),
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.25),
+                            border: Border(
+                              top: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          child: _buildPanelContent(),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
+                      )
+                    : Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
                         ),
-                        child: const Text('Apply'),
+                        child: _buildPanelContent(),
                       ),
-                    ],
-                  ),
                 ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPanelContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Select Icon Shape',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: _shapes.map((shape) {
+            final isSelected = _selectedShape == shape;
+            return ChoiceChip(
+              label: Text(shape),
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) _saveShape(shape);
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Icon Pack',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 8),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Lawnicons'),
+          subtitle: const Text('Requires Lawnicons app'),
+          trailing: Switch(
+            value: _useLawnicons,
+            onChanged: (val) async {
+              if (!_hasLawnicons) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Lawnicons not found on device.')),
+                );
+                return;
+              }
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('use_lawnicons', val);
+              setState(() {
+                _useLawnicons = val;
+              });
+            },
+          ),
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+          ),
+          child: const Text('Apply'),
+        ),
+      ],
     );
   }
 }

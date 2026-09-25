@@ -36,7 +36,7 @@ class _SearchWidgetState extends State<SearchWidget> {
     final colorScheme = Theme.of(context).colorScheme;
     final isPill = _style == 'pill';
     final borderRadius = isPill ? 24.0 : 8.0;
-    final widgetHeight = isPill ? 30.0 : 36.0;
+    final widgetHeight = isPill ? 28.0 : 32.0;
 
     return GestureDetector(
       onLongPress: () {
@@ -81,15 +81,15 @@ class _SearchWidgetState extends State<SearchWidget> {
             Icon(
               Icons.search_rounded,
               color: colorScheme.onSurfaceVariant,
-              size: 20,
+              size: 16,
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Search',
                 style: TextStyle(
                   color: colorScheme.onSurfaceVariant,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
               ),
             ),
@@ -98,7 +98,7 @@ class _SearchWidgetState extends State<SearchWidget> {
               child: Icon(
                 Icons.mic_rounded,
                 color: colorScheme.onSurfaceVariant,
-                size: 20,
+                size: 16,
               ),
             ),
           ],

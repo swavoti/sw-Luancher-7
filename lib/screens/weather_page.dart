@@ -211,6 +211,16 @@ class _WeatherContent extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                IconButton(
+                  onPressed: () {
+                    // TODO: Implement city search
+                  },
+                  icon: const Icon(
+                    Icons.search_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
               ],
             ),
           ),

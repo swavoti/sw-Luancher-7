@@ -51,6 +51,7 @@ class _AppDrawerState extends State<AppDrawer> {
   final TextEditingController _searchController = TextEditingController();
   String _iconShape = 'Circle';
   bool _frostedGlassEnabled = true;
+  int _currentPage = 0;
 
   // Grid scroll key
   final GlobalKey _gridKey = GlobalKey();
@@ -257,29 +258,6 @@ class _AppDrawerState extends State<AppDrawer> {
                     ),
                   ),
                 ),
-              if (_searchController.text.isEmpty &&
-                  _filteredApps.length >= 4) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: _filteredApps.take(4).map((app) {
-                    final notificationCount =
-                        widget.notifications[app.packageName] ?? 0;
-                    return Expanded(
-                      child: _AppDrawerItem(
-                        app: app,
-                        notificationCount: notificationCount,
-                        onCloseDrawer: widget.onClose,
-                        iconShape: _iconShape,
-                        onDragStarted: widget.onDragStarted,
-                        onDragEnded: widget.onDragEnded,
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                const SizedBox(height: 8),
-              ],
             ],
           ),
         ),
@@ -297,45 +275,74 @@ class _AppDrawerState extends State<AppDrawer> {
                         final rows = (constraints.maxHeight / rowHeight).floor().clamp(1, 10);
                         final itemsPerPage = rows * 4;
                         
-                        final gridApps = (_searchController.text.isEmpty && _filteredApps.length >= 4)
-                            ? _filteredApps.skip(4).toList()
-                            : _filteredApps;
+                        final gridApps = _filteredApps;
                             
                         if (gridApps.isEmpty) return const SizedBox.shrink();
                         
                         final pages = (gridApps.length / itemsPerPage).ceil();
                         
-                        return PageView.builder(
-                          itemCount: pages,
-                          itemBuilder: (context, pageIndex) {
-                            final start = pageIndex * itemsPerPage;
-                            final end = (start + itemsPerPage).clamp(0, gridApps.length);
-                            final pageApps = gridApps.sublist(start, end);
-                            
-                            return GridView.builder(
-                              physics: const NeverScrollableScrollPhysics(),
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 4,
-                                mainAxisSpacing: 12,
-                                crossAxisSpacing: 8,
-                                childAspectRatio: 0.82,
+                        return Column(
+                          children: [
+                            Expanded(
+                              child: PageView.builder(
+                                itemCount: pages,
+                                onPageChanged: (page) {
+                                  setState(() {
+                                    _currentPage = page;
+                                  });
+                                },
+                                itemBuilder: (context, pageIndex) {
+                                  final start = pageIndex * itemsPerPage;
+                                  final end = (start + itemsPerPage).clamp(0, gridApps.length);
+                                  final pageApps = gridApps.sublist(start, end);
+                                  
+                                  return GridView.builder(
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 4,
+                                      mainAxisSpacing: 12,
+                                      crossAxisSpacing: 8,
+                                      childAspectRatio: 0.82,
+                                    ),
+                                    itemCount: pageApps.length,
+                                    itemBuilder: (context, index) {
+                                      final app = pageApps[index];
+                                      final notificationCount = widget.notifications[app.packageName] ?? 0;
+                                      return _AppDrawerItem(
+                                        app: app,
+                                        notificationCount: notificationCount,
+                                        onCloseDrawer: widget.onClose,
+                                        iconShape: _iconShape,
+                                        onDragStarted: widget.onDragStarted,
+                                        onDragEnded: widget.onDragEnded,
+                                      );
+                                    }
+                                  );
+                                }
                               ),
-                              itemCount: pageApps.length,
-                              itemBuilder: (context, index) {
-                                final app = pageApps[index];
-                                final notificationCount = widget.notifications[app.packageName] ?? 0;
-                                return _AppDrawerItem(
-                                  app: app,
-                                  notificationCount: notificationCount,
-                                  onCloseDrawer: widget.onClose,
-                                  iconShape: _iconShape,
-                                  onDragStarted: widget.onDragStarted,
-                                  onDragEnded: widget.onDragEnded,
-                                );
-                              }
-                            );
-                          }
+                            ),
+                            if (pages > 1)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(pages, (index) {
+                                    return Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _currentPage == index
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                                      ),
+                                    );
+                                  }),
+                                ),
+                              ),
+                          ],
                         );
                       },
                     ),

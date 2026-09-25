@@ -182,7 +182,7 @@ class HomeScreenState extends State<HomeScreen> {
                   child: child,
                 );
               },
-              transitionDuration: const Duration(milliseconds: 360),
+              transitionDuration: const Duration(milliseconds: 200),
             ),
           )
           .then((_) {
@@ -536,6 +536,7 @@ class HomeScreenState extends State<HomeScreen> {
                     final cellHeight = constraints.maxHeight / _rows;
 
                     return PageView.builder(
+                        physics: const BouncingScrollPhysics(),
                         controller: _workspaceController,
                         itemCount: _totalPages,
                         onPageChanged: (index) {
@@ -1059,23 +1060,6 @@ class HomeScreenState extends State<HomeScreen> {
     bool isFeedback = false,
   }) {
     if (item.type == 'widget' && item.appWidgetId != null) {
-      if (isFeedback) {
-        return Container(
-          margin: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primaryContainer,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Theme.of(context).colorScheme.primary, width: 2),
-          ),
-          child: Center(
-            child: Icon(
-              Icons.widgets,
-              size: 48,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-            ),
-          ),
-        );
-      }
       return Container(
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
@@ -1108,34 +1092,29 @@ class HomeScreenState extends State<HomeScreen> {
     } else if (item.type == 'folder') {
       return GestureDetector(
         onTap: () {
-          // Open folder bottom sheet
-          showModalBottomSheet(
+          showDialog(
             context: context,
-            backgroundColor: Colors.transparent,
             builder: (context) {
-              return Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      item.label,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 24),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: (item.folderApps ?? []).map((pkg) {
-                        return FutureBuilder<AppInfo?>(
-                          future: _getAppInfo(pkg),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData || snapshot.data == null) return const SizedBox.shrink();
-                            final app = snapshot.data!;
+              return Dialog(
+                backgroundColor: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        item.label,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 24),
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 16,
+                        alignment: WrapAlignment.center,
+                        children: (item.folderApps ?? []).map((pkg) {
+                          final cachedApp = widget.appCache[pkg];
+                          Widget buildApp(AppInfo app) {
                             return GestureDetector(
                               onTap: () {
                                 Navigator.pop(context);
@@ -1165,12 +1144,22 @@ class HomeScreenState extends State<HomeScreen> {
                                 ],
                               ),
                             );
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 32),
-                  ],
+                          }
+                          
+                          if (cachedApp != null) return buildApp(cachedApp);
+                          
+                          return FutureBuilder<AppInfo?>(
+                            future: _getAppInfo(pkg),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData || snapshot.data == null) return const SizedBox.shrink();
+                              return buildApp(snapshot.data!);
+                            },
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
                 ),
               );
             },
