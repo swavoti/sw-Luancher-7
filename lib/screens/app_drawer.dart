@@ -6,6 +6,7 @@ import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
+import 'dart:typed_data';
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -471,6 +472,37 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   bool get wantKeepAlive => true;
 
   bool _dragStarted = false;
+  Uint8List? _icon;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadIcon();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AppDrawerItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.app.packageName != widget.app.packageName) {
+      _loadIcon();
+    }
+  }
+
+  Future<void> _loadIcon() async {
+    // If the icon is already in the app object (e.g. from elsewhere), use it
+    if (widget.app.icon != null) {
+      setState(() => _icon = widget.app.icon);
+      return;
+    }
+    
+    // Otherwise lazy-load it from the database cache or OS
+    final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
+    if (mounted) {
+      setState(() {
+        _icon = icon;
+      });
+    }
+  }
 
   void _showContextMenu(BuildContext context) {
     final app = widget.app;
@@ -501,11 +533,11 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    if (app.icon != null)
+                    if (_icon != null)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Image.memory(
-                          app.icon!,
+                          _icon!,
                           width: 40,
                           height: 40,
                           fit: BoxFit.cover,
@@ -574,7 +606,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   Widget build(BuildContext context) {
     super.build(context);
     final app = widget.app;
-    final icon = app.icon;
+    final icon = _icon;
     final appItemData = _WorkspaceItemData(
       packageName: app.packageName,
       label: app.name,
