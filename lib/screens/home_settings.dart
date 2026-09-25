@@ -211,8 +211,8 @@ class _HomeSettingsState extends State<HomeSettings> {
                 ),
                 SwitchListTile(
                   secondary: const Icon(Icons.blur_on),
-                  title: const Text('Transparent Frosted Glass'),
-                  subtitle: const Text('Apply blur effect to drawer and sheets'),
+                  title: const Text('Blur Wallpaper Background'),
+                  subtitle: const Text('App drawer shows wallpaper with blur when on; solid colour when off'),
                   value: _frostedGlassEnabled,
                   onChanged: _toggleFrostedGlass,
                 ),

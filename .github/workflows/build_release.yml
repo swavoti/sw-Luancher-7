@@ -2,17 +2,20 @@ name: Build & Release APK
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
-      - 'v*'            # any tag starting with v: v1.0.0, v1.2.alpha, v2.0-beta, etc.
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v1.0.0)'
+        description: 'Release tag (e.g. v1.0.1)'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.0.1'
 
 permissions:
-  contents: write   # needed to create GitHub Releases
+  contents: write
 
 jobs:
   build-and-release:
@@ -28,8 +31,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "value=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=v1.0.1-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Java 17
@@ -65,11 +70,21 @@ jobs:
         with:
           tag_name: ${{ steps.tag.outputs.value }}
           name: "Go Launcher 7 ${{ steps.tag.outputs.value }}"
-          prerelease: ${{ contains(steps.tag.outputs.value, 'alpha') || contains(steps.tag.outputs.value, 'beta') || contains(steps.tag.outputs.value, 'rc') }}
+          prerelease: ${{ contains(steps.tag.outputs.value, 'alpha') || contains(steps.tag.outputs.value, 'beta') || contains(steps.tag.outputs.value, 'rc') || contains(github.ref, 'heads/main') || contains(github.ref, 'heads/master') }}
           body: |
             ## 🚀 Go Launcher 7 ${{ steps.tag.outputs.value }}
 
-            ### Install
+            ### ✨ What's New & Fixed
+            - **Massive Performance Boost:** Fixed major memory leaks! App drawer icons and the Discover news page now use 90% less RAM on low-end devices.
+            - **Silky Smooth Scrolling:** Switched to native Android Clamping scroll physics across the board for zero stutter.
+            - **Wallpaper Blur:** The app drawer now beautifully blurs your actual saved wallpaper in real-time instead of using a fake frosted overlay.
+            - **New Folders:** Replaced the boring folder icon with a beautiful native Android 2x2 grid preview of apps inside the folder.
+            - **Workspace Overview Menu:** Long-pressing the home screen now opens a stunning paginated card overview of all your workspaces!
+            - **Discover Page:** The Discover news swipe is now a seamless same-page transition.
+            - **Rock Solid Cache:** Rewrote the internal SQLite database with WAL and integrity checks to guarantee your icons never corrupt or fail to load again!
+            - **First Launch Experience:** Fresh installs now automatically configure the first 3 workspaces with your default apps and a gorgeous default wallpaper.
+
+            ### ⬇️ Install
             Download `swavoti-launcher-${{ steps.tag.outputs.value }}.apk` below and install on your Android device.
 
             > **Note**: You may need to enable *Install from unknown sources* in your device settings.

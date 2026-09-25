@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -12,10 +13,10 @@ class AppDatabaseService {
   static Database? _database;
 
   static final Map<String, Uint8List> _iconCache = {};
-  static const int _iconCacheMax = 64;
+  static const int _iconCacheMax = 128;
 
   static Future<Database> get database async {
-    if (_database != null) return _database!;
+    if (_database != null && _database!.isOpen) return _database!;
     _database = await initDb();
     return _database!;
   }
@@ -24,104 +25,125 @@ class AppDatabaseService {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'apps_cache.db');
 
-    return await openDatabase(
+    Future<Database> _open() => openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
-          CREATE TABLE apps(
+          CREATE TABLE IF NOT EXISTS apps(
             packageName TEXT PRIMARY KEY,
             name TEXT,
             icon BLOB
           )
         ''');
+        await db.execute('PRAGMA journal_mode=WAL');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        await db.execute('PRAGMA journal_mode=WAL');
+      },
+      onOpen: (db) async {
+        await db.execute('PRAGMA journal_mode=WAL');
+        // Integrity check — if corrupt, nuke and recreate table
+        try {
+          final result = await db.rawQuery('PRAGMA integrity_check');
+          final ok = result.isNotEmpty &&
+              result.first.values.first.toString() == 'ok';
+          if (!ok) {
+            debugPrint('AppDatabaseService: DB corrupt — dropping table');
+            await db.execute('DROP TABLE IF EXISTS apps');
+            await db.execute('''
+              CREATE TABLE apps(
+                packageName TEXT PRIMARY KEY,
+                name TEXT,
+                icon BLOB
+              )
+            ''');
+          }
+        } catch (e) {
+          debugPrint('AppDatabaseService: integrity check failed: $e');
+        }
       },
     );
+
+    try {
+      return await _open();
+    } catch (e) {
+      // If we can't open at all, delete and recreate
+      debugPrint('AppDatabaseService: Failed to open DB ($e) — deleting and recreating');
+      try { File(path).deleteSync(); } catch (_) {}
+      _iconCache.clear();
+      return await _open();
+    }
   }
 
   /// Fast cold-start path: loads only package names and display names.
-  ///
-  /// Icons are intentionally omitted (icon == null) so the UI can render
-  /// immediately without decoding every blob. Fetch icons lazily via
-  /// [loadIcon] / [getCachedIcon].
+  /// Icons are loaded lazily via [loadIcon].
   static Future<List<AppInfo>> getAppMetadata() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'apps',
-      columns: ['packageName', 'name'],
-    );
-
-    return List.generate(maps.length, (i) {
-      return AppInfo(
-        name: maps[i]['name'] as String,
-        icon: null,
-        packageName: maps[i]['packageName'] as String,
-        versionName: "",
-        versionCode: 0,
-        platformType: PlatformType.nativeOrOthers,
-        installedTimestamp: 0,
-        isSystemApp: false,
-        isLaunchableApp: true,
-        category: AppCategory.undefined,
+    try {
+      final db = await database;
+      final List<Map<String, dynamic>> maps = await db.query(
+        'apps',
+        columns: ['packageName', 'name'],
       );
-    });
+
+      return List.generate(maps.length, (i) {
+        return AppInfo(
+          name: maps[i]['name'] as String,
+          icon: null,
+          packageName: maps[i]['packageName'] as String,
+          versionName: "",
+          versionCode: 0,
+          platformType: PlatformType.nativeOrOthers,
+          installedTimestamp: 0,
+          isSystemApp: false,
+          isLaunchableApp: true,
+          category: AppCategory.undefined,
+        );
+      });
+    } catch (e) {
+      debugPrint('AppDatabaseService.getAppMetadata error: $e');
+      return [];
+    }
   }
 
-  /// Returns the cached icon blob for [packageName], or null if not cached.
+  /// Returns the in-memory cached icon for [packageName], or null.
   static Uint8List? getCachedIcon(String packageName) {
     return _iconCache[packageName];
   }
 
-  /// Loads the icon blob for [packageName], consulting a bounded in-memory
-  /// cache first and falling back to a single-row SQLite query.
+  /// Loads the icon blob for [packageName], checking the in-memory cache
+  /// first, then falling back to SQLite.
   static Future<Uint8List?> loadIcon(String packageName) async {
     final cached = _iconCache[packageName];
     if (cached != null) return cached;
 
-    final db = await database;
-    final rows = await db.query(
-      'apps',
-      columns: ['icon'],
-      where: 'packageName = ?',
-      whereArgs: [packageName],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-
-    final blob = rows.first['icon'] as Uint8List?;
-    if (blob == null) return null;
-
-    if (_iconCache.length >= _iconCacheMax) {
-      _iconCache.remove(_iconCache.keys.first);
-    }
-    _iconCache[packageName] = blob;
-    return blob;
-  }
-
-  /// Instantly get all apps from the local SQLite cache, including icons.
-  @Deprecated('Use getAppMetadata() for cold start and loadIcon() lazily.')
-  static Future<List<AppInfo>> getAllApps() async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('apps');
-
-    return List.generate(maps.length, (i) {
-      return AppInfo(
-        name: maps[i]['name'] as String,
-        icon: maps[i]['icon'],
-        packageName: maps[i]['packageName'] as String,
-        versionName: "",
-        versionCode: 0,
-        platformType: PlatformType.nativeOrOthers,
-        installedTimestamp: 0,
-        isSystemApp: false,
-        isLaunchableApp: true,
-        category: AppCategory.undefined,
+    try {
+      final db = await database;
+      final rows = await db.query(
+        'apps',
+        columns: ['icon'],
+        where: 'packageName = ?',
+        whereArgs: [packageName],
+        limit: 1,
       );
-    });
+      if (rows.isEmpty) return null;
+
+      final blob = rows.first['icon'] as Uint8List?;
+      if (blob == null || blob.isEmpty) return null;
+
+      if (_iconCache.length >= _iconCacheMax) {
+        _iconCache.remove(_iconCache.keys.first);
+      }
+      _iconCache[packageName] = blob;
+      return blob;
+    } catch (e) {
+      debugPrint('AppDatabaseService.loadIcon error for $packageName: $e');
+      return null;
+    }
   }
 
-  /// Scan system for apps in background and update the SQLite cache
-  /// Returns the updated list of apps
+  /// Scan system for installed apps in the background, update SQLite cache.
+  /// Returns the updated list.
   static Future<List<AppInfo>> syncAppsBackground() async {
     try {
       final apps = await InstalledApps.getInstalledApps(
@@ -134,24 +156,25 @@ class AppDatabaseService {
       final db = await database;
       final batch = db.batch();
 
-      // Clear the table and insert the new list
-      // We do this to handle uninstalled apps easily
+      // Clear and reinsert to handle uninstalled apps cleanly
       batch.delete('apps');
       for (final app in apps) {
+        final icon = app.icon;
         batch.insert('apps', {
           'packageName': app.packageName,
           'name': app.name,
-          'icon': app.icon,
+          // Only store non-empty, valid blobs
+          'icon': (icon != null && icon.isNotEmpty) ? icon : null,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
 
-      // Icons may have changed on disk; drop stale cached blobs.
+      // Icons may have changed; drop stale in-memory cache.
       _iconCache.clear();
 
       return apps;
     } catch (e) {
-      debugPrint('Error syncing apps: $e');
+      debugPrint('AppDatabaseService.syncAppsBackground error: $e');
       return [];
     }
   }

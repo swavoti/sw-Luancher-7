@@ -9,10 +9,6 @@ class DiscoverNewsPage extends StatefulWidget {
   State<DiscoverNewsPage> createState() => _DiscoverNewsPageState();
 }
 
-// Global cached webview controller to maintain state across page pushes
-WebViewController? _cachedWebViewController;
-String? _cachedUrl;
-
 class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
   late WebViewController _webViewController;
   bool _isLoading = true;
@@ -30,12 +26,6 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
     final url = provider == 'yahoo'
         ? 'https://www.yahoo.com'
         : 'https://www.msn.com';
-
-    if (_cachedWebViewController != null && _cachedUrl == url) {
-      _webViewController = _cachedWebViewController!;
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
 
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -65,9 +55,6 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         ),
       )
       ..loadRequest(Uri.parse(url));
-
-    _cachedWebViewController = _webViewController;
-    _cachedUrl = url;
 
     if (mounted) setState(() {});
   }

@@ -5,8 +5,6 @@ import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
-import 'package:soft_edge_blur/soft_edge_blur.dart';
-
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -76,12 +74,15 @@ class _AppDrawerState extends State<AppDrawer> {
     super.dispose();
   }
 
+  String? _savedWallpaperPath;
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
         _iconShape = prefs.getString('icon_shape') ?? 'Circle';
         _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
+        _savedWallpaperPath = prefs.getString('saved_wallpaper_path');
       });
     }
   }
@@ -136,69 +137,63 @@ class _AppDrawerState extends State<AppDrawer> {
           child: Column(
             children: [
               SizedBox(
-                height: 44,
-                child: TextField(
-                  controller: _searchController,
-                  textAlignVertical: TextAlignVertical.center,
-                  style: const TextStyle(fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'Search apps',
-                    hintStyle: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.65),
-                      fontSize: 14,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search_rounded,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant,
-                      size: 20,
-                    ),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                            ),
-                            onPressed: () =>
-                                _searchController.clear(),
-                          )
-                        : IconButton(
-                            icon: Icon(
-                              Icons.mic_rounded,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .primary,
-                              size: 20,
-                            ),
-                            onPressed:
-                                LauncherService.openGoogleVoiceSearch,
+                height: 48,
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => FocusScope.of(context).requestFocus(FocusNode()),
+                    borderRadius: BorderRadius.circular(28),
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 16),
+                          Icon(
+                            Icons.search_rounded,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            size: 20,
                           ),
-                    filled: true,
-                    fillColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 1.5,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              textAlignVertical: TextAlignVertical.center,
+                              style: TextStyle(
+                                fontSize: 15,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'Search apps',
+                                hintStyle: TextStyle(
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  fontSize: 15,
+                                ),
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ),
+                          _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                onPressed: () => _searchController.clear(),
+                                padding: EdgeInsets.zero,
+                              )
+                            : IconButton(
+                                icon: Icon(
+                                  Icons.mic_rounded,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  size: 20,
+                                ),
+                                onPressed: LauncherService.openGoogleVoiceSearch,
+                                padding: EdgeInsets.zero,
+                              ),
+                          const SizedBox(width: 8),
+                        ],
                       ),
                     ),
                   ),
@@ -354,37 +349,31 @@ class _AppDrawerState extends State<AppDrawer> {
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: _frostedGlassEnabled
-        ? BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-            child: SoftEdgeBlur(
-              edges: [
-                EdgeBlur(
-                  type: EdgeType.topEdge,
-                  size: 100,
-                  sigma: 30,
-                  controlPoints: [
-                    ControlPoint(
-                      position: 0.5,
-                      type: ControlPointType.visible,
-                    ),
-                    ControlPoint(
-                      position: 1,
-                      type: ControlPointType.transparent,
-                    ),
-                  ],
+      child: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            if (_frostedGlassEnabled && _savedWallpaperPath != null)
+              Positioned.fill(
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                  child: Image.asset(
+                    _savedWallpaperPath!,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                  ),
                 ),
-              ],
-              child: Container(
-                color: Colors.transparent,
-                child: childContent,
+              )
+            else
+              Positioned.fill(
+                child: Container(
+                  color: Theme.of(context).colorScheme.surface,
+                ),
               ),
-            ),
-          )
-        : Container(
-            color: Theme.of(context).colorScheme.surface,
-            child: childContent,
-          ),
+            childContent,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -453,7 +442,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                     if (app.icon != null)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(app.icon!, width: 40, height: 40, fit: BoxFit.cover),
+                        child: Image.memory(app.icon!, width: 40, height: 40, fit: BoxFit.cover, cacheWidth: 120),
                       )
                     else
                       Icon(Icons.android, size: 40, color: cs.primary),
@@ -544,7 +533,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 shape: widget.iconShape,
                 size: 56,
                 child: icon != null
-                    ? Image.memory(icon, width: 56, height: 56, fit: BoxFit.cover)
+                    ? Image.memory(icon, width: 56, height: 56, fit: BoxFit.cover, cacheWidth: 168)
                     : const Icon(Icons.android, size: 56),
               ),
               const SizedBox(height: 4),
@@ -566,7 +555,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
         child: Column(
           children: [
             icon != null
-                ? Image.memory(icon, width: 48, height: 48)
+                ? Image.memory(icon, width: 48, height: 48, cacheWidth: 144)
                 : const Icon(Icons.android, size: 48),
             const SizedBox(height: 4),
             Text(
@@ -594,7 +583,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                   shape: widget.iconShape,
                   size: 48,
                   child: icon != null
-                      ? Image.memory(icon, width: 48, height: 48, fit: BoxFit.cover)
+                      ? Image.memory(icon, width: 48, height: 48, fit: BoxFit.cover, cacheWidth: 144)
                       : const Icon(Icons.android, size: 48),
                 ),
                 if (widget.notificationCount > 0)

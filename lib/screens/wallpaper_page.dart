@@ -41,11 +41,14 @@ class _WallpaperPageState extends State<WallpaperPage> {
               .toList()
             ..sort(); // consistent order
 
+      final prefs = await SharedPreferences.getInstance();
+      final savedWallpaper = prefs.getString('saved_wallpaper_path');
+
       if (mounted) {
         setState(() {
           _wallpapers = imagePaths;
           if (_wallpapers.isNotEmpty) {
-            _currentPreview = _wallpapers.first;
+            _currentPreview = savedWallpaper ?? _wallpapers.first;
           }
           _isLoading = false;
         });
@@ -183,6 +186,11 @@ class _WallpaperPageState extends State<WallpaperPage> {
       final ByteData data = await rootBundle.load(assetPath);
       final Uint8List bytes = data.buffer.asUint8List();
       final success = await LauncherService.setWallpaper(bytes, type);
+
+      if (success) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('saved_wallpaper_path', assetPath);
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

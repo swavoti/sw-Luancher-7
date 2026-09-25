@@ -169,20 +169,18 @@ class HomeScreenState extends State<HomeScreen> {
       Navigator.of(context)
           .push(
             PageRouteBuilder(
-              opaque: false,
+              opaque: true,
               pageBuilder: (_, __, ___) => const DiscoverNewsPage(),
               transitionsBuilder: (_, animation, __, child) {
-                // Push: home screen slides right + fades out, discover slides in from left
-                final discoverSlide = Tween<Offset>(
-                  begin: const Offset(-1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutQuart));
+                final curve = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+                // Discover slides in from left, home slides out to right — feels like same continuous page
                 return SlideTransition(
-                  position: discoverSlide,
+                  position: Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero).animate(curve),
                   child: child,
                 );
               },
-              transitionDuration: const Duration(milliseconds: 200),
+              transitionDuration: const Duration(milliseconds: 320),
+              reverseTransitionDuration: const Duration(milliseconds: 280),
             ),
           )
           .then((_) {
@@ -215,59 +213,51 @@ class HomeScreenState extends State<HomeScreen> {
         .toList();
 
     if (!loadedItems.any((i) => i.page == -1)) {
-      final common = [
-        'com.google.android.dialer',
-        'com.google.android.apps.messaging',
-        'com.android.chrome',
-        'com.google.android.camera',
-      ];
+      _applyDefaultWallpaper();
+      
+      // Dock
+      final dock = ['com.google.android.dialer','com.google.android.apps.messaging','com.android.chrome','com.google.android.camera'];
       for (int i = 0; i < 4; i++) {
-        loadedItems.add(
-          LauncherItem(
-            id: 'dock_$i',
-            type: 'app',
-            packageName: common[i],
-            label: 'App',
-            x: i,
-            y: 0,
-            page: -1,
-          ),
-        );
+        loadedItems.add(LauncherItem(id: 'dock_$i', type: 'app', packageName: dock[i], label: 'App', x: i, y: 0, page: -1));
       }
-      
-      // Default time/weather widget
+
+      // Page 0: Time/Weather + Search + 8 apps
       if (prefs.getBool('show_time_weather') ?? true) {
-        loadedItems.add(
-          LauncherItem(
-            id: 'time_weather_default',
-            type: 'time_weather_widget',
-            packageName: '',
-            label: 'Time & Weather',
-            x: 0,
-            y: 0,
-            spanX: 4,
-            spanY: 1,
-            page: 0,
-          )
-        );
+        loadedItems.add(LauncherItem(id: 'time_weather_default', type: 'time_weather_widget', packageName: '', label: 'Time & Weather', x: 0, y: 0, spanX: 4, spanY: 1, page: 0));
       }
-      
-      // Default search widget on first launch
-      loadedItems.add(
-        LauncherItem(
-          id: 'search_default',
-          type: 'search_widget',
-          packageName: '',
-          label: 'Search',
-          x: 0,
-          y: 4,
-          spanX: 4,
-          spanY: 1,
-          page: 0,
-        )
-      );
+      loadedItems.add(LauncherItem(id: 'search_default', type: 'search_widget', packageName: '', label: 'Search', x: 0, y: 4, spanX: 4, spanY: 1, page: 0));
+      final page0Apps = ['com.google.android.gm','com.google.android.apps.maps','com.google.android.youtube','com.google.android.apps.photos','com.google.android.music','com.spotify.music','com.whatsapp','com.facebook.katana'];
+      for (int i = 0; i < page0Apps.length; i++) {
+        loadedItems.add(LauncherItem(id: 'p0_app_$i', type: 'app', packageName: page0Apps[i], label: 'App', x: i % 4, y: 1 + (i ~/ 4), page: 0));
+      }
+
+      // Page 1: 12 apps
+      final page1Apps = ['com.netflix.mediaclient','com.instagram.android','com.twitter.android','com.snapchat.android','com.linkedin.android','com.amazon.mShop.android.shopping','com.paypal.android.p2pmobile','com.ubercab','com.google.android.keep','com.google.android.calendar','com.google.android.apps.docs','com.google.android.apps.drive'];
+      for (int i = 0; i < page1Apps.length; i++) {
+        loadedItems.add(LauncherItem(id: 'p1_app_$i', type: 'app', packageName: page1Apps[i], label: 'App', x: i % 4, y: i ~/ 4, page: 1));
+      }
+
+      // Page 2: 12 apps
+      final page2Apps = ['com.google.android.apps.fitness','com.google.android.apps.walletnfcrel','com.android.settings','com.android.calculator2','com.android.vending','com.google.android.apps.translate','com.shazam.android','com.soundcloud.android','com.duolingo','com.google.android.apps.classroom','com.microsoft.teams','com.slack'];
+      for (int i = 0; i < page2Apps.length; i++) {
+        loadedItems.add(LauncherItem(id: 'p2_app_$i', type: 'app', packageName: page2Apps[i], label: 'App', x: i % 4, y: i ~/ 4, page: 2));
+      }
     }
     _items = loadedItems;
+  }
+
+  Future<void> _applyDefaultWallpaper() async {
+    try {
+      final assetPath = 'assets/wallpapers/default_wallpaper.jpg';
+      final ByteData data = await rootBundle.load(assetPath);
+      final Uint8List bytes = data.buffer.asUint8List();
+      final success = await LauncherService.setWallpaper(bytes, 1);
+      if (success) {
+        await widget.prefs.setString('saved_wallpaper_path', assetPath);
+      }
+    } catch (e) {
+      debugPrint('Failed to set default wallpaper: $e');
+    }
   }
 
   void _loadItemsSync() {
@@ -292,68 +282,133 @@ class HomeScreenState extends State<HomeScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          color: Colors.transparent,
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurfaceVariant.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final pageCtrl = PageController(
+          viewportFraction: 0.85,
+          initialPage: _currentWorkspacePage,
+        );
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              color: Colors.transparent,
+              padding: const EdgeInsets.only(top: 24, bottom: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildMenuButton(
-                    icon: Icons.wallpaper,
-                    label: 'Wallpaper',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const WallpaperPage(homeScreenScreenshot: null),
-                        ),
-                      );
-                    },
+                  // Handle
+                  Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: cs.onSurfaceVariant.withOpacity(0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                  _buildMenuButton(
-                    icon: Icons.widgets,
-                    label: 'Widgets',
-                    onTap: () {
-                      Navigator.pop(context);
-                      _openWidgetsSheet();
-                    },
+                  const SizedBox(height: 20),
+
+                  // Workspace overview cards
+                  SizedBox(
+                    height: 220,
+                    child: PageView.builder(
+                      controller: pageCtrl,
+                      itemCount: _totalPages,
+                      itemBuilder: (ctx2, pageIndex) {
+                        final pageItems = _items.where((i) => i.page == pageIndex).toList();
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            _workspaceController.jumpToPage(pageIndex);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: _currentWorkspacePage == pageIndex
+                                    ? cs.primary
+                                    : cs.outlineVariant,
+                                width: _currentWorkspacePage == pageIndex ? 2 : 1,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(19),
+                              child: Stack(
+                                children: [
+                                  // Grid dots representing app positions
+                                  for (final item in pageItems)
+                                    if (item.type == 'app' || item.type == 'folder')
+                                      Positioned(
+                                        left: (item.x / _columns) * double.infinity,
+                                        top: (item.y / _rows) * double.infinity,
+                                        child: FractionallySizedBox(
+                                          widthFactor: 1 / _columns,
+                                          heightFactor: 1 / _rows,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(6),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: cs.primary.withOpacity(0.3),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  // Page number label
+                                  Align(
+                                    alignment: Alignment.bottomRight,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: Text(
+                                        '${pageIndex + 1}',
+                                        style: TextStyle(
+                                          color: cs.onSurfaceVariant,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                  _buildMenuButton(
-                    icon: Icons.settings,
-                    label: 'Home Settings',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const HomeSettings(),
-                        ),
-                      ).then((_) {
-                        widget.onSettingsChanged();
-                        _reloadSettings();
-                      });
-                    },
+
+                  const SizedBox(height: 20),
+
+                  // Action buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildMenuButton(icon: Icons.wallpaper, label: 'Wallpaper', onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const WallpaperPage(homeScreenScreenshot: null)));
+                        }),
+                        _buildMenuButton(icon: Icons.widgets, label: 'Widgets', onTap: () {
+                          Navigator.pop(context);
+                          _openWidgetsSheet();
+                        }),
+                        _buildMenuButton(icon: Icons.settings, label: 'Settings', onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const HomeSettings()))
+                            .then((_) { widget.onSettingsChanged(); _reloadSettings(); });
+                        }),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -368,20 +423,13 @@ class HomeScreenState extends State<HomeScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        width: 100,
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        width: 88,
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Column(
           children: [
-            Icon(icon, size: 32, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            Icon(icon, size: 28, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 6),
+            Text(label, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface), textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -536,7 +584,7 @@ class HomeScreenState extends State<HomeScreen> {
                     final cellHeight = constraints.maxHeight / _rows;
 
                     return PageView.builder(
-                        physics: const BouncingScrollPhysics(),
+                        physics: const ClampingScrollPhysics(),
                         controller: _workspaceController,
                         itemCount: _totalPages,
                         onPageChanged: (index) {
@@ -842,25 +890,15 @@ class HomeScreenState extends State<HomeScreen> {
                       Navigator.of(context)
                           .push(
                             PageRouteBuilder(
-                              pageBuilder: (_, __, ___) =>
-                                  const DiscoverNewsPage(),
-                              transitionsBuilder: (_, animation, __, child) =>
-                                  SlideTransition(
-                                    position:
-                                        Tween<Offset>(
-                                          begin: const Offset(-1, 0),
-                                          end: Offset.zero,
-                                        ).animate(
-                                          CurvedAnimation(
-                                            parent: animation,
-                                            curve: Curves.easeOutCubic,
-                                          ),
-                                        ),
-                                    child: child,
-                                  ),
-                              transitionDuration: const Duration(
-                                milliseconds: 280,
+                              opaque: true,
+                              pageBuilder: (_, __, ___) => const DiscoverNewsPage(),
+                              transitionsBuilder: (_, animation, __, child) => SlideTransition(
+                                position: Tween<Offset>(begin: const Offset(-1, 0), end: Offset.zero)
+                                    .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+                                child: child,
                               ),
+                              transitionDuration: const Duration(milliseconds: 320),
+                              reverseTransitionDuration: const Duration(milliseconds: 280),
                             ),
                           )
                           .then((_) => _isNavigatingToDiscover = false);
@@ -1125,10 +1163,10 @@ class HomeScreenState extends State<HomeScreen> {
                                 children: [
                                   IconShapeClipper(
                                     shape: _iconShape,
-                                    size: 48,
+                                    size: 56,
                                     child: app.icon != null
-                                        ? Image.memory(app.icon!, width: 48, height: 48, fit: BoxFit.cover)
-                                        : const Icon(Icons.android, size: 48),
+                                        ? Image.memory(app.icon!, width: 56, height: 56, fit: BoxFit.cover, cacheWidth: 168)
+                                        : const Icon(Icons.android, size: 56),
                                   ),
                                   const SizedBox(height: 4),
                                   SizedBox(
@@ -1171,14 +1209,53 @@ class HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 56,
+                height: 56,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.8),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Center(
-                  child: Icon(Icons.folder, color: Theme.of(context).colorScheme.primary),
+                padding: const EdgeInsets.all(8),
+                child: Builder(
+                  builder: (context) {
+                    final apps = (item.folderApps ?? []).take(4).toList();
+                    if (apps.isEmpty) {
+                      return Icon(Icons.folder, color: Theme.of(context).colorScheme.primary);
+                    }
+                    return GridView.builder(
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 4,
+                        crossAxisSpacing: 4,
+                      ),
+                      itemCount: apps.length,
+                      itemBuilder: (context, index) {
+                        final pkg = apps[index];
+                        final cachedApp = widget.appCache[pkg];
+
+                        Widget buildIcon(AppInfo app) {
+                          return IconShapeClipper(
+                            shape: _iconShape,
+                            size: 18,
+                            child: app.icon != null
+                                ? Image.memory(app.icon!, width: 18, height: 18, fit: BoxFit.cover, cacheWidth: 54)
+                                : const Icon(Icons.android, size: 18),
+                          );
+                        }
+
+                        if (cachedApp != null) return buildIcon(cachedApp);
+                        
+                        return FutureBuilder<AppInfo?>(
+                          future: _getAppInfo(pkg),
+                          builder: (context, snapshot) {
+                            if (!snapshot.hasData || snapshot.data == null) return const SizedBox.shrink();
+                            return buildIcon(snapshot.data!);
+                          },
+                        );
+                      },
+                    );
+                  }
                 ),
               ),
               const SizedBox(height: 4),
@@ -1209,15 +1286,16 @@ class HomeScreenState extends State<HomeScreen> {
                 children: [
                   IconShapeClipper(
                     shape: _iconShape,
-                    size: 48,
+                    size: 56,
                     child: app.icon != null
                         ? Image.memory(
-                            app.icon!,
-                            width: 48,
-                            height: 48,
+                            app.icon!, 
+                            width: 56, 
+                            height: 56,
                             fit: BoxFit.cover,
+                            cacheWidth: 168,
                           )
-                        : const Icon(Icons.android, size: 48),
+                        : const Icon(Icons.android, size: 56),
                   ),
                   if (notificationCount > 0)
                     Positioned(

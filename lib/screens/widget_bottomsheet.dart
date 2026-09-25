@@ -1,6 +1,4 @@
 import 'dart:typed_data';
-import 'dart:ui';
-import 'package:soft_edge_blur/soft_edge_blur.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -220,44 +218,11 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: _frostedGlassEnabled
-        ? SoftEdgeBlur(
-            edges: [
-              EdgeBlur(
-                type: EdgeType.topEdge,
-                size: 100,
-                sigma: 30,
-                controlPoints: [
-                  ControlPoint(
-                    position: 0.5,
-                    type: ControlPointType.visible,
-                  ),
-                  ControlPoint(
-                    position: 1,
-                    type: ControlPointType.transparent,
-                  )
-                ],
-              )
-            ],
-            child: Container(
-              height: MediaQuery.of(context).size.height,
-              decoration: BoxDecoration(
-                color: cs.surface.withValues(alpha: 0.25),
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
-                ),
-              ),
-              child: childContent,
-            ),
-          )
-        : Container(
-            height: MediaQuery.of(context).size.height,
-            color: cs.surface,
-            child: childContent,
-          ),
+      child: Container(
+          height: MediaQuery.of(context).size.height,
+          color: cs.surfaceContainerLow,
+          child: childContent,
+        ),
     );
   }
 }
@@ -297,10 +262,11 @@ class _AppWidgetGroup extends StatelessWidget {
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.memory(
-                        snapshot.data!.icon!,
-                        width: 32,
+                        snapshot.data!.icon!, 
+                        width: 32, 
                         height: 32,
                         fit: BoxFit.cover,
+                        cacheWidth: 96,
                       ),
                     );
                   }

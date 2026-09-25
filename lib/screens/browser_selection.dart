@@ -77,7 +77,7 @@ class _BrowserSelectionScreenState extends State<BrowserSelectionScreen> {
 
                     return ListTile(
                       leading: iconBytes != null
-                          ? Image.memory(iconBytes, width: 40, height: 40)
+                          ? Image.memory(iconBytes, width: 40, height: 40, cacheWidth: 120)
                           : const Icon(Icons.android, size: 40),
                       title: Text(browser['label'] ?? 'Unknown Browser'),
                       trailing: isSelected ? const Icon(Icons.check) : null,
