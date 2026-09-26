@@ -108,6 +108,9 @@ class _AppDrawerState extends State<AppDrawer> {
         // if the DB happened to be empty (first install / post-wipe).
         _isLoading = metaApps.isEmpty; // keep spinner only if truly empty
       });
+      if (metaApps.isNotEmpty) {
+        AppDatabaseService.prefetchIcons(metaApps.map((a) => a.packageName));
+      }
     }
 
     // Always run fresh sync from the OS
@@ -120,6 +123,7 @@ class _AppDrawerState extends State<AppDrawer> {
           _filteredApps = apps;
           _isLoading = false;
         });
+        AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
       } else {
         // syncAppsBackground returned empty — fall back to direct OS fetch
         // as a last resort so the drawer is never permanently stuck.
@@ -135,6 +139,7 @@ class _AppDrawerState extends State<AppDrawer> {
             _filteredApps = apps;
             _isLoading = false;
           });
+          AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
         }).catchError((_) {
           if (mounted) setState(() => _isLoading = false);
         });
@@ -367,6 +372,7 @@ class _AppDrawerState extends State<AppDrawer> {
                                       widget.notifications[app.packageName] ??
                                       0;
                                   return _AppDrawerItem(
+                                    key: ValueKey(app.packageName),
                                     app: app,
                                     notificationCount: notificationCount,
                                     onCloseDrawer: widget.onClose,
@@ -453,6 +459,7 @@ class _AppDrawerItem extends StatefulWidget {
   final void Function(Map<String, dynamic>)? onAddToHomeScreen;
 
   const _AppDrawerItem({
+    super.key,
     required this.app,
     required this.notificationCount,
     required this.onCloseDrawer,
@@ -477,30 +484,36 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   @override
   void initState() {
     super.initState();
-    _loadIcon();
+    _icon =
+        widget.app.icon ??
+        AppDatabaseService.getCachedIcon(widget.app.packageName);
+    if (_icon == null) _loadIcon();
   }
 
   @override
   void didUpdateWidget(covariant _AppDrawerItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.app.packageName != widget.app.packageName) {
-      _loadIcon();
+      _icon =
+          widget.app.icon ??
+          AppDatabaseService.getCachedIcon(widget.app.packageName);
+      if (_icon == null) {
+        _loadIcon();
+      } else {
+        setState(() {});
+      }
     }
   }
 
   Future<void> _loadIcon() async {
-    // If the icon is already in the app object (e.g. from elsewhere), use it
     if (widget.app.icon != null) {
-      setState(() => _icon = widget.app.icon);
+      if (mounted) setState(() => _icon = widget.app.icon);
       return;
     }
-    
-    // Otherwise lazy-load it from the database cache or OS
+
     final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
     if (mounted) {
-      setState(() {
-        _icon = icon;
-      });
+      setState(() => _icon = icon);
     }
   }
 
@@ -639,13 +652,14 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 shape: widget.iconShape,
                 size: 56,
                 child: icon != null
-                    ? Image.memory(
-                        icon,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        cacheWidth: 168,
-                      )
+                      ? Image.memory(
+                          icon,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          cacheWidth: 168,
+                          gaplessPlayback: true,
+                        )
                     : const Icon(Icons.android, size: 56),
               ),
               const SizedBox(height: 4),
@@ -701,6 +715,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                           height: 48,
                           fit: BoxFit.cover,
                           cacheWidth: 144,
+                          gaplessPlayback: true,
                         )
                       : const Icon(Icons.android, size: 48),
                 ),

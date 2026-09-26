@@ -13,7 +13,7 @@ class AppDatabaseService {
   static Database? _database;
 
   static final Map<String, Uint8List> _iconCache = {};
-  static const int _iconCacheMax = 128;
+  static final Map<String, Future<Uint8List?>> _inflight = {};
 
   static Future<Database> get database async {
     if (_database != null && _database!.isOpen) return _database!;
@@ -25,7 +25,7 @@ class AppDatabaseService {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'apps_cache.db');
 
-    Future<Database> _open() => openDatabase(
+    Future<Database> open() => openDatabase(
       path,
       version: 2,
       onCreate: (db, version) async {
@@ -43,7 +43,6 @@ class AppDatabaseService {
       },
       onOpen: (db) async {
         await db.execute('PRAGMA journal_mode=WAL');
-        // Integrity check — if corrupt, nuke and recreate table
         try {
           final result = await db.rawQuery('PRAGMA integrity_check');
           final ok =
@@ -66,9 +65,8 @@ class AppDatabaseService {
     );
 
     try {
-      return await _open();
+      return await open();
     } catch (e) {
-      // If we can't open at all, delete and recreate
       debugPrint(
         'AppDatabaseService: Failed to open DB ($e) — deleting and recreating',
       );
@@ -76,12 +74,11 @@ class AppDatabaseService {
         File(path).deleteSync();
       } catch (_) {}
       _iconCache.clear();
-      return await _open();
+      return await open();
     }
   }
 
-  /// Fast cold-start path: loads only package names and display names.
-  /// Icons are loaded lazily via [loadIcon].
+  /// Fast cold-start path: names only. Icons stay in SQLite and memory.
   static Future<List<AppInfo>> getAppMetadata() async {
     try {
       final db = await database;
@@ -110,69 +107,102 @@ class AppDatabaseService {
     }
   }
 
-  /// Returns the in-memory cached icon for [packageName], or null.
   static Uint8List? getCachedIcon(String packageName) {
     return _iconCache[packageName];
   }
 
-  /// Loads the icon blob for [packageName], checking the in-memory cache
-  /// Load an icon from memory cache, database, or lazily fetch from the OS.
-  static Future<Uint8List?> loadIcon(String packageName) async {
+  static Future<Uint8List?> loadIcon(String packageName) {
     final cached = _iconCache[packageName];
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
 
-    try {
-      final db = await database;
-      final rows = await db.query(
+    return _inflight.putIfAbsent(packageName, () async {
+      try {
+        final db = await database;
+        final rows = await db.query(
+          'apps',
+          columns: ['icon'],
+          where: 'packageName = ?',
+          whereArgs: [packageName],
+          limit: 1,
+        );
+
+        Uint8List? blob;
+        if (rows.isNotEmpty) {
+          blob = rows.first['icon'] as Uint8List?;
+        }
+
+        if (blob == null || blob.isEmpty) {
+          try {
+            final appInfo = await InstalledApps.getAppInfo(packageName);
+            if (appInfo != null &&
+                appInfo.icon != null &&
+                appInfo.icon!.isNotEmpty) {
+              blob = appInfo.icon;
+              await _persistIcon(db, packageName, blob!);
+            }
+          } catch (_) {}
+        }
+
+        if (blob == null || blob.isEmpty) return null;
+
+        _iconCache[packageName] = blob;
+        return blob;
+      } catch (e) {
+        debugPrint('AppDatabaseService.loadIcon error for $packageName: $e');
+        return null;
+      } finally {
+        _inflight.remove(packageName);
+      }
+    });
+  }
+
+  static Future<void> _persistIcon(
+    Database db,
+    String packageName,
+    Uint8List blob,
+  ) async {
+    final updated = await db.update(
+      'apps',
+      {'icon': blob},
+      where: 'packageName = ?',
+      whereArgs: [packageName],
+    );
+    if (updated == 0) {
+      await db.insert('apps', {
+        'packageName': packageName,
+        'name': packageName,
+        'icon': blob,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.update(
         'apps',
-        columns: ['icon'],
+        {'icon': blob},
         where: 'packageName = ?',
         whereArgs: [packageName],
-        limit: 1,
       );
-
-      Uint8List? blob;
-      if (rows.isNotEmpty) {
-        blob = rows.first['icon'] as Uint8List?;
-      }
-
-      // Lazy fetch icon if not in database
-      if (blob == null || blob.isEmpty) {
-        try {
-          final appInfo = await InstalledApps.getAppInfo(packageName);
-          if (appInfo != null &&
-              appInfo.icon != null &&
-              appInfo.icon!.isNotEmpty) {
-            blob = appInfo.icon;
-            // Cache it in SQLite for next time
-            await db.update(
-              'apps',
-              {'icon': blob},
-              where: 'packageName = ?',
-              whereArgs: [packageName],
-            );
-          }
-        } catch (_) {}
-      }
-
-      if (blob == null || blob.isEmpty) return null;
-
-      if (_iconCache.length >= _iconCacheMax) {
-        _iconCache.remove(_iconCache.keys.first);
-      }
-      _iconCache[packageName] = blob;
-      return blob;
-    } catch (e) {
-      debugPrint('AppDatabaseService.loadIcon error for $packageName: $e');
-      return null;
     }
   }
 
-  /// Scan system for installed apps in the background, update SQLite cache.
-  /// Returns the updated list instantly without icons (icons are lazy-loaded).
+  /// Warm SQLite + memory for every listed package, a few at a time.
+  static Future<void> prefetchIcons(Iterable<String> packageNames) async {
+    final pending = packageNames
+        .where((p) => !_iconCache.containsKey(p) && !_inflight.containsKey(p))
+        .toList();
+    if (pending.isEmpty) return;
+
+    var cursor = 0;
+    Future<void> worker() async {
+      while (cursor < pending.length) {
+        final index = cursor++;
+        await loadIcon(pending[index]);
+      }
+    }
+
+    await Future.wait(List.generate(4, (_) => worker()));
+  }
+
+  /// Refresh the installed-app list. Existing icon blobs are kept.
   static Future<List<AppInfo>> syncAppsBackground() async {
     try {
-      // Fetch list without icons to prevent TransactionTooLargeException and keep it ultra-fast
       final apps = await InstalledApps.getInstalledApps(
         excludeSystemApps: false,
         excludeNonLaunchableApps: true,
@@ -181,21 +211,43 @@ class AppDatabaseService {
       apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
       final db = await database;
+      final existing = await db.query('apps', columns: ['packageName', 'icon']);
+      final existingIcons = <String, Uint8List?>{};
+      for (final row in existing) {
+        existingIcons[row['packageName'] as String] = row['icon'] as Uint8List?;
+      }
+
+      final fresh = apps.map((a) => a.packageName).toSet();
       final batch = db.batch();
 
-      batch.delete('apps');
+      for (final pkg in existingIcons.keys) {
+        if (!fresh.contains(pkg)) {
+          batch.delete('apps', where: 'packageName = ?', whereArgs: [pkg]);
+          _iconCache.remove(pkg);
+        }
+      }
 
       for (final app in apps) {
-        batch.insert('apps', {
-          'packageName': app.packageName,
-          'name': app.name,
-          'icon': null, // Icons will be populated lazily
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        final keptIcon = existingIcons[app.packageName];
+        if (existingIcons.containsKey(app.packageName)) {
+          batch.update(
+            'apps',
+            {'name': app.name},
+            where: 'packageName = ?',
+            whereArgs: [app.packageName],
+          );
+        } else {
+          batch.insert('apps', {
+            'packageName': app.packageName,
+            'name': app.name,
+            'icon': keptIcon,
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
       }
 
       await batch.commit(noResult: true);
-      _iconCache.clear();
 
+      prefetchIcons(apps.map((a) => a.packageName));
       return apps;
     } catch (e) {
       debugPrint('AppDatabaseService.syncAppsBackground error: $e');

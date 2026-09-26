@@ -21,9 +21,10 @@ import java.io.ByteArrayOutputStream
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Rect
+import android.graphics.RectF
+import android.os.Parcelable
 import android.view.View
-import android.view.WindowInsets
-import android.view.WindowInsetsController
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
 
@@ -47,6 +48,7 @@ class MainActivity : FlutterActivity() {
 
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
+    private val backgroundExecutor = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,40 +68,62 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // ── Snap-Back Fix: Keep desktop cached in GPU memory ────────────────────
-    // The "app snap back" race condition happens because the system checks
-    // whether our window is rendered before it finishes its own animation.
-    // By switching to LAYER_TYPE_HARDWARE on every resume, our layout is kept
-    // alive in the GPU layer from the previous frame and the system sees us as
-    // instantly ready — no layout pass required.
     override fun onResume() {
         super.onResume()
-        // Cache the entire root view in GPU hardware layer so no layout pass
-        // is needed when the system checks if we are ready to receive the window.
-        window.decorView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-        // Signal Dart: normal resume (play subtle fade-in)
+        // Do not wrap Flutter's SurfaceView in a hardware layer — that blanks
+        // the window for QuickStep and is a common Android 10 snap-back cause.
+        window.decorView.setLayerType(View.LAYER_TYPE_NONE, null)
+        reportFullyDrawn()
         homeEventSink?.success("onHomeResumed")
     }
 
     override fun onNewIntent(intent: Intent) {
-        // ── Strip GestureNavContract BEFORE super() sees it ──────────────────
-        // The system sends android.intent.extra.GESTURE_NAV_CONTRACT_CALLBACK
-        // inside this intent and waits for an AIDL Rect callback in return.
-        // Since we cannot implement that hidden API, we strip the extra now.
-        // Without this, the system times out waiting for our Rect response and
-        // snaps the app back open — this single line stops that entire loop.
-        intent.removeExtra("android.intent.extra.GESTURE_NAV_CONTRACT_CALLBACK")
-
+        // Reply to the home-gesture contract immediately so QuickStep can
+        // finish the recents animation instead of timing out and snapping back.
+        fulfillGestureNavContract(intent)
         super.onNewIntent(intent)
-
-        // Force GPU layer before the system animation completes its hand-off.
-        // This is the most critical call — onNewIntent fires when a HOME gesture
-        // is in progress, so we must be in GPU memory before the system checks.
-        window.decorView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-
-        // Signal Dart: gesture transition — Dart must NOT run entrance animations
-        // that block the main thread, or the system will abort and snap-back.
+        reportFullyDrawn()
         homeEventSink?.success("onHomeGesture")
+    }
+
+    /**
+     * Android 11+ (and some Android 10 OEM builds) attach a bundle extra
+     * `gesture_nav_contract_v1` with a RemoteCallback. If we never send the
+     * destination rect, the system aborts the swipe-home and the app window
+     * springs back open.
+     */
+    @Suppress("DEPRECATION")
+    private fun fulfillGestureNavContract(intent: Intent) {
+        try {
+            val extras = intent.getBundleExtra("gesture_nav_contract_v1")
+            if (extras != null) {
+                intent.removeExtra("gesture_nav_contract_v1")
+                val metrics = resources.displayMetrics
+                val end = RectF(0f, 0f, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+                val result = Bundle()
+                result.putParcelable("gesture_nav_contract_icon_position", end)
+
+                val callback = extras.getParcelable<Parcelable>("android.intent.extra.REMOTE_CALLBACK")
+                if (callback != null) {
+                    try {
+                        callback.javaClass.getMethod("sendResult", Bundle::class.java)
+                            .invoke(callback, result)
+                    } catch (_: Exception) {
+                        try {
+                            val messenger = extras.getParcelable<android.os.Messenger>(
+                                "android.intent.extra.REMOTE_CALLBACK"
+                            )
+                            if (messenger != null) {
+                                val msg = android.os.Message.obtain()
+                                msg.data = result
+                                messenger.send(msg)
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        intent.removeExtra("android.intent.extra.GESTURE_NAV_CONTRACT_CALLBACK")
     }
 
     override fun getCachedEngineId(): String = GoLauncherApplication.ENGINE_ID
@@ -144,35 +168,33 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getAllWidgets" -> {
-                    val widgetList = mutableListOf<Map<String, Any>>()
-                    try {
-                        val providers = appWidgetManager.installedProviders
-                        if (providers != null) {
-                            for (info in providers) {
-                                val map = mutableMapOf<String, Any>()
-                                map["providerPackage"] = info.provider.packageName
-                                map["providerClass"] = info.provider.className
-                                map["label"] = info.loadLabel(packageManager) ?: "Widget"
-                                
-                                val previewImage = try { info.loadPreviewImage(context, 0) } catch (e: Exception) { null }
-                                val iconImage = try { info.loadIcon(context, 0) } catch (e: Exception) { null }
-                                
-                                val drawableToConvert = previewImage ?: iconImage
-                                if (drawableToConvert != null) {
-                                    try {
-                                        val bytes = drawableToByteArray(drawableToConvert)
-                                        map["preview"] = bytes
-                                    } catch (e: Exception) {
-                                        // Ignore preview if drawable conversion fails
+                    backgroundExecutor.execute {
+                        val widgetList = mutableListOf<Map<String, Any>>()
+                        try {
+                            val providers = appWidgetManager.installedProviders
+                            if (providers != null) {
+                                for (info in providers) {
+                                    val map = mutableMapOf<String, Any>()
+                                    map["providerPackage"] = info.provider.packageName
+                                    map["providerClass"] = info.provider.className
+                                    map["label"] = info.loadLabel(packageManager) ?: "Widget"
+
+                                    val previewImage = try { info.loadPreviewImage(context, 0) } catch (_: Exception) { null }
+                                    val iconImage = try { info.loadIcon(context, 0) } catch (_: Exception) { null }
+
+                                    val drawableToConvert = previewImage ?: iconImage
+                                    if (drawableToConvert != null) {
+                                        try {
+                                            val bytes = drawableToByteArray(drawableToConvert)
+                                            map["preview"] = bytes
+                                        } catch (_: Exception) {}
                                     }
+                                    widgetList.add(map)
                                 }
-                                widgetList.add(map)
                             }
-                        }
-                    } catch (e: Exception) {
-                        // Return empty list if installedProviders query fails
+                        } catch (_: Exception) {}
+                        Handler(Looper.getMainLooper()).post { result.success(widgetList) }
                     }
-                    result.success(widgetList)
                 }
                 "allocateWidgetId" -> {
                     val id = appWidgetHost.allocateAppWidgetId()

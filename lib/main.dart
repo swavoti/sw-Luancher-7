@@ -9,6 +9,9 @@ import 'package:swavoti/services/app_database_service.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
+  PaintingBinding.instance.imageCache.maximumSize = 400;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 80 << 20;
+
   // Make status bar and navigation bar transparent for edge-to-edge
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -56,6 +59,8 @@ class _SwavotiAppState extends State<SwavotiApp> {
     final appCache = {for (final app in cachedApps) app.packageName: app};
 
     if (mounted) setState(() => _appCache = appCache);
+
+    AppDatabaseService.prefetchIcons(appCache.keys);
 
     // Sync fresh data from OS in background (never blocks paint).
     AppDatabaseService.syncAppsBackground();

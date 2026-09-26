@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -106,7 +105,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class HomeScreenState extends State<HomeScreen> {
   List<LauncherItem> _items = [];
   bool _showTimeWeather = true;
   bool _isDragging = false;
@@ -114,13 +113,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   bool _isWorkspaceOverviewMode = false;
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
-
-  // Nova technique: custom fade-in animation triggered on onHomeResumed.
-  // This fires faster than the system's QuickStep fallback, masking the jank.
-  static const _homeEventChannel = EventChannel('co.za.launcher3.swavoti/home_events');
-  late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnimation;
-  StreamSubscription<dynamic>? _homeEventSub;
 
   // Grid Configuration
   final int _columns = 4;
@@ -145,34 +137,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   void initState() {
     super.initState();
 
-    // Set up the Nova-style fade-in animation (200ms, fast enough to beat jank)
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-      value: 1.0, // Start fully visible on first build
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeOut,
-    );
-
-    // Listen to native onResume / onNewIntent events from Kotlin.
-    // Two distinct events are sent:
-    //   'onHomeGesture' — swipe-home in progress: DO NOT animate, go static
-    //                     immediately. Any layout work here blocks the main
-    //                     thread and causes the system to abort and snap-back.
-    //   'onHomeResumed' — regular foreground resume: play subtle fade-in.
-    _homeEventSub = _homeEventChannel.receiveBroadcastStream().listen((event) {
-      if (!mounted) return;
-      if (event == 'onHomeGesture') {
-        // Snap to fully visible with zero animation — static layout is what
-        // the system needs to see to confirm our window is ready.
-        _fadeController.value = 1.0;
-      } else if (event == 'onHomeResumed') {
-        _fadeController.forward(from: 0.0);
-      }
-    });
-
     // These are pure synchronous reads from SharedPreferences (already in
     // memory) — zero I/O, safe to call in initState.
     _loadItemsSync();
@@ -191,8 +155,6 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
 
   @override
   void dispose() {
-    _homeEventSub?.cancel();
-    _fadeController.dispose();
     _workspaceController.removeListener(_onWorkspaceScroll);
     _workspaceController.dispose();
     super.dispose();
@@ -561,13 +523,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
   Widget build(BuildContext context) {
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
-    // Wrap everything in our own FadeTransition.
-    // When onHomeResumed fires from Kotlin, _fadeController plays forward(from:0)
-    // producing a fast 200ms alpha fade-in that visually masks the system's
-    // janky QuickStep fallback animation — identical to Nova's technique.
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: Stack(
+    return Stack(
       children: [
         // The Workspace
         GestureDetector(
@@ -1262,8 +1218,7 @@ class HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMi
           ),
         ),
       ],
-    ), // end Stack
-    ); // end FadeTransition
+    );
   }
 
   Widget _buildItemContent(

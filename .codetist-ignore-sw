@@ -1,0 +1,9 @@
+# Codetist AI Ignore File
+# Add file paths here (one per line) that the AI MUST NOT read, index, or interact with.
+# You can also write plain text context about what this directory is for to guide the AI.
+
+node_modules
+.git
+build
+dist
+.DS_Store
