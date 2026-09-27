@@ -484,9 +484,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   @override
   void initState() {
     super.initState();
-    _icon =
-        widget.app.icon ??
-        AppDatabaseService.getCachedIcon(widget.app.packageName);
+    _icon = widget.app.icon;
     if (_icon == null) _loadIcon();
   }
 
@@ -494,9 +492,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   void didUpdateWidget(covariant _AppDrawerItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.app.packageName != widget.app.packageName) {
-      _icon =
-          widget.app.icon ??
-          AppDatabaseService.getCachedIcon(widget.app.packageName);
+      _icon = widget.app.icon;
       if (_icon == null) {
         _loadIcon();
       } else {
@@ -511,9 +507,9 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
       return;
     }
 
-    final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
+    final info = await InstalledApps.getAppInfo(widget.app.packageName);
     if (mounted) {
-      setState(() => _icon = icon);
+      setState(() => _icon = info?.icon);
     }
   }
 

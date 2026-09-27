@@ -26,10 +26,14 @@ class WidgetPlatformView(
     private var view: View? = null
 
     init {
-        val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
-        val appWidgetInfo = appWidgetManager.getAppWidgetInfo(appWidgetId)
-        if (appWidgetInfo != null) {
-            view = appWidgetHost.createView(context, appWidgetId, appWidgetInfo)
+        try {
+            val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+            val appWidgetInfo = appWidgetManager.getAppWidgetInfo(appWidgetId)
+            if (appWidgetInfo != null) {
+                view = appWidgetHost.createView(context, appWidgetId, appWidgetInfo)
+            }
+        } catch (t: Throwable) {
+            view = android.widget.FrameLayout(context)
         }
     }
 

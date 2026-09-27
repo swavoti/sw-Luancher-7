@@ -179,20 +179,20 @@ class MainActivity : FlutterActivity() {
                                     map["providerClass"] = info.provider.className
                                     map["label"] = info.loadLabel(packageManager) ?: "Widget"
 
-                                    val previewImage = try { info.loadPreviewImage(context, 0) } catch (_: Exception) { null }
-                                    val iconImage = try { info.loadIcon(context, 0) } catch (_: Exception) { null }
+                                    val previewImage = try { info.loadPreviewImage(context, 0) } catch (_: Throwable) { null }
+                                    val iconImage = try { info.loadIcon(context, 0) } catch (_: Throwable) { null }
 
                                     val drawableToConvert = previewImage ?: iconImage
                                     if (drawableToConvert != null) {
                                         try {
                                             val bytes = drawableToByteArray(drawableToConvert)
                                             map["preview"] = bytes
-                                        } catch (_: Exception) {}
+                                        } catch (_: Throwable) {}
                                     }
                                     widgetList.add(map)
                                 }
                             }
-                        } catch (_: Exception) {}
+                        } catch (_: Throwable) {}
                         Handler(Looper.getMainLooper()).post { result.success(widgetList) }
                     }
                 }
@@ -428,7 +428,7 @@ class MainActivity : FlutterActivity() {
                             if (browsers.none { it["packageName"] == info.activityInfo.packageName }) {
                                 browsers.add(map)
                             }
-                        } catch (e: Exception) { }
+                        } catch (e: Throwable) { }
                     }
                     result.success(browsers)
                 }
@@ -503,8 +503,8 @@ class MainActivity : FlutterActivity() {
         val maxSize = 150
         if (width > maxSize || height > maxSize) {
             val ratio = Math.min(maxSize.toFloat() / width, maxSize.toFloat() / height)
-            width = (width * ratio).toInt()
-            height = (height * ratio).toInt()
+            width = Math.max(1, (width * ratio).toInt())
+            height = Math.max(1, (height * ratio).toInt())
         }
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -514,6 +514,7 @@ class MainActivity : FlutterActivity() {
         
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.WEBP, 80, stream)
+        bitmap.recycle()
         return stream.toByteArray()
     }
 }
