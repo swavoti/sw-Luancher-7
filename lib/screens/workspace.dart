@@ -238,6 +238,7 @@ class _WorkspaceState extends State<Workspace>
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             // ── Home Screen ─────────────────────────────────────────

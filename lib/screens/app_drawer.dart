@@ -8,24 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:image/image.dart' as img;
-
-Uint8List? _compressIcon(Uint8List? iconData) {
-  if (iconData == null) return null;
-  try {
-    final image = img.decodeImage(iconData);
-    if (image == null) return iconData;
-    // Resize down to 96x96 to save memory, as it's only displayed at 48x48
-    if (image.width > 96 || image.height > 96) {
-      final resized = img.copyResize(image, width: 96, height: 96, interpolation: img.Interpolation.linear);
-      // Aggressive compression
-      return Uint8List.fromList(img.encodePng(resized, level: 6)); 
-    }
-    return iconData;
-  } catch (e) {
-    return iconData;
-  }
-}
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -131,7 +113,7 @@ class AppDrawerState extends State<AppDrawer> {
         _isLoading = metaApps.isEmpty; // keep spinner only if truly empty
       });
       if (metaApps.isNotEmpty) {
-        // AppDatabaseService.prefetchIcons(metaApps.map((a) => a.packageName));
+        AppDatabaseService.prefetchIcons(metaApps.map((a) => a.packageName));
       }
     }
 
@@ -145,7 +127,7 @@ class AppDrawerState extends State<AppDrawer> {
           _filteredApps = apps;
           _isLoading = false;
         });
-        // AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
+        AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
       } else {
         // syncAppsBackground returned empty — fall back to direct OS fetch
         // as a last resort so the drawer is never permanently stuck.
@@ -162,7 +144,7 @@ class AppDrawerState extends State<AppDrawer> {
                 _filteredApps = apps;
                 _isLoading = false;
               });
-              // AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
+              AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
             })
             .catchError((_) {
               if (mounted) setState(() => _isLoading = false);
@@ -501,15 +483,20 @@ class _AppDrawerItem extends StatefulWidget {
   State<_AppDrawerItem> createState() => _AppDrawerItemState();
 }
 
-class _AppDrawerItemState extends State<_AppDrawerItem> {
-  static final Map<String, Uint8List> _staticIconCache = {};
+class _AppDrawerItemState extends State<_AppDrawerItem>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   bool _dragStarted = false;
   Uint8List? _icon;
 
   @override
   void initState() {
     super.initState();
-    _icon = widget.app.icon;
+    _icon =
+        widget.app.icon ??
+        AppDatabaseService.getCachedIcon(widget.app.packageName);
     if (_icon == null) _loadIcon();
   }
 
@@ -517,7 +504,9 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
   void didUpdateWidget(covariant _AppDrawerItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.app.packageName != widget.app.packageName) {
-      _icon = widget.app.icon;
+      _icon =
+          widget.app.icon ??
+          AppDatabaseService.getCachedIcon(widget.app.packageName);
       if (_icon == null) {
         _loadIcon();
       } else {
@@ -532,24 +521,15 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
       return;
     }
 
-    if (_staticIconCache.containsKey(widget.app.packageName)) {
-      if (mounted) setState(() => _icon = _staticIconCache[widget.app.packageName]);
+    final cached = AppDatabaseService.getCachedIcon(widget.app.packageName);
+    if (cached != null) {
+      if (mounted) setState(() => _icon = cached);
       return;
     }
 
-    final info = await InstalledApps.getAppInfo(widget.app.packageName);
-    if (info?.icon != null) {
-      // Compress icon aggressively in a background isolate so it doesn't freeze the UI
-      final compressed = await compute(_compressIcon, info!.icon);
-      if (compressed != null) {
-        _staticIconCache[widget.app.packageName] = compressed;
-        if (mounted) setState(() => _icon = compressed);
-      } else {
-        _staticIconCache[widget.app.packageName] = info.icon!;
-        if (mounted) setState(() => _icon = info.icon);
-      }
-    } else {
-      if (mounted) setState(() => _icon = null);
+    final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
+    if (mounted) {
+      setState(() => _icon = icon);
     }
   }
 
@@ -653,6 +633,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final app = widget.app;
     final icon = _icon;
     final appItemData = _WorkspaceItemData(

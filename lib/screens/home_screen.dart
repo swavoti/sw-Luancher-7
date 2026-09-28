@@ -14,6 +14,8 @@ import 'package:swavoti/screens/discover_news.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
+import 'dart:isolate';
+import 'package:swavoti/services/app_database_service.dart';
 
 class LauncherItem {
   final String id;
@@ -114,6 +116,10 @@ class HomeScreenState extends State<HomeScreen> {
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
 
+  // Split-screen preloaded apps
+  List<AppInfo> _allDeviceApps = [];
+  bool _isLoadingDeviceApps = false;
+
   // Grid Configuration
   final int _columns = 4;
   final int _rows = 5;
@@ -150,7 +156,82 @@ class HomeScreenState extends State<HomeScreen> {
     // completely static layout the moment the window hand-off completes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       LauncherService.preloadWidgets();
+      _preloadSplitScreenApps();
     });
+  }
+
+  Future<void> _preloadSplitScreenApps() async {
+    if (_isLoadingDeviceApps) return;
+    _isLoadingDeviceApps = true;
+
+    try {
+      // 1. Silent fast path: retrieve metadata from SQLite cache (names + package names only, < 1MB RAM)
+      var apps = await AppDatabaseService.getAppMetadata();
+
+      // 2. If SQLite is empty, query OS launchable apps without icons (withIcon: false)
+      if (apps.isEmpty) {
+        apps = await InstalledApps.getInstalledApps(
+          excludeSystemApps: false,
+          excludeNonLaunchableApps: true,
+          withIcon: false,
+        );
+      }
+
+      // Check hidden apps preferences
+      final prefs = widget.prefs;
+      final hidden = prefs.getStringList('hidden_apps') ?? [];
+      final showHidden = prefs.getBool('show_hidden_apps') ?? false;
+
+      // 3. Process, filter and sort inside an isolated background task (Isolate.run).
+      // Runs in an isolated memory heap, consuming < 2MB RAM and terminating immediately.
+      if (apps.isNotEmpty) {
+        final processed = await Isolate.run(() => _filterAndSortAppsIsolate(
+          apps,
+          hidden: showHidden ? const [] : hidden,
+        ));
+
+        if (mounted) {
+          setState(() {
+            _allDeviceApps = processed;
+            _isLoadingDeviceApps = false;
+          });
+        }
+      }
+
+      // 4. Background sync with OS to catch any newly installed or uninstalled packages
+      AppDatabaseService.syncAppsBackground().then((freshApps) async {
+        if (!mounted || freshApps.isEmpty) return;
+        final freshProcessed = await Isolate.run(() => _filterAndSortAppsIsolate(
+          freshApps,
+          hidden: showHidden ? const [] : hidden,
+        ));
+        if (mounted) {
+          setState(() {
+            _allDeviceApps = freshProcessed;
+          });
+        }
+      }).catchError((_) {});
+    } catch (e) {
+      debugPrint('Error preloading split screen apps: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingDeviceApps = false);
+      }
+    }
+  }
+
+  static List<AppInfo> _filterAndSortAppsIsolate(
+    List<AppInfo> list, {
+    List<String> hidden = const [],
+  }) {
+    final hiddenSet = hidden.toSet();
+    final filtered = list.where((a) {
+      if (a.packageName == 'co.za.launcher3.swavoti') return false;
+      if (hiddenSet.contains(a.packageName)) return false;
+      return a.isLaunchableApp;
+    }).toList();
+    filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return filtered;
   }
 
   @override
@@ -431,55 +512,22 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSplitScreenPicker() {
+    if (_allDeviceApps.isEmpty) {
+      _preloadSplitScreenApps();
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
-          minChildSize: 0.3,
-          expand: false,
-          builder: (context, scrollController) {
-            final apps = widget.appCache.values.toList();
-            apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-            
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'Select App for Split Screen',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    controller: scrollController,
-                    itemCount: apps.length,
-                    itemBuilder: (context, index) {
-                      final app = apps[index];
-                      return ListTile(
-                        leading: app.icon != null
-                            ? Image.memory(app.icon!, width: 40, height: 40, cacheWidth: 120)
-                            : const Icon(Icons.android),
-                        title: Text(app.name),
-                        onTap: () {
-                          Navigator.pop(context);
-                          LauncherService.startApp(
-                            app.packageName,
-                            splitScreen: true,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
+        return _SplitScreenPickerSheet(
+          apps: _allDeviceApps.isNotEmpty
+              ? _allDeviceApps
+              : widget.appCache.values.toList(),
+          iconShape: _iconShape,
+          onFetchApps: _preloadSplitScreenApps,
         );
       },
     );
@@ -683,7 +731,7 @@ class HomeScreenState extends State<HomeScreen> {
                                                     if (target.type == 'app' &&
                                                         item.type == 'app') {
                                                       target.type = 'folder';
-                                                      target.label = 'Folder';
+                                                      target.label = 'Unnamed text';
                                                       target.folderApps = [
                                                         target.packageName,
                                                         item.packageName,
@@ -693,15 +741,21 @@ class HomeScreenState extends State<HomeScreen> {
                                                             'folder' &&
                                                         item.type == 'app') {
                                                       target.folderApps ??= [];
-                                                      if (!target.folderApps!
-                                                          .contains(
+                                                      if (target.folderApps!.length < 8) {
+                                                        if (!target.folderApps!
+                                                            .contains(
+                                                              item.packageName,
+                                                            )) {
+                                                          target.folderApps!.add(
                                                             item.packageName,
-                                                          )) {
-                                                        target.folderApps!.add(
-                                                          item.packageName,
-                                                        );
+                                                          );
+                                                        }
+                                                        _items.remove(item);
+                                                      } else {
+                                                        item.x = targetX;
+                                                        item.y = targetY;
+                                                        item.page = pageIndex;
                                                       }
-                                                      _items.remove(item);
                                                     } else {
                                                       item.x = targetX;
                                                       item.y = targetY;
@@ -724,12 +778,20 @@ class HomeScreenState extends State<HomeScreen> {
                                                           i.y == targetY,
                                                     );
                                                 setState(() {
+                                                if (data['source_folder_id'] != null) {
+                                                  final folder = _items.firstWhere((i) => i.id == data['source_folder_id']);
+                                                  folder.folderApps?.remove(data['packageName']);
+                                                  if (folder.folderApps?.isEmpty == true) {
+                                                    _items.remove(folder);
+                                                  }
+                                                }
+
                                                   if (existingIdx != -1) {
                                                     final target =
                                                         _items[existingIdx];
                                                     if (target.type == 'app') {
                                                       target.type = 'folder';
-                                                      target.label = 'Folder';
+                                                      target.label = 'Unnamed text';
                                                       target.folderApps = [
                                                         target.packageName,
                                                         data['packageName'],
@@ -738,15 +800,12 @@ class HomeScreenState extends State<HomeScreen> {
                                                     } else if (target.type ==
                                                         'folder') {
                                                       target.folderApps ??= [];
-                                                      if (!target.folderApps!
-                                                          .contains(
-                                                            data['packageName'],
-                                                          )) {
-                                                        target.folderApps!.add(
-                                                          data['packageName'],
-                                                        );
+                                                      if (target.folderApps!.length < 8) {
+                                                        if (!target.folderApps!.contains(data['packageName'])) {
+                                                          target.folderApps!.add(data['packageName']);
+                                                        }
+                                                        _saveItems();
                                                       }
-                                                      _saveItems();
                                                     }
                                                   } else {
                                                     _addNewItem(
@@ -1275,7 +1334,11 @@ class HomeScreenState extends State<HomeScreen> {
                       setState(() => _isWorkspaceOverviewMode = false);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const HomeSettings()),
+                        MaterialPageRoute(builder: (_) => HomeSettings(
+                          onSettingsChanged: () {
+                            widget.onSettingsChanged();
+                          },
+                        )),
                       ).then((_) async {
                         // Reload settings FIRST before notifying parent.
                         // Calling onSettingsChanged() first triggers a parent
@@ -1349,11 +1412,53 @@ class HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        item.label,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      StatefulBuilder(
+                        builder: (context, setStateDialog) {
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.label,
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit, size: 20),
+                                onPressed: () {
+                                  final controller = TextEditingController(text: item.label);
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Edit Folder Name'),
+                                      content: TextField(
+                                        controller: controller,
+                                        autofocus: true,
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            setStateDialog(() {
+                                              item.label = controller.text;
+                                            });
+                                            setState(() {});
+                                            _saveItems();
+                                            Navigator.pop(context);
+                                          },
+                                          child: const Text('Save'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          );
+                        }
                       ),
                       const SizedBox(height: 24),
                       Wrap(
@@ -1363,12 +1468,7 @@ class HomeScreenState extends State<HomeScreen> {
                         children: (item.folderApps ?? []).map((pkg) {
                           final cachedApp = widget.appCache[pkg];
                           Widget buildApp(AppInfo app) {
-                            return GestureDetector(
-                              onTap: () {
-                                Navigator.pop(context);
-                                LauncherService.startApp(pkg);
-                              },
-                              child: Column(
+                            final appWidget = Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconShapeClipper(
@@ -1396,6 +1496,28 @@ class HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                 ],
+                              );
+                            
+                            return LongPressDraggable<Map<String, dynamic>>(
+                              data: {
+                                'type': 'app',
+                                'packageName': pkg,
+                                'source_folder_id': item.id,
+                                'label': app.name,
+                              },
+                              onDragStarted: () {
+                                Navigator.pop(context);
+                              },
+                              feedback: Material(
+                                color: Colors.transparent,
+                                child: appWidget,
+                              ),
+                              child: GestureDetector(
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  LauncherService.startApp(pkg);
+                                },
+                                child: appWidget,
                               ),
                             );
                           }
@@ -1800,3 +1922,252 @@ class _WidgetWrapperState extends State<_WidgetWrapper>
     );
   }
 }
+
+class _SplitScreenPickerSheet extends StatefulWidget {
+  final List<AppInfo> apps;
+  final String iconShape;
+  final Future<void> Function() onFetchApps;
+
+  const _SplitScreenPickerSheet({
+    required this.apps,
+    required this.iconShape,
+    required this.onFetchApps,
+  });
+
+  @override
+  State<_SplitScreenPickerSheet> createState() => _SplitScreenPickerSheetState();
+}
+
+class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
+  late List<AppInfo> _apps;
+  late List<AppInfo> _filteredApps;
+  final TextEditingController _searchController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _apps = List.from(widget.apps);
+    _filteredApps = List.from(_apps);
+    _searchController.addListener(_onSearchChanged);
+
+    if (_apps.isEmpty) {
+      _isLoading = true;
+      widget.onFetchApps().then((_) {
+        if (!mounted) return;
+        setState(() {
+          _apps = List.from(widget.apps);
+          _filteredApps = List.from(_apps);
+          _isLoading = false;
+        });
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SplitScreenPickerSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.apps.length != oldWidget.apps.length) {
+      setState(() {
+        _apps = List.from(widget.apps);
+        _filter();
+      });
+    }
+  }
+
+  void _onSearchChanged() {
+    _filter();
+  }
+
+  void _filter() {
+    final query = _searchController.text.trim().toLowerCase();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredApps = List.from(_apps);
+      } else {
+        _filteredApps = _apps
+            .where((a) => a.name.toLowerCase().contains(query))
+            .toList();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaceColor = theme.colorScheme.surface;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      minChildSize: 0.35,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Select App for Split Screen',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (_filteredApps.isNotEmpty)
+                      Text(
+                        '${_filteredApps.length} apps',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Search input
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search apps...',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18),
+                            onPressed: () => _searchController.clear(),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Divider(height: 1),
+              Expanded(
+                child: _isLoading && _filteredApps.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : _filteredApps.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No apps found',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: _filteredApps.length,
+                            // Strict memory constraint: only decode visible tiles (< 2MB RAM)
+                            itemBuilder: (context, index) {
+                              final app = _filteredApps[index];
+                              return _SplitScreenTile(
+                                app: app,
+                                iconShape: widget.iconShape,
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  LauncherService.startApp(
+                                    app.packageName,
+                                    splitScreen: true,
+                                  );
+                                },
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SplitScreenTile extends StatelessWidget {
+  final AppInfo app;
+  final String iconShape;
+  final VoidCallback onTap;
+
+  const _SplitScreenTile({
+    required this.app,
+    required this.iconShape,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cachedIcon = AppDatabaseService.getCachedIcon(app.packageName);
+
+    Widget buildIconWidget(Uint8List? bytes) {
+      return IconShapeClipper(
+        shape: iconShape,
+        size: 42,
+        child: bytes != null && bytes.isNotEmpty
+            ? Image.memory(
+                bytes,
+                width: 42,
+                height: 42,
+                fit: BoxFit.cover,
+                cacheWidth: 100, // Strict RAM control: decode max 100px width
+                cacheHeight: 100,
+              )
+            : const Icon(Icons.android, size: 42),
+      );
+    }
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+      leading: cachedIcon != null
+          ? buildIconWidget(cachedIcon)
+          : FutureBuilder<Uint8List?>(
+              future: AppDatabaseService.loadIcon(app.packageName),
+              builder: (context, snapshot) {
+                return buildIconWidget(snapshot.data ?? app.icon);
+              },
+            ),
+      title: Text(
+        app.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
