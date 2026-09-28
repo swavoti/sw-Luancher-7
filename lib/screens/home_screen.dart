@@ -166,6 +166,14 @@ class HomeScreenState extends State<HomeScreen> {
   /// reliable than OverscrollNotification with BouncingScrollPhysics on Android.
   void _onWorkspaceScroll() {
     if (!_workspaceController.hasClients) return;
+    
+    // Calculate and apply parallax wallpaper offset without rebuilding widget tree
+    final page = _workspaceController.page ?? 0.0;
+    if (_totalPages > 1) {
+      final wallpaperOffset = page / (_totalPages - 1);
+      LauncherService.setWallpaperOffset(wallpaperOffset);
+    }
+
     if (_isNavigatingToDiscover) return;
     if (_currentWorkspacePage != 0) return;
     final offset = _workspaceController.offset;

@@ -67,8 +67,8 @@ jobs:
           if [ -z "$KEYSTORE_BASE64" ]; then
             echo "No keystore found in secrets. Generating a new one..."
             KEY_ALIAS="upload"
-            KEY_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
             STORE_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+            KEY_PASSWORD=$STORE_PASSWORD
             
             keytool -genkey -v -keystore android/app/release.keystore -alias $KEY_ALIAS -keypass $KEY_PASSWORD -storepass $STORE_PASSWORD -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Swavoti, OU=App, O=Swavoti, L=Unknown, ST=Unknown, C=ZA"
             
@@ -94,12 +94,10 @@ jobs:
           fi
           
           echo "Writing key.properties..."
-          cat <<EOF > android/key.properties
-          storePassword=$STORE_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
-          storeFile=release.keystore
-          EOF
+          echo "storePassword=$STORE_PASSWORD" > android/key.properties
+          echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+          echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+          echo "storeFile=release.keystore" >> android/key.properties
 
       - name: Build release APK
         run: flutter build apk --release

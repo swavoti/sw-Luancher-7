@@ -99,6 +99,16 @@ class LauncherService {
     }
   }
 
+  static void setWallpaperOffset(double offset) {
+    try {
+      _systemChannel.invokeMethod('setWallpaperOffset', {
+        'offset': offset,
+      });
+    } catch (e) {
+      print('Error setting wallpaper offset: $e');
+    }
+  }
+
   static Future<void> openGoogleDiscover() async {
     try {
       await _systemChannel.invokeMethod('openGoogleDiscover');

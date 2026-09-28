@@ -302,6 +302,16 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "setWallpaperOffset" -> {
+                    val offset = call.argument<Double>("offset")?.toFloat() ?: 0f
+                    try {
+                        val windowToken = window.decorView.windowToken
+                        if (windowToken != null) {
+                            android.app.WallpaperManager.getInstance(context).setWallpaperOffsets(windowToken, offset, 0f)
+                        }
+                    } catch (e: Exception) {}
+                    result.success(null)
+                }
                 "openGoogleDiscover" -> {
                     try {
                         val intent = Intent(Intent.ACTION_MAIN)
