@@ -56,6 +56,51 @@ jobs:
         run: flutter analyze --no-fatal-infos
         continue-on-error: true
 
+      - name: Setup App Signing (Generate & Store automatically)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No keystore found in secrets. Generating a new one..."
+            KEY_ALIAS="upload"
+            KEY_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+            STORE_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+            
+            keytool -genkey -v -keystore android/app/release.keystore -alias $KEY_ALIAS -keypass $KEY_PASSWORD -storepass $STORE_PASSWORD -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Swavoti, OU=App, O=Swavoti, L=Unknown, ST=Unknown, C=ZA"
+            
+            KEYSTORE_BASE64=$(base64 -w 0 android/app/release.keystore)
+            
+            if [ -n "$PERSONAL_ACCESS_TOKEN" ]; then
+              echo "Saving new keys to GitHub repository secrets..."
+              echo "$PERSONAL_ACCESS_TOKEN" | gh auth login --with-token
+              gh secret set KEYSTORE_BASE64 -b "$KEYSTORE_BASE64" --repo ${{ github.repository }}
+              gh secret set KEY_ALIAS -b "$KEY_ALIAS" --repo ${{ github.repository }}
+              gh secret set KEY_PASSWORD -b "$KEY_PASSWORD" --repo ${{ github.repository }}
+              gh secret set STORE_PASSWORD -b "$STORE_PASSWORD" --repo ${{ github.repository }}
+              echo "Successfully saved signing configuration to repository secrets!"
+            else
+              echo "WARNING: PERSONAL_ACCESS_TOKEN secret is missing."
+              echo "The CI generated a keystore, but cannot save it to secrets without a PAT."
+              echo "App updates won't work on user devices unless this key is preserved."
+              echo "Create a fine-grained PAT with 'secrets' read/write on this repo and add it as PERSONAL_ACCESS_TOKEN."
+            fi
+          else
+            echo "Keystore found in secrets. Decoding..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          fi
+          
+          echo "Writing key.properties..."
+          cat <<EOF > android/key.properties
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=app/release.keystore
+          EOF
+
       - name: Build release APK
         run: flutter build apk --release
 

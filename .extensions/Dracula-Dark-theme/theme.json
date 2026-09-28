@@ -1,0 +1,16 @@
+{
+  "name": "Dracula",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#282A36",
+    "editor.foreground": "#F8F8F2",
+    "sideBar.background": "#21222C",
+    "activityBar.background": "#191A21",
+    "tab.activeBackground": "#282A36"
+  },
+  "tokenColors": [
+    { "name": "Keyword", "scope": ["keyword", "storage"], "settings": { "foreground": "#BD93F9" } },
+    { "name": "String", "scope": ["string"], "settings": { "foreground": "#F1FA8C" } },
+    { "name": "Function", "scope": ["entity.name.function"], "settings": { "foreground": "#50FA7B" } }
+  ]
+}

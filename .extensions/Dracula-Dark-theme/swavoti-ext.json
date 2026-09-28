@@ -1,0 +1,9 @@
+{
+  "name": "swavoti-dracula",
+  "displayName": "Dracula",
+  "version": "1.0.0",
+  "type": "theme",
+  "contributes": {
+    "themes": [{ "id": "dracula", "label": "Dracula", "path": "./theme.json" }]
+  }
+}

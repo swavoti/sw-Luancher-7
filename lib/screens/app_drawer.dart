@@ -27,7 +27,7 @@ class AppDrawer extends StatefulWidget {
   });
 
   @override
-  State<AppDrawer> createState() => _AppDrawerState();
+  State<AppDrawer> createState() => AppDrawerState();
 }
 
 class _WorkspaceItemData {
@@ -43,13 +43,15 @@ class _WorkspaceItemData {
   };
 }
 
-class _AppDrawerState extends State<AppDrawer> {
+class AppDrawerState extends State<AppDrawer> {
   List<AppInfo> _apps = [];
   List<AppInfo> _filteredApps = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   String _iconShape = 'Circle';
   bool _frostedGlassEnabled = true;
+  final ValueNotifier<int> _pageNotifier = ValueNotifier<int>(0);
+  final Map<String, Uint8List> _iconCache = {};
   int _currentPage = 0;
 
   // Grid scroll key
@@ -63,19 +65,20 @@ class _AppDrawerState extends State<AppDrawer> {
   void initState() {
     super.initState();
     _loadApps();
-    _loadSettings();
+    loadSettings();
     _searchController.addListener(_filterApps);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _pageNotifier.dispose();
     super.dispose();
   }
 
   String? _savedWallpaperPath;
 
-  Future<void> _loadSettings() async {
+  Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
@@ -128,24 +131,25 @@ class _AppDrawerState extends State<AppDrawer> {
         // syncAppsBackground returned empty — fall back to direct OS fetch
         // as a last resort so the drawer is never permanently stuck.
         InstalledApps.getInstalledApps(
-          excludeSystemApps: false,
-          excludeNonLaunchableApps: true,
-          withIcon: false,
-        ).then((osFresh) {
-          if (!mounted) return;
-          final apps = filterApps(osFresh);
-          setState(() {
-            _apps = apps;
-            _filteredApps = apps;
-            _isLoading = false;
-          });
-          AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
-        }).catchError((_) {
-          if (mounted) setState(() => _isLoading = false);
-        });
+              excludeSystemApps: false,
+              excludeNonLaunchableApps: true,
+              withIcon: false,
+            )
+            .then((osFresh) {
+              if (!mounted) return;
+              final apps = filterApps(osFresh);
+              setState(() {
+                _apps = apps;
+                _filteredApps = apps;
+                _isLoading = false;
+              });
+              AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
+            })
+            .catchError((_) {
+              if (mounted) setState(() => _isLoading = false);
+            });
       }
     });
-
   }
 
   void _filterApps() {
@@ -613,7 +617,6 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final app = widget.app;
     final icon = _icon;
     final appItemData = _WorkspaceItemData(
@@ -648,14 +651,14 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 shape: widget.iconShape,
                 size: 56,
                 child: icon != null
-                      ? Image.memory(
-                          icon,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          cacheWidth: 168,
-                          gaplessPlayback: true,
-                        )
+                    ? Image.memory(
+                        icon,
+                        width: 56,
+                        height: 56,
+                        fit: BoxFit.cover,
+                        cacheWidth: 168,
+                        gaplessPlayback: true,
+                      )
                     : const Icon(Icons.android, size: 56),
               ),
               const SizedBox(height: 4),

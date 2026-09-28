@@ -25,6 +25,7 @@ class _WorkspaceState extends State<Workspace>
 
   final GlobalKey<HomeScreenState> _homeScreenKey =
       GlobalKey<HomeScreenState>();
+  final GlobalKey<AppDrawerState> _appDrawerKey = GlobalKey<AppDrawerState>();
 
   // ── Custom drawer animation ──────────────────────────────────────────────
   late AnimationController _drawerController;
@@ -280,7 +281,9 @@ class _WorkspaceState extends State<Workspace>
                   prefs: widget.prefs,
                   appCache: widget.appCache,
                   notifications: _notifications,
-                  onSettingsChanged: () {},
+                  onSettingsChanged: () {
+                    _appDrawerKey.currentState?.loadSettings();
+                  },
                   onDragStarted: _onDragStarted,
                   onDragEnded: _onDragEnded,
                   onDiscoverOpen: _openDiscover,
@@ -300,6 +303,7 @@ class _WorkspaceState extends State<Workspace>
                 child: SizedBox(
                   height: screenHeight,
                   child: AppDrawer(
+                    key: _appDrawerKey,
                     notifications: _notifications,
                     onClose: _closeDrawer,
                     scrollController: _drawerScrollController,
