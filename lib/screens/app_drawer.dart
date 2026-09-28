@@ -7,6 +7,25 @@ import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
+
+Uint8List? _compressIcon(Uint8List? iconData) {
+  if (iconData == null) return null;
+  try {
+    final image = img.decodeImage(iconData);
+    if (image == null) return iconData;
+    // Resize down to 96x96 to save memory, as it's only displayed at 48x48
+    if (image.width > 96 || image.height > 96) {
+      final resized = img.copyResize(image, width: 96, height: 96, interpolation: img.Interpolation.linear);
+      // Aggressive compression
+      return Uint8List.fromList(img.encodePng(resized, level: 6)); 
+    }
+    return iconData;
+  } catch (e) {
+    return iconData;
+  }
+}
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -112,7 +131,7 @@ class AppDrawerState extends State<AppDrawer> {
         _isLoading = metaApps.isEmpty; // keep spinner only if truly empty
       });
       if (metaApps.isNotEmpty) {
-        AppDatabaseService.prefetchIcons(metaApps.map((a) => a.packageName));
+        // AppDatabaseService.prefetchIcons(metaApps.map((a) => a.packageName));
       }
     }
 
@@ -126,7 +145,7 @@ class AppDrawerState extends State<AppDrawer> {
           _filteredApps = apps;
           _isLoading = false;
         });
-        AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
+        // AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
       } else {
         // syncAppsBackground returned empty — fall back to direct OS fetch
         // as a last resort so the drawer is never permanently stuck.
@@ -143,7 +162,7 @@ class AppDrawerState extends State<AppDrawer> {
                 _filteredApps = apps;
                 _isLoading = false;
               });
-              AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
+              // AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
             })
             .catchError((_) {
               if (mounted) setState(() => _isLoading = false);
@@ -342,9 +361,7 @@ class AppDrawerState extends State<AppDrawer> {
                           child: PageView.builder(
                             itemCount: pages,
                             onPageChanged: (page) {
-                              setState(() {
-                                _currentPage = page;
-                              });
+                              _pageNotifier.value = page;
                             },
                             itemBuilder: (context, pageIndex) {
                               final start = pageIndex * itemsPerPage;
@@ -392,26 +409,31 @@ class AppDrawerState extends State<AppDrawer> {
                         if (pages > 1)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(pages, (index) {
-                                return Container(
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: _currentPage == index
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context)
-                                              .colorScheme
-                                              .onSurface
-                                              .withValues(alpha: 0.2),
-                                  ),
+                            child: ValueListenableBuilder<int>(
+                              valueListenable: _pageNotifier,
+                              builder: (context, currentPage, _) {
+                                return Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(pages, (index) {
+                                    return Container(
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: currentPage == index
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                                  .withValues(alpha: 0.2),
+                                      ),
+                                    );
+                                  }),
                                 );
-                              }),
+                              },
                             ),
                           ),
                       ],
@@ -430,12 +452,14 @@ class AppDrawerState extends State<AppDrawer> {
           children: [
             if (_frostedGlassEnabled && _savedWallpaperPath != null)
               Positioned.fill(
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                  child: Image.asset(
-                    _savedWallpaperPath!,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
+                child: RepaintBoundary(
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: Image.asset(
+                      _savedWallpaperPath!,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                    ),
                   ),
                 ),
               )
@@ -443,7 +467,7 @@ class AppDrawerState extends State<AppDrawer> {
               Positioned.fill(
                 child: Container(color: Theme.of(context).colorScheme.surface),
               ),
-            childContent,
+            RepaintBoundary(child: childContent),
           ],
         ),
       ),
@@ -477,11 +501,8 @@ class _AppDrawerItem extends StatefulWidget {
   State<_AppDrawerItem> createState() => _AppDrawerItemState();
 }
 
-class _AppDrawerItemState extends State<_AppDrawerItem>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _AppDrawerItemState extends State<_AppDrawerItem> {
+  static final Map<String, Uint8List> _staticIconCache = {};
   bool _dragStarted = false;
   Uint8List? _icon;
 
@@ -511,9 +532,24 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
       return;
     }
 
+    if (_staticIconCache.containsKey(widget.app.packageName)) {
+      if (mounted) setState(() => _icon = _staticIconCache[widget.app.packageName]);
+      return;
+    }
+
     final info = await InstalledApps.getAppInfo(widget.app.packageName);
-    if (mounted) {
-      setState(() => _icon = info?.icon);
+    if (info?.icon != null) {
+      // Compress icon aggressively in a background isolate so it doesn't freeze the UI
+      final compressed = await compute(_compressIcon, info!.icon);
+      if (compressed != null) {
+        _staticIconCache[widget.app.packageName] = compressed;
+        if (mounted) setState(() => _icon = compressed);
+      } else {
+        _staticIconCache[widget.app.packageName] = info.icon!;
+        if (mounted) setState(() => _icon = info.icon);
+      }
+    } else {
+      if (mounted) setState(() => _icon = null);
     }
   }
 

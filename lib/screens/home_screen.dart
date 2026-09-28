@@ -335,6 +335,9 @@ class HomeScreenState extends State<HomeScreen> {
         );
       }
 
+      _items = loadedItems;
+      _saveItems();
+      return;
     }
     _items = loadedItems;
   }
@@ -440,51 +443,41 @@ class HomeScreenState extends State<HomeScreen> {
           minChildSize: 0.3,
           expand: false,
           builder: (context, scrollController) {
-            return FutureBuilder<List<AppInfo>>(
-              future: InstalledApps.getInstalledApps(
-                excludeSystemApps: false,
-                excludeNonLaunchableApps: true,
-                withIcon: true,
-              ),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final apps = snapshot.data!;
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        'Select App for Split Screen',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: scrollController,
-                        itemCount: apps.length,
-                        itemBuilder: (context, index) {
-                          final app = apps[index];
-                          return ListTile(
-                            leading: app.icon != null
-                                ? Image.memory(app.icon!, width: 40, height: 40)
-                                : const Icon(Icons.android),
-                            title: Text(app.name),
-                            onTap: () {
-                              Navigator.pop(context);
-                              LauncherService.startApp(
-                                app.packageName,
-                                splitScreen: true,
-                              );
-                            },
+            final apps = widget.appCache.values.toList();
+            apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+            
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    'Select App for Split Screen',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    itemCount: apps.length,
+                    itemBuilder: (context, index) {
+                      final app = apps[index];
+                      return ListTile(
+                        leading: app.icon != null
+                            ? Image.memory(app.icon!, width: 40, height: 40, cacheWidth: 120)
+                            : const Icon(Icons.android),
+                        title: Text(app.name),
+                        onTap: () {
+                          Navigator.pop(context);
+                          LauncherService.startApp(
+                            app.packageName,
+                            splitScreen: true,
                           );
                         },
-                      ),
-                    ),
-                  ],
-                );
-              },
+                      );
+                    },
+                  ),
+                ),
+              ],
             );
           },
         );
