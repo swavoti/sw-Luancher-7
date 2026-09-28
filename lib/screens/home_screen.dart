@@ -419,6 +419,71 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openSplitScreenPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          minChildSize: 0.3,
+          expand: false,
+          builder: (context, scrollController) {
+            return FutureBuilder<List<AppInfo>>(
+              future: InstalledApps.getInstalledApps(
+                excludeSystemApps: false,
+                excludeNonLaunchableApps: true,
+                withIcon: true,
+              ),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final apps = snapshot.data!;
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'Select App for Split Screen',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        itemCount: apps.length,
+                        itemBuilder: (context, index) {
+                          final app = apps[index];
+                          return ListTile(
+                            leading: app.icon != null
+                                ? Image.memory(app.icon!, width: 40, height: 40)
+                                : const Icon(Icons.android),
+                            title: Text(app.name),
+                            onTap: () {
+                              Navigator.pop(context);
+                              LauncherService.startApp(
+                                app.packageName,
+                                splitScreen: true,
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _addNewItem(LauncherItem item) {
     setState(() {
       _items.add(item);
@@ -1184,6 +1249,14 @@ class HomeScreenState extends State<HomeScreen> {
                               const WallpaperPage(homeScreenScreenshot: null),
                         ),
                       );
+                    },
+                  ),
+                  _buildMenuButton(
+                    icon: Icons.splitscreen,
+                    label: 'Split Screen',
+                    onTap: () {
+                      setState(() => _isWorkspaceOverviewMode = false);
+                      _openSplitScreenPicker();
                     },
                   ),
                   _buildMenuButton(

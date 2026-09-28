@@ -39,10 +39,11 @@ class LauncherService {
     }
   }
 
-  static Future<void> startApp(String packageName) async {
+  static Future<void> startApp(String packageName, {bool splitScreen = false}) async {
     try {
       await _systemChannel.invokeMethod('startApp', {
         'packageName': packageName,
+        'splitScreen': splitScreen,
       });
     } catch (e) {
       print('Error starting app: $e');

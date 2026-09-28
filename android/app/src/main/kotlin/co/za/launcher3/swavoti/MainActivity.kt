@@ -247,11 +247,16 @@ class MainActivity : FlutterActivity() {
                 }
                 "startApp" -> {
                     val packageName = call.argument<String>("packageName")
+                    val splitScreen = call.argument<Boolean>("splitScreen") ?: false
                     if (packageName != null) {
                         try {
                             val intent = packageManager.getLaunchIntentForPackage(packageName)
                             if (intent != null) {
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                if (splitScreen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                                }
                                 startActivity(intent)
                                 result.success(true)
                             } else {
