@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/screens/workspace.dart';
+import 'package:swavoti/screens/edit_icons_page.dart';
+import 'package:swavoti/screens/home_settings.dart';
+import 'package:swavoti/screens/wallpaper_page.dart';
 import 'package:swavoti/services/app_database_service.dart';
 
 void main() {
@@ -63,6 +66,20 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
     _startRamChecker();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state == AppLifecycleState.resumed) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final savedPack = prefs.getString('icon_pack') ?? '';
+      if (AppDatabaseService.currentIconPack != savedPack) {
+        AppDatabaseService.currentIconPack = savedPack;
+        await AppDatabaseService.clearIconCache();
+        setState(() {});
+      }
+    }
+  }
+
   void _startRamChecker() {
     // Background RAM usage checker. Runs every 10 seconds.
     _ramCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
@@ -103,6 +120,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   Future<void> _hydrate() async {
     // SharedPreferences is already warm from the pre-runApp call in main().
     final prefs = await SharedPreferences.getInstance();
+    AppDatabaseService.currentIconPack = prefs.getString('icon_pack') ?? "";
 
     // Show the UI immediately with whatever we have.
     if (mounted) setState(() => _prefs = prefs);
@@ -147,6 +165,13 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
 
         return MaterialApp(
           title: 'Go Launcher 7',
+          initialRoute: '/',
+          routes: {
+            
+            '/settings': (context) => const HomeSettings(),
+            '/wallpaper': (context) => const WallpaperPage(),
+            '/edit_icons': (context) => const EditIconsPage(backgroundWallpaperPath: ''),
+          },
           theme: ThemeData(
             colorScheme: lightColorScheme,
             scaffoldBackgroundColor: Colors.transparent,

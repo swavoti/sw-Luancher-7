@@ -275,16 +275,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
                           ),
                         ),
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => EditIconsPage(
-                                backgroundWallpaperPath: _currentPreview,
-                                homeScreenScreenshot:
-                                    widget.homeScreenScreenshot,
-                              ),
-                            ),
-                          );
+                          LauncherService.openRoute('/edit_icons');
                         },
                       ),
                       const SizedBox(height: 16),

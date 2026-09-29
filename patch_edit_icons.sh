@@ -1,3 +1,4 @@
+cat << 'INNER_EOF' > lib/screens/edit_icons_page.dart
 import 'dart:typed_data';
 import 'dart:ui';
 import 'dart:math';
@@ -322,3 +323,4 @@ class _EditIconsPageState extends State<EditIconsPage> {
     );
   }
 }
+INNER_EOF

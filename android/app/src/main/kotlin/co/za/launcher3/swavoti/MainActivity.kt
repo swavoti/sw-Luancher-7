@@ -49,9 +49,11 @@ class MainActivity : FlutterActivity() {
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private lateinit var iconPackManager: IconPackManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        iconPackManager = IconPackManager(this)
         // Android 10+ (Q): exclude the full bottom of the window from system
         // gesture handling so the OS home-gesture zone cannot steal touches that
         // we use for the app-drawer drag.  We set it after the first layout pass
@@ -236,6 +238,38 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "openRoute" -> {
+                    val route = call.argument<String>("route") ?: "/"
+                    val intent = when (route) {
+                        "/settings" -> Intent(context, SettingsActivity::class.java)
+                        "/wallpaper" -> Intent(context, WallpaperActivity::class.java)
+                        "/edit_icons" -> Intent(context, EditIconsActivity::class.java)
+                        else -> null
+                    }
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                        startActivity(intent)
+                    }
+                    result.success(null)
+                }
+                "getAvailableIconPacks" -> {
+                    backgroundExecutor.execute {
+                        val packs = iconPackManager.getAvailableIconPacks()
+                        Handler(Looper.getMainLooper()).post { result.success(packs) }
+                    }
+                }
+                "getThemedIcon" -> {
+                    val appPackage = call.argument<String>("appPackage") ?: ""
+                    val iconPackPackage = call.argument<String>("iconPackPackage") ?: ""
+                    backgroundExecutor.execute {
+                        try {
+                            val bytes = iconPackManager.getThemedIcon(appPackage, iconPackPackage)
+                            Handler(Looper.getMainLooper()).post { result.success(bytes) }
+                        } catch (e: Throwable) {
+                            Handler(Looper.getMainLooper()).post { result.success(null) }
+                        }
+                    }
+                }
                 "uninstallApp" -> {
                     val packageName = call.argument<String>("packageName")
                     if (packageName != null) {

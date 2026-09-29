@@ -5,9 +5,9 @@ import 'package:swavoti/screens/edit_icons_page.dart';
 import 'package:swavoti/screens/search_settings.dart';
 
 class HomeSettings extends StatefulWidget {
-  final VoidCallback onSettingsChanged;
+  final VoidCallback? onSettingsChanged;
   
-  const HomeSettings({super.key, required this.onSettingsChanged});
+  const HomeSettings({super.key, this.onSettingsChanged});
 
   @override
   State<HomeSettings> createState() => _HomeSettingsState();
@@ -52,7 +52,7 @@ class _HomeSettingsState extends State<HomeSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('frosted_glass_enabled', value);
     setState(() => _frostedGlassEnabled = value);
-    widget.onSettingsChanged();
+    widget.onSettingsChanged?.call();
   }
 
   Future<void> _toggleNotificationDots(bool value) async {
@@ -215,13 +215,7 @@ class _HomeSettingsState extends State<HomeSettings> {
                   subtitle: const Text('Change app icon shape style'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            const EditIconsPage(backgroundWallpaperPath: ''),
-                      ),
-                    );
+                    LauncherService.openRoute('/edit_icons');
                   },
                 ),
                 const Divider(),

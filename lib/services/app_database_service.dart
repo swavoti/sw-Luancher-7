@@ -1,6 +1,8 @@
 import 'dart:typed_data';
+import 'dart:async';
 import 'dart:io';
 
+import "package:swavoti/services/launcher_service.dart";
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -13,7 +15,39 @@ class AppDatabaseService {
   static Database? _database;
 
   static final Map<String, Uint8List> _iconCache = {};
+  static String currentIconPack = "";
   static final Map<String, Future<Uint8List?>> _inflight = {};
+
+
+  static final List<void Function()> _taskQueue = [];
+  static int _runningTasks = 0;
+  static const int _maxConcurrentTasks = 2;
+
+  static Future<T> _enqueue<T>(Future<T> Function() task) {
+     // Just a trick if dart:async is not imported. It is imported by dart:io/typed_data, wait, dart:async might be needed.
+    final completer = Completer<T>();
+    _taskQueue.add(() async {
+      try {
+        final result = await task();
+        completer.complete(result);
+      } catch (e) {
+        completer.completeError(e);
+      } finally {
+        _runningTasks--;
+        _pumpQueue();
+      }
+    });
+    _pumpQueue();
+    return completer.future;
+  }
+
+  static void _pumpQueue() {
+    while (_runningTasks < _maxConcurrentTasks && _taskQueue.isNotEmpty) {
+      _runningTasks++;
+      final next = _taskQueue.removeAt(0);
+      next();
+    }
+  }
 
   static Future<Database> get database async {
     if (_database != null && _database!.isOpen) return _database!;
@@ -74,6 +108,7 @@ class AppDatabaseService {
         File(path).deleteSync();
       } catch (_) {}
       _iconCache.clear();
+    _inflight.clear();
       return await open();
     }
   }
@@ -131,9 +166,15 @@ class AppDatabaseService {
           blob = rows.first['icon'] as Uint8List?;
         }
 
+        if (currentIconPack.isNotEmpty) {
+          try {
+            final themed = await _enqueue(() => LauncherService.getThemedIcon(packageName, currentIconPack));
+            if (themed != null) blob = themed;
+          } catch (_) {}
+        }
         if (blob == null || blob.isEmpty) {
           try {
-            final appInfo = await InstalledApps.getAppInfo(packageName);
+            final appInfo = await _enqueue(() => InstalledApps.getAppInfo(packageName));
             if (appInfo != null &&
                 appInfo.icon != null &&
                 appInfo.icon!.isNotEmpty) {
@@ -183,6 +224,17 @@ class AppDatabaseService {
   }
 
   /// Warm SQLite + memory for every listed package, a few at a time.
+  static Future<void> clearIconCache() async {
+    _iconCache.clear();
+    _inflight.clear();
+    try {
+      final db = await database;
+      await db.execute('UPDATE apps SET icon = NULL');
+    } catch (e) {
+      debugPrint('Error clearing icon cache: $e');
+    }
+  }
+
   static Future<void> prefetchIcons(Iterable<String> packageNames) async {
     final pending = packageNames
         .where((p) => !_iconCache.containsKey(p) && !_inflight.containsKey(p))

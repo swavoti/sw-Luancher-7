@@ -946,6 +946,11 @@ class HomeScreenState extends State<HomeScreen> {
                                               childWhenDragging:
                                                   const SizedBox.shrink(),
                                               child: GestureDetector(
+                                                onTap: () {
+                                                  if (item.type == 'app') {
+                                                    LauncherService.startApp(item.packageName);
+                                                  }
+                                                },
                                                 onLongPress: () =>
                                                     _showItemContextMenu(item),
                                                 child: _buildItemContent(
@@ -1302,13 +1307,7 @@ class HomeScreenState extends State<HomeScreen> {
                     label: 'Wallpaper',
                     onTap: () {
                       setState(() => _isWorkspaceOverviewMode = false);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              const WallpaperPage(homeScreenScreenshot: null),
-                        ),
-                      );
+                      LauncherService.openRoute('/wallpaper');
                     },
                   ),
                   _buildMenuButton(
@@ -1332,14 +1331,8 @@ class HomeScreenState extends State<HomeScreen> {
                     label: 'Settings',
                     onTap: () {
                       setState(() => _isWorkspaceOverviewMode = false);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => HomeSettings(
-                          onSettingsChanged: () {
-                            widget.onSettingsChanged();
-                          },
-                        )),
-                      ).then((_) async {
+                      LauncherService.openRoute('/settings');
+                      Future.value().then((_) async {
                         // Reload settings FIRST before notifying parent.
                         // Calling onSettingsChanged() first triggers a parent
                         // rebuild while we are still in our own setState cycle,
@@ -1953,13 +1946,19 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
 
     if (_apps.isEmpty) {
       _isLoading = true;
-      widget.onFetchApps().then((_) {
+      InstalledApps.getInstalledApps(excludeSystemApps: false, excludeNonLaunchableApps: true, withIcon: false).then((apps) {
         if (!mounted) return;
+        apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         setState(() {
-          _apps = List.from(widget.apps);
+          _apps = apps;
           _filteredApps = List.from(_apps);
           _isLoading = false;
         });
+      }).catchError((_) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+      });
+    }
       });
     }
   }

@@ -29,6 +29,30 @@ class LauncherService {
   }
 
   // System Actions
+  static Future<List<Map<String, dynamic>>> getAvailableIconPacks() async {
+    try {
+      final List<dynamic>? packs = await _systemChannel.invokeMethod('getAvailableIconPacks');
+      if (packs != null) {
+        return packs.map((p) => Map<String, dynamic>.from(p as Map)).toList();
+      }
+    } catch (e) {
+      print('Error fetching icon packs: $e');
+    }
+    return [];
+  }
+
+  static Future<Uint8List?> getThemedIcon(String appPackage, String iconPackPackage) async {
+    try {
+      return await _systemChannel.invokeMethod('getThemedIcon', {
+        'appPackage': appPackage,
+        'iconPackPackage': iconPackPackage,
+      });
+    } catch (e) {
+      print('Error fetching themed icon: $e');
+      return null;
+    }
+  }
+
   static Future<void> uninstallApp(String packageName) async {
     try {
       await _systemChannel.invokeMethod('uninstallApp', {
@@ -73,6 +97,16 @@ class LauncherService {
       await _systemChannel.invokeMethod('launchGoogleWeather');
     } catch (e) {
       print('Error launching weather: $e');
+    }
+  }
+
+  static Future<void> openRoute(String route) async {
+    try {
+      await _systemChannel.invokeMethod('openRoute', {
+        'route': route,
+      });
+    } catch (e) {
+      print('Error opening route: $e');
     }
   }
 
