@@ -100,6 +100,15 @@ class LauncherService {
     }
   }
 
+  static Future<bool> supportsSplitScreen() async {
+    try {
+      final result = await _systemChannel.invokeMethod<bool>('supportsSplitScreen');
+      return result ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   static Future<void> openRoute(String route) async {
     try {
       await _systemChannel.invokeMethod('openRoute', {

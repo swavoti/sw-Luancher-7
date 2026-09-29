@@ -238,6 +238,16 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                                "supportsSplitScreen" -> {
+                    val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    val memoryInfo = ActivityManager.MemoryInfo()
+                    activityManager.getMemoryInfo(memoryInfo)
+                    
+                    val isGoEdition = activityManager.isLowRamDevice
+                    val has3GbRam = memoryInfo.totalMem >= 2.8 * 1024 * 1024 * 1024L
+                    
+                    result.success(!isGoEdition && has3GbRam)
+                }
                 "openRoute" -> {
                     val route = call.argument<String>("route") ?: "/"
                     val intent = when (route) {

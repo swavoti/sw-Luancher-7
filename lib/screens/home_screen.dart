@@ -119,6 +119,7 @@ class HomeScreenState extends State<HomeScreen> {
   // Split-screen preloaded apps
   List<AppInfo> _allDeviceApps = [];
   bool _isLoadingDeviceApps = false;
+  bool _supportsSplitScreen = false;
 
   // Grid Configuration
   final int _columns = 4;
@@ -157,6 +158,9 @@ class HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       LauncherService.preloadWidgets();
       _preloadSplitScreenApps();
+      LauncherService.supportsSplitScreen().then((value) {
+        if (mounted) setState(() => _supportsSplitScreen = value);
+      });
     });
   }
 
@@ -1310,14 +1314,15 @@ class HomeScreenState extends State<HomeScreen> {
                       LauncherService.openRoute('/wallpaper');
                     },
                   ),
-                  _buildMenuButton(
-                    icon: Icons.splitscreen,
-                    label: 'Split Screen',
-                    onTap: () {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      _openSplitScreenPicker();
-                    },
-                  ),
+                  if (_supportsSplitScreen)
+                    _buildMenuButton(
+                      icon: Icons.splitscreen,
+                      label: 'Split Screen',
+                      onTap: () {
+                        setState(() => _isWorkspaceOverviewMode = false);
+                        _openSplitScreenPicker();
+                      },
+                    ),
                   _buildMenuButton(
                     icon: Icons.widgets,
                     label: 'Widgets',
@@ -1957,8 +1962,6 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
       }).catchError((_) {
         if (!mounted) return;
         setState(() => _isLoading = false);
-      });
-    }
       });
     }
   }

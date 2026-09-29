@@ -68,6 +68,10 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state == AppLifecycleState.paused) {
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
+    }
     if (state == AppLifecycleState.resumed) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
