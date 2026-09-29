@@ -1,1 +1,0 @@
-sed -i '/static Future<void> prefetchIcons/i \  static Future<void> clearIconCache() async {\n    _iconCache.clear();\n    try {\n      final db = await database;\n      await db.execute('\''UPDATE apps SET icon = NULL'\'');\n    } catch (e) {\n      debugPrint('\''Error clearing icon cache: $e'\'');\n    }\n  }\n' lib/services/app_database_service.dart

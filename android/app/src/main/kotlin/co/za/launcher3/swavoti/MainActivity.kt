@@ -1,6 +1,8 @@
 package co.za.launcher3.swavoti
 
 import android.app.Activity
+import android.app.ActivityManager
+import android.content.Context
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
