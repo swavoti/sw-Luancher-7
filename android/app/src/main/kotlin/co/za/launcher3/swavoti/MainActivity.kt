@@ -132,7 +132,7 @@ class MainActivity : FlutterActivity() {
                     messenger.send(reply)
                 }
                 is Messenger -> {
-                    messenger.send(Message.obtain(null, 0).apply { data = result })
+                    callback.send(Message.obtain(null, 0).apply { data = result })
                 }
                 else -> android.util.Log.w(
                     "MainActivity",
