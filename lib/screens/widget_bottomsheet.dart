@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:material_3_expressive/material_3_expressive.dart';
+import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:installed_apps/installed_apps.dart';
 
@@ -78,11 +80,22 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
         excludeSystemApps: false,
         withIcon: false,
       );
+      final appsByPackage = {for (final app in apps) app.packageName: app};
+      final packages = _groupedWidgets.keys.toList();
+      final icons = await Future.wait(
+        packages.map(AppDatabaseService.loadIcon),
+      );
       if (!mounted) return;
       setState(() {
-        for (final app in apps) {
-          if (_groupedWidgets.containsKey(app.packageName)) {
-            _appIdentity[app.packageName] = _AppIdentity(app.name, null);
+        for (var i = 0; i < packages.length; i++) {
+          final packageName = packages[i];
+          final app = appsByPackage[packageName];
+          final icon = icons[i];
+          if (app != null || icon != null) {
+            _appIdentity[packageName] = _AppIdentity(
+              app?.name ?? packageName.split('.').last,
+              icon,
+            );
           }
         }
       });
@@ -117,7 +130,8 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
       final pkg = keys[i];
       final widgetsForApp = filtered[pkg]!;
       final isLastGroup = i == keys.length - 1;
-      final expanded = _searchQuery.isNotEmpty || _expandedPackages.contains(pkg);
+      final expanded =
+          _searchQuery.isNotEmpty || _expandedPackages.contains(pkg);
       rows.add(_SheetRow.header(pkg, isLast: isLastGroup));
       if (expanded) {
         for (var w = 0; w < widgetsForApp.length; w++) {
@@ -168,7 +182,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                   child: Text(
                     '${_groupedWidgets.values.fold(0, (s, l) => s + l.length)}',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: cs.onSecondaryContainer,
                     ),
@@ -184,7 +198,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
           child: TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
-            style: TextStyle(fontSize: 15, color: cs.onSurface),
+            style: TextStyle(fontSize: 16, color: cs.onSurface),
             decoration: InputDecoration(
               hintText: 'Search widgets',
               hintStyle: TextStyle(color: cs.onSurfaceVariant.withOpacity(0.7)),
@@ -227,7 +241,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
         const SizedBox(height: 8),
         Expanded(
           child: !_loadingDone
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: M3EProgressIndicator.circular())
               : rows.isEmpty
               ? Center(
                   child: Column(
@@ -331,48 +345,48 @@ class _AppWidgetHeader extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
               children: [
-          if (icon != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.memory(
-                icon,
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
-                cacheWidth: 64,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.low,
-              ),
-            )
-          else
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.widgets_rounded,
-                color: cs.onPrimaryContainer,
-                size: 18,
-              ),
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              name,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface,
-              ),
-            ),
-          ),
+                if (icon != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.memory(
+                      icon,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      cacheWidth: 64,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.low,
+                    ),
+                  )
+                else
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.widgets_rounded,
+                      color: cs.onPrimaryContainer,
+                      size: 22,
+                    ),
+                  ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: cs.onSurface,
+                    ),
+                  ),
+                ),
                 Text(
                   '$count',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     color: cs.onSurfaceVariant,
                     fontWeight: FontWeight.w500,
                   ),
@@ -497,12 +511,12 @@ class _WidgetRow extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 88,
+              height: 64,
               decoration: BoxDecoration(
                 color: cs.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(10),
@@ -511,14 +525,14 @@ class _WidgetRow extends StatelessWidget {
               child: previewBytes != null
                   ? Image.memory(
                       previewBytes!,
-                      fit: BoxFit.cover,
-                      cacheWidth: 88,
+                      fit: BoxFit.contain,
+                      cacheWidth: 176,
                       gaplessPlayback: true,
                       filterQuality: FilterQuality.low,
                     )
                   : Icon(
                       Icons.crop_square_rounded,
-                      size: 24,
+                      size: 32,
                       color: cs.onSurfaceVariant.withOpacity(0.5),
                     ),
             ),
@@ -527,7 +541,7 @@ class _WidgetRow extends StatelessWidget {
               child: Text(
                 label,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 16,
                   fontWeight: FontWeight.w400,
                 ),
                 maxLines: 1,

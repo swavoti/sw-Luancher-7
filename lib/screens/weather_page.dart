@@ -1,7 +1,7 @@
-import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:swavoti/services/weather_service.dart';
-import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/widgets/weather_icon.dart';
 
 class WeatherPage extends StatefulWidget {
@@ -11,35 +11,77 @@ class WeatherPage extends StatefulWidget {
   State<WeatherPage> createState() => _WeatherPageState();
 }
 
-class _WeatherPageState extends State<WeatherPage> {
+class _WeatherPageState extends State<WeatherPage> with WidgetsBindingObserver {
   FullWeatherData? _data;
   bool _loading = true;
   String? _error;
+  int _loadGeneration = 0;
+  String? _selectedCity;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _startRefreshTimer();
   }
 
-  Future<void> _load() async {
+  void _startRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startRefreshTimer();
+      _load();
+    } else {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
+  }
+
+  Future<void> _load({String? city}) async {
+    if (city != null) _selectedCity = city.trim();
+    final generation = ++_loadGeneration;
     setState(() {
-      _loading = true;
+      _loading = _data == null;
       _error = null;
     });
-    final data = await WeatherService.getFullWeather();
-    if (!mounted) return;
+    final data = await WeatherService.getFullWeather(city: _selectedCity);
+    if (!mounted || generation != _loadGeneration) return;
     if (data == null) {
       setState(() {
         _loading = false;
-        _error = 'Could not load weather.\nCheck your internet connection.';
+        _error = _selectedCity == null
+            ? 'Could not load weather.\nCheck your internet connection.'
+            : 'Could not load weather for "${_selectedCity!}". Check the city name and try again.';
       });
+      if (_data != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_error!)));
+      }
     } else {
       setState(() {
         _loading = false;
         _data = data;
+        _error = null;
       });
     }
+  }
+
+  Future<void> _refresh() async {
+    await _load();
   }
 
   String _descriptionFor(int code) {
@@ -83,37 +125,27 @@ class _WeatherPageState extends State<WeatherPage> {
     final now = DateTime.now();
     final isNight = now.hour < 6 || now.hour >= 20;
 
-    // Gradient background based on time of day
-    final bgColors = isNight
-        ? [const Color(0xFF0D1B2A), const Color(0xFF1A2F45)]
-        : [const Color(0xFF1E6FAD), const Color(0xFF5BB8F5)];
-
     return Scaffold(
-      backgroundColor: bgColors[0],
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: bgColors,
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: _loading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                )
-              : _error != null
-              ? _ErrorView(message: _error!, onRetry: _load)
-              : _WeatherContent(
+      backgroundColor: cs.surface,
+      body: SafeArea(
+        child: _loading
+            ? Center(child: M3EProgressIndicator.circular(color: cs.primary))
+            : _data == null
+            ? _ErrorView(message: _error!, onRetry: _refresh)
+            : RefreshIndicator(
+                color: cs.primary,
+                onRefresh: _refresh,
+                child: _WeatherContent(
                   data: _data!,
                   descriptionFor: _descriptionFor,
                   weekdayShort: _weekdayShort,
                   hourLabel: _hourLabel,
                   isNightTime: _isNight,
                   isCurrentlyNight: isNight,
+                  onSearchCity: (city) => _load(city: city),
+                  onRefresh: _refresh,
                 ),
-        ),
+              ),
       ),
     );
   }
@@ -135,16 +167,19 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
+            Icon(
               Icons.cloud_off_rounded,
               size: 64,
-              color: Colors.white54,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 15),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 24),
             FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
@@ -164,6 +199,8 @@ class _WeatherContent extends StatelessWidget {
   final String Function(DateTime) hourLabel;
   final bool Function(DateTime) isNightTime;
   final bool isCurrentlyNight;
+  final ValueChanged<String> onSearchCity;
+  final Future<void> Function() onRefresh;
 
   const _WeatherContent({
     required this.data,
@@ -172,12 +209,30 @@ class _WeatherContent extends StatelessWidget {
     required this.hourLabel,
     required this.isNightTime,
     required this.isCurrentlyNight,
+    required this.onSearchCity,
+    required this.onRefresh,
   });
+
+  String _uvLabel(double value) {
+    if (value < 3) return 'Low';
+    if (value < 6) return 'Moderate';
+    if (value < 8) return 'High';
+    if (value < 11) return 'Very high';
+    return 'Extreme';
+  }
+
+  String _windDirection(int degrees) {
+    const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return directions[((degrees % 360) / 45).round() % directions.length];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      ),
       slivers: [
         // ── Back button + location ──────────────────────────────
         SliverToBoxAdapter(
@@ -187,16 +242,16 @@ class _WeatherContent extends StatelessWidget {
               children: [
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white,
+                    color: cs.onSurface,
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 4),
-                const Icon(
+                Icon(
                   Icons.location_on_rounded,
-                  color: Colors.white70,
+                  color: cs.onSurfaceVariant,
                   size: 16,
                 ),
                 const SizedBox(width: 4),
@@ -205,8 +260,8 @@ class _WeatherContent extends StatelessWidget {
                     data.locationName.isNotEmpty
                         ? '${data.locationName}, ${data.country}'
                         : 'Your Location',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: cs.onSurface,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
@@ -231,12 +286,7 @@ class _WeatherContent extends StatelessWidget {
                             onSubmitted: (value) {
                               if (value.trim().isNotEmpty) {
                                 Navigator.pop(ctx);
-                                final query = Uri.encodeComponent(
-                                  '${value.trim()} weather',
-                                );
-                                LauncherService.openUrlInBrowser(
-                                  'https://www.google.com/search?q=$query',
-                                );
+                                onSearchCity(value);
                               }
                             },
                           ),
@@ -250,12 +300,7 @@ class _WeatherContent extends StatelessWidget {
                                 final value = controller.text;
                                 if (value.trim().isNotEmpty) {
                                   Navigator.pop(ctx);
-                                  final query = Uri.encodeComponent(
-                                    '${value.trim()} weather',
-                                  );
-                                  LauncherService.openUrlInBrowser(
-                                    'https://www.google.com/search?q=$query',
-                                  );
+                                  onSearchCity(value);
                                 }
                               },
                               child: const Text('Search'),
@@ -265,13 +310,27 @@ class _WeatherContent extends StatelessWidget {
                       },
                     );
                   },
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.search_rounded,
-                    color: Colors.white,
+                    color: cs.onSurface,
                     size: 20,
                   ),
                 ),
+                IconButton(
+                  tooltip: 'Refresh weather',
+                  onPressed: onRefresh,
+                  icon: Icon(Icons.refresh_rounded, color: cs.onSurface),
+                ),
               ],
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(
+              'Updated ${data.updatedAt.hour.toString().padLeft(2, '0')}:${data.updatedAt.minute.toString().padLeft(2, '0')} · refreshes every 5 minutes',
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
             ),
           ),
         ),
@@ -297,8 +356,8 @@ class _WeatherContent extends StatelessWidget {
                       children: [
                         Text(
                           '${data.currentTemperature.round()}°',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: cs.onSurface,
                             fontSize: 80,
                             fontWeight: FontWeight.w200,
                             height: 1.0,
@@ -307,8 +366,8 @@ class _WeatherContent extends StatelessWidget {
                         ),
                         Text(
                           descriptionFor(data.currentWeatherCode),
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: cs.onSurfaceVariant,
                             fontSize: 18,
                             fontWeight: FontWeight.w400,
                           ),
@@ -320,16 +379,16 @@ class _WeatherContent extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.air_rounded,
                       size: 14,
-                      color: Colors.white54,
+                      color: cs.onSurfaceVariant,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '${data.windSpeed.round()} km/h wind',
-                      style: const TextStyle(
-                        color: Colors.white54,
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
                         fontSize: 13,
                       ),
                     ),
@@ -341,6 +400,73 @@ class _WeatherContent extends StatelessWidget {
         ),
 
         const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'CURRENT CONDITIONS',
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            child: GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.9,
+              children: [
+                _WeatherDetailTile(
+                  icon: Icons.thermostat_rounded,
+                  label: 'Feels like',
+                  value: '${data.feelsLikeTemperature.round()}°',
+                ),
+                _WeatherDetailTile(
+                  icon: Icons.water_drop_outlined,
+                  label: 'Humidity',
+                  value: '${data.relativeHumidity}%',
+                ),
+                _WeatherDetailTile(
+                  icon: Icons.wb_sunny_outlined,
+                  label: 'UV index · ${_uvLabel(data.uvIndex)}',
+                  value: data.uvIndex.toStringAsFixed(1),
+                ),
+                _WeatherDetailTile(
+                  icon: Icons.air_rounded,
+                  label: 'Wind · ${_windDirection(data.windDirection)}',
+                  value: '${data.windSpeed.round()} km/h',
+                ),
+                _WeatherDetailTile(
+                  icon: Icons.air_rounded,
+                  label: 'Wind gusts',
+                  value: '${data.windGusts.round()} km/h',
+                ),
+                _WeatherDetailTile(
+                  icon: Icons.speed_rounded,
+                  label: 'Pressure',
+                  value: '${data.pressure.round()} hPa',
+                ),
+                _WeatherDetailTile(
+                  icon: Icons.visibility_outlined,
+                  label: 'Visibility',
+                  value: data.visibility >= 1000
+                      ? '${(data.visibility / 1000).toStringAsFixed(1)} km'
+                      : '${data.visibility.round()} m',
+                ),
+              ],
+            ),
+          ),
+        ),
 
         // ── Hourly forecast (horizontal scroll) ─────────────────
         SliverToBoxAdapter(child: _SectionLabel(label: 'Today — Hourly')),
@@ -392,6 +518,61 @@ class _WeatherContent extends StatelessWidget {
   }
 }
 
+class _WeatherDetailTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _WeatherDetailTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: cs.primary, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: cs.onSurface,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── Section label ────────────────────────────────────────────────────────────
 
 class _SectionLabel extends StatelessWidget {
@@ -400,12 +581,13 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       child: Text(
         label.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white54,
+        style: TextStyle(
+          color: cs.onSurfaceVariant,
           fontSize: 11,
           fontWeight: FontWeight.w600,
           letterSpacing: 1.2,
@@ -436,16 +618,18 @@ class _HourlyTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       width: 68,
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
       decoration: BoxDecoration(
-        color: highlight
-            ? Colors.white.withOpacity(0.2)
-            : Colors.white.withOpacity(0.08),
+        color: highlight ? cs.secondaryContainer : cs.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(16),
-        border: highlight ? Border.all(color: Colors.white30, width: 1) : null,
+        border: Border.all(
+          color: highlight ? cs.primary : cs.outlineVariant,
+          width: highlight ? 1.5 : 0.5,
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -453,7 +637,7 @@ class _HourlyTile extends StatelessWidget {
           Text(
             time,
             style: TextStyle(
-              color: highlight ? Colors.white : Colors.white70,
+              color: highlight ? cs.onSecondaryContainer : cs.onSurfaceVariant,
               fontSize: 12,
               fontWeight: highlight ? FontWeight.w600 : FontWeight.w400,
             ),
@@ -461,8 +645,8 @@ class _HourlyTile extends StatelessWidget {
           WeatherIcon(weatherCode: weatherCode, size: 30, isNight: isNight),
           Text(
             '${temperature.round()}°',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: cs.onSurface,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
@@ -471,16 +655,12 @@ class _HourlyTile extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.water_drop_rounded,
-                  size: 10,
-                  color: Color(0xFF7DD3FC),
-                ),
+                Icon(Icons.water_drop_rounded, size: 10, color: cs.tertiary),
                 const SizedBox(width: 2),
                 Text(
                   '${precipitationProbability.round()}%',
-                  style: const TextStyle(
-                    color: Color(0xFF7DD3FC),
+                  style: TextStyle(
+                    color: cs.tertiary,
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
                   ),
@@ -516,6 +696,7 @@ class _DailyRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
@@ -525,8 +706,8 @@ class _DailyRow extends StatelessWidget {
             width: 52,
             child: Text(
               label,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: cs.onSurface,
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
@@ -540,18 +721,14 @@ class _DailyRow extends StatelessWidget {
 
           // Precipitation %
           if (precipProbability > 5) ...[
-            const Icon(
-              Icons.water_drop_rounded,
-              size: 13,
-              color: Color(0xFF7DD3FC),
-            ),
+            Icon(Icons.water_drop_rounded, size: 13, color: cs.tertiary),
             const SizedBox(width: 2),
             SizedBox(
               width: 36,
               child: Text(
                 '${precipProbability.round()}%',
-                style: const TextStyle(
-                  color: Color(0xFF7DD3FC),
+                style: TextStyle(
+                  color: cs.tertiary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -573,8 +750,8 @@ class _DailyRow extends StatelessWidget {
             child: Text(
               '${tempMin.round()}°',
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.white54,
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
                 fontSize: 15,
                 fontWeight: FontWeight.w400,
               ),
@@ -589,8 +766,8 @@ class _DailyRow extends StatelessWidget {
             child: Text(
               '${tempMax.round()}°',
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: cs.onSurface,
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),

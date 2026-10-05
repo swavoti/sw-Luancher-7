@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -481,6 +482,34 @@ class HomeScreenState extends State<HomeScreen> {
     await prefs.setStringList('launcher_items', data);
   }
 
+  Widget _buildHomeAppIcon(AppInfo app, double size) {
+    Widget buildIcon(Uint8List? bytes) {
+      return IconShapeClipper(
+        shape: _iconShape,
+        size: size,
+        child: bytes != null && bytes.isNotEmpty
+            ? Image.memory(
+                bytes,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                cacheWidth: (size * 3).round(),
+                gaplessPlayback: true,
+              )
+            : Icon(Icons.android, size: size),
+      );
+    }
+
+    final cachedIcon = AppDatabaseService.getCachedIcon(app.packageName);
+    if (cachedIcon != null) return buildIcon(cachedIcon);
+
+    return FutureBuilder<Uint8List?>(
+      future: AppDatabaseService.loadIcon(app.packageName),
+      builder: (context, snapshot) =>
+          buildIcon(snapshot.data ?? app.icon),
+    );
+  }
+
   // Replaced bottom sheet with animated scaling overview
 
   Widget _buildMenuButton({
@@ -562,6 +591,107 @@ class HomeScreenState extends State<HomeScreen> {
   void _addNewItem(LauncherItem item) {
     setState(() {
       _items.add(item);
+    });
+    _saveItems();
+  }
+
+  LauncherItem? _dockItemAt(int x, {String? excludingId}) {
+    for (final item in _items) {
+      if (item.page == -1 && item.x == x && item.id != excludingId) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  bool _canAcceptDockDrop(Map<String, dynamic> data, int x) {
+    if (data['type'] == 'widget') return false;
+
+    LauncherItem? source;
+    if (data['id'] is String) {
+      for (final item in _items) {
+        if (item.id == data['id']) {
+          source = item;
+          break;
+        }
+      }
+      if (source == null || source.type == 'widget') return false;
+    }
+    if (source == null && data['type'] != 'app') return false;
+
+    final packageName = source?.type == 'app'
+        ? source!.packageName
+        : data['packageName'];
+    final isApp = source?.type == 'app' || data['type'] == 'app';
+    if (isApp && packageName is! String) return false;
+
+    final target = _dockItemAt(x, excludingId: source?.id);
+    if (target == null) return true;
+    if (!isApp) return false;
+    if (target.type == 'app') return target.packageName != packageName;
+    if (target.type != 'folder') return false;
+
+    final folderApps = target.folderApps ?? const <String>[];
+    return folderApps.length < 8 && !folderApps.contains(packageName);
+  }
+
+  void _acceptDockDrop(Map<String, dynamic> data, int x) {
+    LauncherItem? source;
+    if (data['id'] is String) {
+      for (final item in _items) {
+        if (item.id == data['id']) {
+          source = item;
+          break;
+        }
+      }
+    }
+
+    final packageName = source?.type == 'app'
+        ? source!.packageName
+        : data['packageName'];
+    final label = data['label'];
+    final target = _dockItemAt(x, excludingId: source?.id);
+
+    setState(() {
+      final sourceFolderId = data['source_folder_id'];
+      if (sourceFolderId is String) {
+        final sourceFolder = _items.where((item) => item.id == sourceFolderId);
+        if (sourceFolder.isNotEmpty) {
+          final folder = sourceFolder.first;
+          folder.folderApps?.remove(packageName);
+          if (folder.folderApps?.isEmpty == true) {
+            _items.remove(folder);
+          }
+        }
+      }
+
+      if (target != null && packageName is String) {
+        if (target.type == 'app') {
+          target.type = 'folder';
+          target.label = 'Unnamed text';
+          target.folderApps = [target.packageName, packageName];
+        } else {
+          target.folderApps ??= [];
+          target.folderApps!.add(packageName);
+        }
+        if (source != null) _items.remove(source);
+      } else if (source != null) {
+        source.x = x;
+        source.y = 0;
+        source.page = -1;
+      } else if (data['type'] == 'app' && packageName is String) {
+        _items.add(
+          LauncherItem(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            type: 'app',
+            packageName: packageName,
+            label: label is String ? label : 'App',
+            x: x,
+            y: 0,
+            page: -1,
+          ),
+        );
+      }
     });
     _saveItems();
   }
@@ -705,7 +835,9 @@ class HomeScreenState extends State<HomeScreen> {
                             final cellHeight = constraints.maxHeight / _rows;
 
                             return PageView.builder(
-                              physics: const ClampingScrollPhysics(),
+                              physics: const BouncingScrollPhysics(
+                                parent: AlwaysScrollableScrollPhysics(),
+                              ),
                               controller: _workspaceController,
                               itemCount: _totalPages,
                               onPageChanged: (index) {
@@ -1025,20 +1157,11 @@ class HomeScreenState extends State<HomeScreen> {
                                                         item.spanX * cellWidth,
                                                     height:
                                                         item.spanY * cellHeight,
-                                                    alignment: Alignment.center,
                                                     decoration: BoxDecoration(
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .surfaceContainerHigh,
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                             16,
                                                           ),
-                                                      border: Border.all(
-                                                        color: Theme.of(
-                                                          context,
-                                                        ).colorScheme.primary,
-                                                      ),
                                                       boxShadow: [
                                                         BoxShadow(
                                                           color: Colors.black
@@ -1049,18 +1172,13 @@ class HomeScreenState extends State<HomeScreen> {
                                                         ),
                                                       ],
                                                     ),
-                                                    child: Text(
-                                                      item.label.isEmpty
-                                                          ? 'Widget'
-                                                          : item.label,
-                                                      maxLines: 2,
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: Theme.of(
-                                                        context,
-                                                      ).textTheme.titleSmall,
+                                                    clipBehavior:
+                                                        Clip.antiAlias,
+                                                    child: _buildItemContent(
+                                                      item,
+                                                      cellWidth,
+                                                      cellHeight,
+                                                      isFeedback: true,
                                                     ),
                                                   ),
                                                 ),
@@ -1356,34 +1474,10 @@ class HomeScreenState extends State<HomeScreen> {
                                   height: 90,
                                   child: DragTarget<Map<String, dynamic>>(
                                     onWillAcceptWithDetails: (details) =>
-                                        details.data['type'] != 'widget',
+                                        _dockItemAt(x) == null &&
+                                        _canAcceptDockDrop(details.data, x),
                                     onAcceptWithDetails: (details) {
-                                      final data = details.data;
-                                      if (data['id'] != null) {
-                                        setState(() {
-                                          final item = _items.firstWhere(
-                                            (i) => i.id == data['id'],
-                                          );
-                                          item.x = x;
-                                          item.y = 0;
-                                          item.page = -1;
-                                        });
-                                        _saveItems();
-                                      } else if (data['type'] == 'app') {
-                                        _addNewItem(
-                                          LauncherItem(
-                                            id: DateTime.now()
-                                                .millisecondsSinceEpoch
-                                                .toString(),
-                                            type: 'app',
-                                            packageName: data['packageName'],
-                                            label: data['label'],
-                                            x: x,
-                                            y: 0,
-                                            page: -1,
-                                          ),
-                                        );
-                                      }
+                                      _acceptDockDrop(details.data, x);
                                     },
                                     builder:
                                         (context, candidateData, rejectedData) {
@@ -1413,32 +1507,58 @@ class HomeScreenState extends State<HomeScreen> {
                                   top: 0,
                                   width: cellWidth,
                                   height: 90,
-                                  child:
-                                      LongPressDraggable<Map<String, dynamic>>(
-                                        data: item.toJson(),
-                                        delay: const Duration(
-                                          milliseconds: 150,
+                                  child: DragTarget<Map<String, dynamic>>(
+                                    onWillAcceptWithDetails: (details) =>
+                                        _canAcceptDockDrop(
+                                          details.data,
+                                          item.x,
                                         ),
-                                        onDragStarted: () {
-                                          setState(() => _isDragging = true);
-                                          if (item.type == 'app') {
-                                            widget.onDragStarted?.call(
-                                              item.packageName,
-                                            );
-                                          }
-                                        },
-                                        onDragEnd: (_) {
-                                          setState(() => _isDragging = false);
-                                          widget.onDragEnded?.call();
-                                        },
-                                        onDraggableCanceled: (_, __) {
-                                          setState(() => _isDragging = false);
-                                          widget.onDragEnded?.call();
-                                        },
-                                        feedback: Material(
-                                          color: Colors.transparent,
-                                          child: Opacity(
-                                            opacity: 0.7,
+                                    onAcceptWithDetails: (details) =>
+                                        _acceptDockDrop(details.data, item.x),
+                                    builder: (context, candidateData, _) =>
+                                        LongPressDraggable<
+                                          Map<String, dynamic>
+                                        >(
+                                          data: item.toJson(),
+                                          delay: const Duration(
+                                            milliseconds: 150,
+                                          ),
+                                          onDragStarted: () {
+                                            setState(() => _isDragging = true);
+                                            if (item.type == 'app') {
+                                              widget.onDragStarted?.call(
+                                                item.packageName,
+                                              );
+                                            }
+                                          },
+                                          onDragEnd: (_) {
+                                            setState(() => _isDragging = false);
+                                            widget.onDragEnded?.call();
+                                          },
+                                          onDraggableCanceled: (_, __) {
+                                            setState(() => _isDragging = false);
+                                            widget.onDragEnded?.call();
+                                          },
+                                          feedback: Material(
+                                            color: Colors.transparent,
+                                            child: Opacity(
+                                              opacity: 0.7,
+                                              child: _buildItemContent(
+                                                item,
+                                                cellWidth,
+                                                90,
+                                              ),
+                                            ),
+                                          ),
+                                          childWhenDragging:
+                                              const SizedBox.shrink(),
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                LauncherService.startApp(
+                                                  item.packageName,
+                                                ),
+                                            onLongPress: () =>
+                                                _showItemContextMenu(item),
                                             child: _buildItemContent(
                                               item,
                                               cellWidth,
@@ -1446,21 +1566,7 @@ class HomeScreenState extends State<HomeScreen> {
                                             ),
                                           ),
                                         ),
-                                        childWhenDragging:
-                                            const SizedBox.shrink(),
-                                        child: GestureDetector(
-                                          onTap: () => LauncherService.startApp(
-                                            item.packageName,
-                                          ),
-                                          onLongPress: () =>
-                                              _showItemContextMenu(item),
-                                          child: _buildItemContent(
-                                            item,
-                                            cellWidth,
-                                            90,
-                                          ),
-                                        ),
-                                      ),
+                                  ),
                                 );
                               }),
                             ],
@@ -1655,19 +1761,7 @@ class HomeScreenState extends State<HomeScreen> {
                             final appWidget = Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconShapeClipper(
-                                  shape: _iconShape,
-                                  size: 56,
-                                  child: app.icon != null
-                                      ? Image.memory(
-                                          app.icon!,
-                                          width: 56,
-                                          height: 56,
-                                          fit: BoxFit.cover,
-                                          cacheWidth: 168,
-                                        )
-                                      : const Icon(Icons.android, size: 56),
-                                ),
+                                _buildHomeAppIcon(app, 56),
                                 const SizedBox(height: 4),
                                 SizedBox(
                                   width: 64,
@@ -1763,21 +1857,8 @@ class HomeScreenState extends State<HomeScreen> {
                         final pkg = apps[index];
                         final cachedApp = widget.appCache[pkg];
 
-                        Widget buildIcon(AppInfo app) {
-                          return IconShapeClipper(
-                            shape: _iconShape,
-                            size: 18,
-                            child: app.icon != null
-                                ? Image.memory(
-                                    app.icon!,
-                                    width: 18,
-                                    height: 18,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 54,
-                                  )
-                                : const Icon(Icons.android, size: 18),
-                          );
-                        }
+                        Widget buildIcon(AppInfo app) =>
+                            _buildHomeAppIcon(app, 18);
 
                         if (cachedApp != null) return buildIcon(cachedApp);
 
@@ -1824,19 +1905,7 @@ class HomeScreenState extends State<HomeScreen> {
             children: [
               Stack(
                 children: [
-                  IconShapeClipper(
-                    shape: _iconShape,
-                    size: 56,
-                    child: app.icon != null
-                        ? Image.memory(
-                            app.icon!,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            cacheWidth: 168,
-                          )
-                        : const Icon(Icons.android, size: 56),
-                  ),
+                _buildHomeAppIcon(app, 56),
                   if (notificationCount > 0)
                     Positioned(
                       right: 0,

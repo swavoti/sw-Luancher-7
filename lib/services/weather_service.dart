@@ -41,7 +41,15 @@ class DailyForecast {
 class FullWeatherData {
   final double currentTemperature;
   final int currentWeatherCode;
+  final double feelsLikeTemperature;
+  final int relativeHumidity;
+  final double uvIndex;
   final double windSpeed;
+  final int windDirection;
+  final double windGusts;
+  final double pressure;
+  final double visibility;
+  final DateTime updatedAt;
   final String locationName;
   final String country;
   final List<HourlyForecast> hourly;
@@ -50,7 +58,15 @@ class FullWeatherData {
   FullWeatherData({
     required this.currentTemperature,
     required this.currentWeatherCode,
+    required this.feelsLikeTemperature,
+    required this.relativeHumidity,
+    required this.uvIndex,
     required this.windSpeed,
+    required this.windDirection,
+    required this.windGusts,
+    required this.pressure,
+    required this.visibility,
+    required this.updatedAt,
     required this.locationName,
     required this.country,
     required this.hourly,
@@ -61,6 +77,8 @@ class FullWeatherData {
 class WeatherService {
   static const _ipApiUrl = 'https://ipinfo.io/json';
   static const _weatherApiUrl = 'https://api.open-meteo.com/v1/forecast';
+  static const _geocodingApiUrl =
+      'https://geocoding-api.open-meteo.com/v1/search';
 
   /// Light fetch — current weather only (used by home screen widget).
   static Future<WeatherData?> getCurrentWeather() async {
@@ -89,32 +107,64 @@ class WeatherService {
   }
 
   /// Full fetch — current + hourly (next 24 h) + 7-day daily + location name.
-  static Future<FullWeatherData?> getFullWeather() async {
+  static Future<FullWeatherData?> getFullWeather({String? city}) async {
     try {
-      final locationRes = await http.get(Uri.parse(_ipApiUrl));
-      if (locationRes.statusCode != 200) return null;
+      late final double latitude;
+      late final double longitude;
+      late final String cityName;
+      late final String country;
 
-      final locationData = jsonDecode(locationRes.body);
-      final String? loc = locationData['loc'];
-      if (loc == null) return null;
+      if (city != null) {
+        final trimmedCity = city.trim();
+        if (trimmedCity.isEmpty) return null;
+        final geocodingUri = Uri.parse(_geocodingApiUrl).replace(
+          queryParameters: {
+            'name': trimmedCity,
+            'count': '1',
+            'language': 'en',
+            'format': 'json',
+          },
+        );
+        final geocodingRes = await http.get(geocodingUri);
+        if (geocodingRes.statusCode != 200) return null;
 
-      final parts = loc.split(',');
-      if (parts.length != 2) return null;
+        final results =
+            (jsonDecode(geocodingRes.body) as Map<String, dynamic>)['results']
+                as List<dynamic>?;
+        if (results == null || results.isEmpty) return null;
+        final location = results.first as Map<String, dynamic>;
+        latitude = (location['latitude'] as num).toDouble();
+        longitude = (location['longitude'] as num).toDouble();
+        cityName = location['name'] as String? ?? trimmedCity;
+        country = location['country'] as String? ?? '';
+      } else {
+        final locationRes = await http.get(Uri.parse(_ipApiUrl));
+        if (locationRes.statusCode != 200) return null;
 
-      final double? lat = double.tryParse(parts[0]);
-      final double? lon = double.tryParse(parts[1]);
-      if (lat == null || lon == null) return null;
+        final locationData =
+            jsonDecode(locationRes.body) as Map<String, dynamic>;
+        final loc = locationData['loc'] as String?;
+        if (loc == null) return null;
 
-      final cityName = (locationData['city'] as String?) ?? '';
-      final country = (locationData['country'] as String?) ?? '';
+        final parts = loc.split(',');
+        if (parts.length != 2) return null;
+
+        final lat = double.tryParse(parts[0]);
+        final lon = double.tryParse(parts[1]);
+        if (lat == null || lon == null) return null;
+        latitude = lat;
+        longitude = lon;
+        cityName = locationData['city'] as String? ?? '';
+        country = locationData['country'] as String? ?? '';
+      }
 
       final weatherUrl = Uri.parse(
         '$_weatherApiUrl'
-        '?latitude=$lat'
-        '&longitude=$lon'
-        '&current_weather=true'
-        '&hourly=temperature_2m,precipitation_probability,weathercode'
-        '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+        '?latitude=$latitude'
+        '&longitude=$longitude'
+        '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,visibility'
+        '&hourly=temperature_2m,precipitation_probability,weather_code'
+        '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
         '&timezone=auto'
         '&forecast_days=7',
       );
@@ -125,10 +175,17 @@ class WeatherService {
       final data = jsonDecode(res.body);
 
       // Current
-      final current = data['current_weather'];
-      final currentTemp = (current['temperature'] as num).toDouble();
-      final currentCode = (current['weathercode'] as num).toInt();
-      final windSpeed = (current['windspeed'] as num).toDouble();
+      final current = data['current'] as Map<String, dynamic>;
+      double currentValue(String key) =>
+          (current[key] as num?)?.toDouble() ?? 0;
+      int currentInt(String key) => (current[key] as num?)?.toInt() ?? 0;
+      final currentTemp = currentValue('temperature_2m');
+      final currentCode = currentInt('weather_code');
+      final windSpeed = currentValue('wind_speed_10m');
+      final windDirection = currentInt('wind_direction_10m');
+      final windGusts = currentValue('wind_gusts_10m');
+      final updatedAt =
+          DateTime.tryParse(current['time'] as String? ?? '') ?? DateTime.now();
 
       // Hourly — next 24 entries from now
       final hourlyTimes = List<String>.from(data['hourly']['time']);
@@ -136,7 +193,7 @@ class WeatherService {
       final hourlyPrecip = List<num>.from(
         data['hourly']['precipitation_probability'],
       );
-      final hourlyCodes = List<num>.from(data['hourly']['weathercode']);
+      final hourlyCodes = List<num>.from(data['hourly']['weather_code']);
 
       final now = DateTime.now();
       final List<HourlyForecast> hourlyForecasts = [];
@@ -159,7 +216,7 @@ class WeatherService {
       final dailyDates = List<String>.from(data['daily']['time']);
       final dailyMax = List<num>.from(data['daily']['temperature_2m_max']);
       final dailyMin = List<num>.from(data['daily']['temperature_2m_min']);
-      final dailyCodes = List<num>.from(data['daily']['weathercode']);
+      final dailyCodes = List<num>.from(data['daily']['weather_code']);
       final dailyPrecip = List<num>.from(
         data['daily']['precipitation_probability_max'],
       );
@@ -182,7 +239,15 @@ class WeatherService {
       return FullWeatherData(
         currentTemperature: currentTemp,
         currentWeatherCode: currentCode,
+        feelsLikeTemperature: currentValue('apparent_temperature'),
+        relativeHumidity: currentInt('relative_humidity_2m'),
+        uvIndex: currentValue('uv_index'),
         windSpeed: windSpeed,
+        windDirection: windDirection,
+        windGusts: windGusts,
+        pressure: currentValue('pressure_msl'),
+        visibility: currentValue('visibility'),
+        updatedAt: updatedAt,
         locationName: cityName,
         country: country,
         hourly: hourlyForecasts,
