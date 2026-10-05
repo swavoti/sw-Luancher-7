@@ -31,7 +31,9 @@ class LauncherService {
   // System Actions
   static Future<List<Map<String, dynamic>>> getAvailableIconPacks() async {
     try {
-      final List<dynamic>? packs = await _systemChannel.invokeMethod('getAvailableIconPacks');
+      final List<dynamic>? packs = await _systemChannel.invokeMethod(
+        'getAvailableIconPacks',
+      );
       if (packs != null) {
         return packs.map((p) => Map<String, dynamic>.from(p as Map)).toList();
       }
@@ -41,7 +43,10 @@ class LauncherService {
     return [];
   }
 
-  static Future<Uint8List?> getThemedIcon(String appPackage, String iconPackPackage) async {
+  static Future<Uint8List?> getThemedIcon(
+    String appPackage,
+    String iconPackPackage,
+  ) async {
     try {
       return await _systemChannel.invokeMethod('getThemedIcon', {
         'appPackage': appPackage,
@@ -63,7 +68,10 @@ class LauncherService {
     }
   }
 
-  static Future<void> startApp(String packageName, {bool splitScreen = false}) async {
+  static Future<void> startApp(
+    String packageName, {
+    bool splitScreen = false,
+  }) async {
     try {
       await _systemChannel.invokeMethod('startApp', {
         'packageName': packageName,
@@ -102,7 +110,9 @@ class LauncherService {
 
   static Future<bool> supportsSplitScreen() async {
     try {
-      final result = await _systemChannel.invokeMethod<bool>('supportsSplitScreen');
+      final result = await _systemChannel.invokeMethod<bool>(
+        'supportsSplitScreen',
+      );
       return result ?? false;
     } catch (e) {
       return false;
@@ -134,9 +144,7 @@ class LauncherService {
 
   static void setWallpaperOffset(double offset) {
     try {
-      _systemChannel.invokeMethod('setWallpaperOffset', {
-        'offset': offset,
-      });
+      _systemChannel.invokeMethod('setWallpaperOffset', {'offset': offset});
     } catch (e) {
       print('Error setting wallpaper offset: $e');
     }
@@ -202,6 +210,10 @@ class LauncherService {
     } catch (e) {
       print('Error opening Notification Settings: $e');
     }
+  }
+
+  static Future<void> openAccessibilitySettings() async {
+    await _systemChannel.invokeMethod('openAccessibilitySettings');
   }
 
   static Future<bool> isDefaultLauncher() async {
@@ -280,11 +292,13 @@ class LauncherService {
     }
   }
 
-  static Future<Map<String, dynamic>> widgetCapabilities(int appWidgetId) async {
+  static Future<Map<String, dynamic>> widgetCapabilities(
+    int appWidgetId,
+  ) async {
     try {
       final result = await _widgetChannel.invokeMapMethod<String, dynamic>(
         'widgetCapabilities',
-            {'appWidgetId': appWidgetId},
+        {'appWidgetId': appWidgetId},
       );
       return result ?? const {};
     } catch (e) {
@@ -295,10 +309,9 @@ class LauncherService {
 
   static Future<bool> configureWidget(int appWidgetId) async {
     try {
-      return await _widgetChannel.invokeMethod<bool>(
-            'configureWidget',
-            {'appWidgetId': appWidgetId},
-          ) ??
+      return await _widgetChannel.invokeMethod<bool>('configureWidget', {
+            'appWidgetId': appWidgetId,
+          }) ??
           false;
     } catch (e) {
       print('Error opening widget configuration: $e');

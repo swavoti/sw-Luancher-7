@@ -3,6 +3,5 @@
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="100"
-    android:packageNames="co.za.launcher3.swavoti"
     android:canRetrieveWindowContent="false"
     android:description="@string/accessibility_service_description" />

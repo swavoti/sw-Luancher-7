@@ -21,8 +21,9 @@ import io.flutter.plugin.common.EventChannel
 import java.io.ByteArrayOutputStream
 import android.os.Handler
 import android.os.Looper
-import android.graphics.Rect
 import android.graphics.RectF
+import android.os.Message
+import android.os.Messenger
 import android.os.Parcelable
 import android.view.View
 import java.util.concurrent.Executors
@@ -56,20 +57,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         iconPackManager = IconPackManager(this)
-        // Android 10+ (Q): exclude the full bottom of the window from system
-        // gesture handling so the OS home-gesture zone cannot steal touches that
-        // we use for the app-drawer drag.  We set it after the first layout pass
-        // so the window size is already known.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
-                val height = window.decorView.height
-                val width  = window.decorView.width
-                // Exclude left/right edges (back gestures) and full bottom strip
-                window.decorView.systemGestureExclusionRects = listOf(
-                    Rect(0, height - 200, width, height)  // bottom 200 px
-                )
-            }
-        }
+        fulfillGestureNavContract(intent)
     }
 
     override fun onResume() {
@@ -85,49 +73,75 @@ class MainActivity : FlutterActivity() {
         // Reply to the home-gesture contract immediately so QuickStep can
         // finish the recents animation instead of timing out and snapping back.
         fulfillGestureNavContract(intent)
+        setIntent(intent)
         super.onNewIntent(intent)
         reportFullyDrawn()
         homeEventSink?.success("onHomeGesture")
     }
 
     /**
-     * Android 11+ (and some Android 10 OEM builds) attach a bundle extra
-     * `gesture_nav_contract_v1` with a RemoteCallback. If we never send the
-     * destination rect, the system aborts the swipe-home and the app window
-     * springs back open.
+     * Quickstep sends `gesture_nav_contract_v1` with a Message callback. The
+     * callback's replyTo Messenger must receive the destination bounds or the
+     * system may abort the Home transition.
      */
     @Suppress("DEPRECATION")
     private fun fulfillGestureNavContract(intent: Intent) {
         try {
-            val extras = intent.getBundleExtra("gesture_nav_contract_v1")
-            if (extras != null) {
-                intent.removeExtra("gesture_nav_contract_v1")
-                val metrics = resources.displayMetrics
-                val end = RectF(0f, 0f, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
-                val result = Bundle()
-                result.putParcelable("gesture_nav_contract_icon_position", end)
+            val contractKey = "gesture_nav_contract_v1"
+            val extras = intent.getBundleExtra(contractKey) ?: return
+            intent.removeExtra(contractKey)
 
-                val callback = extras.getParcelable<Parcelable>("android.intent.extra.REMOTE_CALLBACK")
-                if (callback != null) {
-                    try {
-                        callback.javaClass.getMethod("sendResult", Bundle::class.java)
-                            .invoke(callback, result)
-                    } catch (_: Exception) {
-                        try {
-                            val messenger = extras.getParcelable<android.os.Messenger>(
-                                "android.intent.extra.REMOTE_CALLBACK"
-                            )
-                            if (messenger != null) {
-                                val msg = android.os.Message.obtain()
-                                msg.data = result
-                                messenger.send(msg)
-                            }
-                        } catch (_: Exception) {}
-                    }
-                }
+            val callback = extras.getParcelable<Parcelable>(
+                "android.intent.extra.REMOTE_CALLBACK"
+            )
+            val metrics = resources.displayMetrics
+            val decor = window.decorView
+            val location = IntArray(2)
+            decor.getLocationOnScreen(location)
+            val width = decor.width.takeIf { it > 0 } ?: metrics.widthPixels
+            val height = decor.height.takeIf { it > 0 } ?: metrics.heightPixels
+            // A Flutter workspace can place icons dynamically, so use the launcher
+            // window as a safe transition target instead of returning no target.
+            val result = Bundle().apply {
+                putParcelable("gesture_nav_contract_surface_control", null)
+                putParcelable(
+                    "gesture_nav_contract_icon_position",
+                    RectF(
+                        location[0].toFloat(),
+                        location[1].toFloat(),
+                        (location[0] + width).toFloat(),
+                        (location[1] + height).toFloat()
+                    )
+                )
             }
-        } catch (_: Exception) {}
-        intent.removeExtra("android.intent.extra.GESTURE_NAV_CONTRACT_CALLBACK")
+
+            when (callback) {
+                is Message -> {
+                    val messenger = callback.replyTo
+                    if (messenger == null) {
+                        android.util.Log.w(
+                            "MainActivity",
+                            "Gesture navigation contract Message has no reply Messenger"
+                        )
+                        return
+                    }
+                    val reply = Message.obtain().apply {
+                        copyFrom(callback)
+                        data = result
+                    }
+                    messenger.send(reply)
+                }
+                is Messenger -> {
+                    messenger.send(Message.obtain(null, 0).apply { data = result })
+                }
+                else -> android.util.Log.w(
+                    "MainActivity",
+                    "Unsupported gesture navigation callback: ${callback?.javaClass?.name}"
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Failed to reply to gesture navigation contract", e)
+        }
     }
 
     override fun getCachedEngineId(): String = GoLauncherApplication.ENGINE_ID
@@ -400,6 +414,14 @@ class MainActivity : FlutterActivity() {
                         startActivity(intent)
                     } catch (e: Exception) {}
                     result.success(null)
+                }
+                "openAccessibilitySettings" -> {
+                    try {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("ACCESSIBILITY_SETTINGS_FAILED", e.message, null)
+                    }
                 }
                 "isDefaultLauncher" -> {
                     try {

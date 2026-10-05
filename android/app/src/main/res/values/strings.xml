@@ -1,4 +1,5 @@
 <resources>
-    <string name="accessibility_service_label">Go Launcher gesture support</string>
-    <string name="accessibility_service_description">Keeps the launcher ready during system home gesture transitions. Does not read screen content.</string>
+    <string name="accessibility_service_label">Go Launcher gesture fallback</string>
+    <string name="accessibility_service_description">Shows a small gesture handle over other apps. It receives app-window change events only and does not read screen contents or send data. Tap or swipe up briefly on the handle to request Home, or swipe up and hold to request Recents.</string>
+    <string name="gesture_fallback_handle">Gesture fallback handle. Tap or swipe up for Home, or swipe up and hold for Recents.</string>
 </resources>

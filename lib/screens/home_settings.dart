@@ -5,7 +5,7 @@ import 'package:swavoti/screens/search_settings.dart';
 
 class HomeSettings extends StatefulWidget {
   final VoidCallback? onSettingsChanged;
-  
+
   const HomeSettings({super.key, this.onSettingsChanged});
 
   @override
@@ -110,6 +110,44 @@ class _HomeSettingsState extends State<HomeSettings> {
     setState(() => _showHiddenApps = value);
   }
 
+  Future<void> _openGestureFallbackSettings() async {
+    final shouldContinue = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Gesture fallback'),
+        content: const Text(
+          'If you enable Go Launcher gesture fallback in Android Accessibility settings, '
+          'the service will receive app-window change events (app package only; it does not read screen contents '
+          'or send data) and show a small handle over other apps. Tap or swipe up briefly on that handle to request Home, '
+          'or swipe up and hold to request Recents. This custom handle is a workaround and does not replace or '
+          'intercept Android’s native navigation gestures. You can turn the service off in Accessibility settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (shouldContinue == true) {
+      try {
+        await LauncherService.openAccessibilitySettings();
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open Accessibility settings: $error'),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -198,6 +236,15 @@ class _HomeSettingsState extends State<HomeSettings> {
                   ),
                   value: _showHiddenApps,
                   onChanged: _toggleShowHiddenApps,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.gesture_outlined),
+                  title: const Text('Gesture fallback'),
+                  subtitle: const Text(
+                    'Optional Home and Recents handle for navigation issues',
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: _openGestureFallbackSettings,
                 ),
                 const Divider(),
                 if (!_isDefaultLauncher)
