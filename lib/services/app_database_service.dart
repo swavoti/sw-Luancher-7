@@ -16,12 +16,13 @@ class AppDatabaseService {
   static final Map<String, Uint8List> _iconCache = {};
   static const int _maxIconCacheBytes = 32 << 20;
   static int _iconCacheBytes = 0;
+  static int _iconCacheGeneration = 0;
   static String currentIconPack = "";
   static final Map<String, Future<Uint8List?>> _inflight = {};
 
   static final List<void Function()> _taskQueue = [];
   static int _runningTasks = 0;
-  static const int _maxConcurrentTasks = 6;
+  static const int _maxConcurrentTasks = 3;
 
   static Future<T> _enqueue<T>(Future<T> Function() task) {
     final completer = Completer<T>();
@@ -179,7 +180,10 @@ class AppDatabaseService {
     final cached = getCachedIcon(packageName);
     if (cached != null) return Future.value(cached);
 
-    return _inflight.putIfAbsent(packageName, () async {
+    final iconPack = currentIconPack;
+    final cacheGeneration = _iconCacheGeneration;
+    final inflightKey = '$packageName\u0000$iconPack\u0000$cacheGeneration';
+    return _inflight.putIfAbsent(inflightKey, () async {
       Database? db;
       Uint8List? blob;
       try {
@@ -201,10 +205,10 @@ class AppDatabaseService {
         );
       }
 
-      if (currentIconPack.isNotEmpty) {
+      if (iconPack.isNotEmpty) {
         try {
           final themed = await _enqueue(
-            () => LauncherService.getThemedIcon(packageName, currentIconPack),
+            () => LauncherService.getThemedIcon(packageName, iconPack),
           );
           if (themed != null) blob = themed;
         } catch (e) {
@@ -239,10 +243,12 @@ class AppDatabaseService {
       try {
         if (blob == null || blob.isEmpty) return null;
 
-        _cacheIcon(packageName, blob);
+        if (cacheGeneration == _iconCacheGeneration) {
+          _cacheIcon(packageName, blob);
+        }
         return blob;
       } finally {
-        _inflight.remove(packageName);
+        _inflight.remove(inflightKey);
       }
     });
   }
@@ -275,6 +281,7 @@ class AppDatabaseService {
 
   /// Warm SQLite + memory for every listed package, a few at a time.
   static Future<void> clearIconCache() async {
+    _iconCacheGeneration++;
     _iconCache.clear();
     _iconCacheBytes = 0;
     _inflight.clear();
@@ -314,7 +321,11 @@ class AppDatabaseService {
       final batch = db.batch();
 
       for (final packageName in existingPackages.difference(freshPackages)) {
-        batch.delete('apps', where: 'packageName = ?', whereArgs: [packageName]);
+        batch.delete(
+          'apps',
+          where: 'packageName = ?',
+          whereArgs: [packageName],
+        );
         _removeCachedIcon(packageName);
       }
       for (final app in apps) {
@@ -354,7 +365,6 @@ class AppDatabaseService {
     }
 
     await cacheApps(apps);
-    unawaited(prefetchIcons(apps.map((app) => app.packageName)));
     return apps;
   }
 }

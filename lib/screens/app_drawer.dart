@@ -54,6 +54,9 @@ class AppDrawerState extends State<AppDrawer> {
   bool _frostedGlassEnabled = true;
   final ValueNotifier<int> _pageNotifier = ValueNotifier<int>(0);
   final Map<String, Uint8List> _iconCache = {};
+  final Set<String> _prefetchedPageKeys = {};
+  String _iconPack = '';
+  int _iconGeneration = 0;
   int _currentPage = 0;
 
   // Grid scroll key
@@ -85,6 +88,13 @@ class AppDrawerState extends State<AppDrawer> {
     if (mounted) {
       setState(() {
         _iconShape = prefs.getString('icon_shape') ?? 'Circle';
+        final iconPack = prefs.getString('icon_pack') ?? '';
+        if (iconPack != _iconPack) {
+          _iconPack = iconPack;
+          _iconCache.clear();
+          _prefetchedPageKeys.clear();
+          _iconGeneration++;
+        }
         _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
         _savedWallpaperPath = prefs.getString('saved_wallpaper_path');
       });
@@ -134,7 +144,6 @@ class AppDrawerState extends State<AppDrawer> {
         _filteredApps = _filterBySearch(availableApps);
         _isLoading = false;
       });
-      _prefetchAndRefreshIcons(availableApps);
     }
 
     // Refresh cache in the background; the drawer stays usable while SQLite
@@ -144,15 +153,26 @@ class AppDrawerState extends State<AppDrawer> {
         if (!mounted) return;
         if (freshApps.isNotEmpty) {
           final apps = filterApps(freshApps);
+          if (_sameApps(_apps, apps)) return;
           setState(() {
             _apps = apps;
             _filteredApps = _filterBySearch(apps);
             _isLoading = false;
           });
-          _prefetchAndRefreshIcons(apps);
         }
       }),
     );
+  }
+
+  bool _sameApps(List<AppInfo> first, List<AppInfo> second) {
+    if (first.length != second.length) return false;
+    for (var index = 0; index < first.length; index++) {
+      if (first[index].packageName != second[index].packageName ||
+          first[index].name != second[index].name) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<AppInfo> _filterBySearch(List<AppInfo> apps) {
@@ -161,19 +181,25 @@ class AppDrawerState extends State<AppDrawer> {
     return apps.where((app) => app.name.toLowerCase().contains(query)).toList();
   }
 
-  void _prefetchAndRefreshIcons(List<AppInfo> apps) {
-    unawaited(() async {
-      await AppDatabaseService.prefetchIcons(
-        apps.map((app) => app.packageName),
-      );
-      if (mounted) setState(() {});
-    }());
-  }
-
   void _filterApps() {
     setState(() {
       _filteredApps = _filterBySearch(_apps);
     });
+  }
+
+  void _prefetchPage(List<AppInfo> apps, int itemsPerPage, int pageIndex) {
+    final start = pageIndex * itemsPerPage;
+    if (start >= apps.length) return;
+    final end = (start + itemsPerPage).clamp(0, apps.length);
+    final packages = apps
+        .sublist(start, end)
+        .map((app) => app.packageName)
+        .toList();
+    final pageKey = packages.join('\u0000');
+    if (!_prefetchedPageKeys.add(pageKey)) return;
+    unawaited(
+      AppDatabaseService.prefetchIcons(packages),
+    );
   }
 
   @override
@@ -358,8 +384,18 @@ class AppDrawerState extends State<AppDrawer> {
                             itemCount: pages,
                             onPageChanged: (page) {
                               _pageNotifier.value = page;
+                              _prefetchPage(gridApps, itemsPerPage, page + 1);
                             },
                             itemBuilder: (context, pageIndex) {
+                              if (pageIndex == 0) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  if (mounted && pages > 1) {
+                                    _prefetchPage(gridApps, itemsPerPage, 1);
+                                  }
+                                });
+                              }
                               final start = pageIndex * itemsPerPage;
                               final end = (start + itemsPerPage).clamp(
                                 0,
@@ -396,6 +432,11 @@ class AppDrawerState extends State<AppDrawer> {
                                     iconShape: _iconShape,
                                     onDragStarted: widget.onDragStarted,
                                     onDragEnded: widget.onDragEnded,
+                                    cachedIcon: _iconCache[app.packageName],
+                                    iconGeneration: _iconGeneration,
+                                    onIconLoaded: (icon) {
+                                      _iconCache[app.packageName] = icon;
+                                    },
                                   );
                                 },
                               );
@@ -483,6 +524,9 @@ class _AppDrawerItem extends StatefulWidget {
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
   final void Function(Map<String, dynamic>)? onAddToHomeScreen;
+  final Uint8List? cachedIcon;
+  final int iconGeneration;
+  final ValueChanged<Uint8List>? onIconLoaded;
 
   const _AppDrawerItem({
     super.key,
@@ -493,6 +537,9 @@ class _AppDrawerItem extends StatefulWidget {
     this.onDragStarted,
     this.onDragEnded,
     this.onAddToHomeScreen,
+    this.cachedIcon,
+    required this.iconGeneration,
+    this.onIconLoaded,
   });
 
   @override
@@ -506,12 +553,14 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
 
   bool _dragStarted = false;
   Uint8List? _icon;
+  int _iconLoadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _icon =
         widget.app.icon ??
+        widget.cachedIcon ??
         AppDatabaseService.getCachedIcon(widget.app.packageName);
     if (_icon == null) _loadIcon();
   }
@@ -519,9 +568,12 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   @override
   void didUpdateWidget(covariant _AppDrawerItem oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.app.packageName != widget.app.packageName) {
+    if (oldWidget.app.packageName != widget.app.packageName ||
+        oldWidget.iconGeneration != widget.iconGeneration) {
+      _iconLoadGeneration++;
       _icon =
           widget.app.icon ??
+          widget.cachedIcon ??
           AppDatabaseService.getCachedIcon(widget.app.packageName);
       if (_icon == null) {
         _loadIcon();
@@ -532,6 +584,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   }
 
   Future<void> _loadIcon() async {
+    final generation = ++_iconLoadGeneration;
     if (widget.app.icon != null) {
       if (mounted) setState(() => _icon = widget.app.icon);
       return;
@@ -539,14 +592,15 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
 
     final cached = AppDatabaseService.getCachedIcon(widget.app.packageName);
     if (cached != null) {
+      widget.onIconLoaded?.call(cached);
       if (mounted) setState(() => _icon = cached);
       return;
     }
 
     final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
-    if (mounted) {
-      setState(() => _icon = icon);
-    }
+    if (!mounted || generation != _iconLoadGeneration) return;
+    if (icon != null) widget.onIconLoaded?.call(icon);
+    setState(() => _icon = icon);
   }
 
   void _showContextMenu(BuildContext context) {

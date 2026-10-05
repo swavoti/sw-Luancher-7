@@ -13,7 +13,7 @@ class IconPackManager(private val context: Context) {
     private var currentIconPack: String? = null
     private val componentToDrawableMap = mutableMapOf<String, String>()
 
-    fun getAvailableIconPacks(): List<Map<String, String>> {
+    fun getAvailableIconPacks(): List<Map<String, Any>> {
         val pm = context.packageManager
         val themeActions = listOf(
             "org.adw.launcher.THEMES",
@@ -22,7 +22,7 @@ class IconPackManager(private val context: Context) {
             "com.teslacoilsw.launcher.THEME",
             "com.gau.go.launcherex.theme"
         )
-        val packsByPackage = linkedMapOf<String, Map<String, String>>()
+        val packsByPackage = linkedMapOf<String, Map<String, Any>>()
         for (action in themeActions) {
             val intent = Intent(action)
             val resolveInfos = pm.queryIntentActivities(intent, PackageManager.GET_META_DATA)
@@ -32,7 +32,8 @@ class IconPackManager(private val context: Context) {
                     packageName,
                     mapOf(
                         "packageName" to packageName,
-                        "label" to resolveInfo.loadLabel(pm).toString()
+                        "label" to resolveInfo.loadLabel(pm).toString(),
+                        "icon" to drawableToByteArray(resolveInfo.loadIcon(pm))
                     )
                 )
             }

@@ -1,0 +1,4 @@
+<resources>
+    <string name="accessibility_service_label">Go Launcher gesture support</string>
+    <string name="accessibility_service_description">Keeps the launcher ready during system home gesture transitions. Does not read screen content.</string>
+</resources>

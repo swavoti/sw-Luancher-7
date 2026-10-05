@@ -54,6 +54,7 @@ class SwavotiApp extends StatefulWidget {
 class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   SharedPreferences? _prefs;
   Map<String, AppInfo> _appCache = {};
+  final GlobalKey<WorkspaceState> _workspaceKey = GlobalKey<WorkspaceState>();
 
   @override
   void initState() {
@@ -148,10 +149,17 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           title: 'Go Launcher 7',
           initialRoute: '/',
           routes: {
-            
-            '/settings': (context) => const HomeSettings(),
+            '/settings': (context) => HomeSettings(
+              onSettingsChanged: () =>
+                  _workspaceKey.currentState?.refreshLauncherSettings(),
+            ),
             '/wallpaper': (context) => const WallpaperPage(),
-            '/edit_icons': (context) => const EditIconsPage(backgroundWallpaperPath: ''),
+            '/edit_icons': (context) => EditIconsPage(
+              backgroundWallpaperPath: '',
+              onSettingsApplied: () async {
+                await _workspaceKey.currentState?.refreshLauncherSettings();
+              },
+            ),
           },
           theme: ThemeData(
             colorScheme: lightColorScheme,
@@ -178,7 +186,11 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           ),
           home: PopScope(
             canPop: false,
-            child: Workspace(prefs: prefs, appCache: _appCache),
+            child: Workspace(
+              key: _workspaceKey,
+              prefs: prefs,
+              appCache: _appCache,
+            ),
           ),
           debugShowCheckedModeBanner: false,
         );

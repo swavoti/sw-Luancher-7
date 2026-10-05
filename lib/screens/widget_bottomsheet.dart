@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:swavoti/services/launcher_service.dart';
@@ -26,8 +27,11 @@ class _SheetRow {
   const _SheetRow.header(this.packageName, {required this.isLast})
     : isHeader = true,
       widgetData = null;
-  const _SheetRow.widget(this.packageName, this.widgetData, {required this.isLast})
-    : isHeader = false;
+  const _SheetRow.widget(
+    this.packageName,
+    this.widgetData, {
+    required this.isLast,
+  }) : isHeader = false;
 }
 
 class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
@@ -64,26 +68,26 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
       }
       _loadingDone = true;
     });
-    _hydrateAppIdentities(_groupedWidgets.keys);
+    unawaited(_hydrateAppIdentities());
   }
 
-  Future<void> _hydrateAppIdentities(Iterable<String> packages) async {
-    final next = <String, _AppIdentity>{};
-    for (final pkg in packages) {
-      if (_appIdentity.containsKey(pkg)) continue;
-      try {
-        final info = await InstalledApps.getAppInfo(pkg);
-        final fallback = pkg.split('.').last.replaceAll('_', ' ');
-        next[pkg] = _AppIdentity(info?.name ?? fallback, info?.icon);
-      } catch (_) {
-        next[pkg] = _AppIdentity(
-          pkg.split('.').last.replaceAll('_', ' '),
-          null,
-        );
-      }
+  Future<void> _hydrateAppIdentities() async {
+    try {
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: false,
+        withIcon: false,
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final app in apps) {
+          if (_groupedWidgets.containsKey(app.packageName)) {
+            _appIdentity[app.packageName] = _AppIdentity(app.name, null);
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('WidgetBottomSheet: failed to load app labels: $e');
     }
-    if (!mounted || next.isEmpty) return;
-    setState(() => _appIdentity.addAll(next));
   }
 
   Map<String, List<Map<String, dynamic>>> get _filtered {
@@ -243,7 +247,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                 )
               : ListView.builder(
                   physics: const ClampingScrollPhysics(),
-                  cacheExtent: 900,
+                  cacheExtent: 400,
                   padding: const EdgeInsets.only(bottom: 32),
                   itemCount: rows.length,
                   itemBuilder: (context, index) {
@@ -258,7 +262,8 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                     return _DraggableWidgetRow(
                       widgetData: row.widgetData!,
                       onWidgetSelected: widget.onWidgetSelected,
-                      showDivider: row.isLast == false &&
+                      showDivider:
+                          row.isLast == false &&
                           index + 1 < rows.length &&
                           rows[index + 1].isHeader,
                     );
@@ -375,6 +380,8 @@ class _DraggableWidgetRow extends StatelessWidget {
       'providerPackage': widgetData['providerPackage'],
       'providerClass': widgetData['providerClass'],
       'label': label,
+      'spanX': 4,
+      'spanY': 2,
     };
 
     final row = _WidgetRow(
@@ -390,6 +397,7 @@ class _DraggableWidgetRow extends StatelessWidget {
         LongPressDraggable<Map<String, dynamic>>(
           data: dragData,
           delay: const Duration(milliseconds: 150),
+          rootOverlay: true,
           onDragStarted: () => Navigator.pop(context),
           feedback: Material(
             color: Colors.transparent,

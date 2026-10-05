@@ -15,10 +15,10 @@ class Workspace extends StatefulWidget {
   const Workspace({super.key, required this.prefs, required this.appCache});
 
   @override
-  State<Workspace> createState() => _WorkspaceState();
+  State<Workspace> createState() => WorkspaceState();
 }
 
-class _WorkspaceState extends State<Workspace>
+class WorkspaceState extends State<Workspace>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   Map<String, int> _notifications = {};
   StreamSubscription<Map<String, int>>? _notificationSubscription;
@@ -48,6 +48,11 @@ class _WorkspaceState extends State<Workspace>
 
   // The scroll controller the AppDrawer's inner list uses
   final ScrollController _drawerScrollController = ScrollController();
+
+  Future<void> refreshLauncherSettings() async {
+    await _homeScreenKey.currentState?.refreshSettings();
+    await _appDrawerKey.currentState?.loadSettings();
+  }
 
   @override
   void initState() {
@@ -108,6 +113,7 @@ class _WorkspaceState extends State<Workspace>
   }
 
   void _openDrawer() {
+    _appDrawerKey.currentState?.loadSettings();
     _drawerController.animateTo(
       1.0,
       duration: const Duration(milliseconds: 360),

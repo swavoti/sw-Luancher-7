@@ -124,6 +124,13 @@ class HomeScreenState extends State<HomeScreen> {
   bool _editingWidgetCanResizeY = false;
   int _editingWidgetMinSpanX = 1;
   int _editingWidgetMinSpanY = 1;
+  int? _widgetPressPointer;
+  int? _widgetResizePointer;
+  String? _widgetPressItemId;
+  Offset? _widgetPressPosition;
+  double _widgetMoveDeltaX = 0;
+  double _widgetMoveDeltaY = 0;
+  bool _widgetWasDragged = false;
   double _resizeDragX = 0;
   double _resizeDragY = 0;
   final Map<String, GlobalKey> _widgetItemKeys = {};
@@ -341,6 +348,8 @@ class HomeScreenState extends State<HomeScreen> {
       _loadItemsFromPrefs(prefs);
     });
   }
+
+  Future<void> refreshSettings() => _reloadSettings();
 
   void _loadItemsFromPrefs(SharedPreferences prefs) {
     final data = prefs.getStringList('launcher_items') ?? [];
@@ -607,44 +616,56 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void addWidgetToWorkspace(Map<String, dynamic> widgetData, int widgetId) {
+  void addWidgetToWorkspace(
+    Map<String, dynamic> widgetData,
+    int widgetId, {
+    int? targetX,
+    int? targetY,
+    int? targetPage,
+  }) {
     final spanX = 4;
     final spanY = 2;
-
+    final page = targetPage ?? _currentWorkspacePage;
+    final positions = <(int, int)>[];
+    if (targetX != null && targetY != null) {
+      positions.add((
+        targetX.clamp(0, _columns - spanX).toInt(),
+        targetY.clamp(0, _rows - spanY).toInt(),
+      ));
+    }
     for (int y = 0; y <= _rows - spanY; y++) {
       for (int x = 0; x <= _columns - spanX; x++) {
-        bool isOccupied = false;
-        for (final item in _items) {
-          if (item.page == _currentWorkspacePage) {
-            if (x < item.x + item.spanX &&
-                x + spanX > item.x &&
-                y < item.y + item.spanY &&
-                y + spanY > item.y) {
-              isOccupied = true;
-              break;
-            }
-          }
-        }
-
-        if (!isOccupied) {
-          _addNewItem(
-            LauncherItem(
-              id: DateTime.now().millisecondsSinceEpoch.toString(),
-              type: 'widget',
-              packageName: widgetData['providerPackage'],
-              className: widgetData['providerClass'],
-              appWidgetId: widgetId,
-              x: x,
-              y: y,
-              spanX: spanX,
-              spanY: spanY,
-              page: _currentWorkspacePage,
-              label: widgetData['label'],
-            ),
-          );
-          return;
-        }
+        if (!positions.contains((x, y))) positions.add((x, y));
       }
+    }
+
+    for (final (x, y) in positions) {
+      final isOccupied = _items.any(
+        (item) =>
+            item.page == page &&
+            x < item.x + item.spanX &&
+            x + spanX > item.x &&
+            y < item.y + item.spanY &&
+            y + spanY > item.y,
+      );
+      if (isOccupied) continue;
+
+      _addNewItem(
+        LauncherItem(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          type: 'widget',
+          packageName: widgetData['providerPackage'],
+          className: widgetData['providerClass'],
+          appWidgetId: widgetId,
+          x: x,
+          y: y,
+          spanX: spanX,
+          spanY: spanY,
+          page: page,
+          label: widgetData['label'],
+        ),
+      );
+      return;
     }
 
     LauncherService.deleteWidgetId(widgetId);
@@ -664,6 +685,9 @@ class HomeScreenState extends State<HomeScreen> {
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: _handleWidgetEditorPointerDown,
+      onPointerMove: _handleWidgetEditorPointerMove,
+      onPointerUp: _handleWidgetEditorPointerUp,
+      onPointerCancel: _handleWidgetEditorPointerUp,
       child: Stack(
         children: [
           // The Workspace
@@ -897,29 +921,42 @@ class HomeScreenState extends State<HomeScreen> {
                                                         data['providerClass'],
                                                       ).then((success) {
                                                         if (success) {
-                                                          _addNewItem(
-                                                            LauncherItem(
-                                                              id: DateTime.now()
-                                                                  .millisecondsSinceEpoch
-                                                                  .toString(),
-                                                              type: 'widget',
-                                                              packageName:
-                                                                  data['providerPackage'],
-                                                              className:
-                                                                  data['providerClass'],
-                                                              appWidgetId: id,
-                                                              x: targetX,
-                                                              y: targetY,
-                                                              spanX: 4,
-                                                              spanY: 2,
-                                                              page: pageIndex,
-                                                              label:
-                                                                  data['label'],
+                                                              addWidgetToWorkspace(
+                                                                data,
+                                                                id,
+                                                                targetX: targetX,
+                                                                targetY: targetY,
+                                                                targetPage:
+                                                                    pageIndex,
+                                                              );
+                                                            } else {
+                                                              LauncherService.deleteWidgetId(
+                                                                id,
+                                                              );
+                                                              if (mounted) {
+                                                                ScaffoldMessenger.of(
+                                                                  context,
+                                                                ).showSnackBar(
+                                                                  const SnackBar(
+                                                                    content: Text(
+                                                                      'Widget permission was not granted.',
+                                                                    ),
+                                                                  ),
+                                                                );
+                                                              }
+                                                            }
+                                                          });
+                                                        } else if (mounted) {
+                                                          ScaffoldMessenger.of(
+                                                            context,
+                                                          ).showSnackBar(
+                                                            const SnackBar(
+                                                              content: Text(
+                                                                'Unable to allocate widget.',
+                                                              ),
                                                             ),
                                                           );
                                                         }
-                                                      });
-                                                    }
                                                   });
                                                 }
                                               },
@@ -1955,20 +1992,138 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleWidgetEditorPointerDown(PointerDownEvent event) {
-    final widgetId = _editingWidgetId;
-    if (widgetId == null) return;
-    final renderObject = _widgetItemKeys[widgetId]?.currentContext
-        ?.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) {
-      setState(() => _editingWidgetId = null);
+    LauncherItem? pressedItem;
+    RenderBox? pressedBox;
+    Offset? localPosition;
+    for (final item in _items.where((item) => item.type == 'widget')) {
+      final renderObject = _widgetItemKeys[item.id]?.currentContext
+          ?.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.hasSize) continue;
+      final local = renderObject.globalToLocal(event.position);
+      if ((Offset.zero & renderObject.size).contains(local)) {
+        pressedItem = item;
+        pressedBox = renderObject;
+        localPosition = local;
+        break;
+      }
+    }
+
+    if (pressedItem == null || pressedBox == null || localPosition == null) {
+      if (_editingWidgetId != null) {
+        setState(() => _editingWidgetId = null);
+      }
       return;
     }
 
-    final localPosition = renderObject.globalToLocal(event.position);
-    final bounds = Offset.zero & renderObject.size;
-    if (!bounds.contains(localPosition)) {
+    if (_editingWidgetId != null && _editingWidgetId != pressedItem.id) {
       setState(() => _editingWidgetId = null);
     }
+
+    _widgetPressPointer = event.pointer;
+    _widgetPressItemId = pressedItem.id;
+    _widgetPressPosition = event.position;
+    _widgetWasDragged = false;
+    _widgetMoveDeltaX = 0;
+    _widgetMoveDeltaY = 0;
+    final resizeHandle = Rect.fromLTWH(
+      pressedBox.size.width - 36,
+      pressedBox.size.height - 36,
+      36,
+      36,
+    );
+    _widgetResizePointer = resizeHandle.contains(localPosition)
+        ? event.pointer
+        : null;
+  }
+
+  void _handleWidgetEditorPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _widgetPressPointer ||
+        event.pointer == _widgetResizePointer ||
+        _editingWidgetId != _widgetPressItemId ||
+        _widgetPressPosition == null) {
+      return;
+    }
+
+    if (!_widgetWasDragged &&
+        (event.position - _widgetPressPosition!).distance < 12) {
+      return;
+    }
+    _widgetWasDragged = true;
+    LauncherItem? item;
+    for (final candidate in _items) {
+      if (candidate.id == _widgetPressItemId) {
+        item = candidate;
+        break;
+      }
+    }
+    final movingItem = item;
+    final renderObject = _widgetItemKeys[_widgetPressItemId]?.currentContext
+        ?.findRenderObject();
+    if (movingItem == null ||
+        renderObject is! RenderBox ||
+        !renderObject.hasSize) {
+      return;
+    }
+
+    final cellWidth = renderObject.size.width / movingItem.spanX;
+    final cellHeight = renderObject.size.height / movingItem.spanY;
+    _widgetMoveDeltaX += event.delta.dx;
+    _widgetMoveDeltaY += event.delta.dy;
+    var nextX = movingItem.x;
+    var nextY = movingItem.y;
+
+    while (_widgetMoveDeltaX >= cellWidth) {
+      if (!_canMoveWidgetTo(movingItem, nextX + 1, nextY)) break;
+      nextX++;
+      _widgetMoveDeltaX -= cellWidth;
+    }
+    while (_widgetMoveDeltaX <= -cellWidth) {
+      if (!_canMoveWidgetTo(movingItem, nextX - 1, nextY)) break;
+      nextX--;
+      _widgetMoveDeltaX += cellWidth;
+    }
+    while (_widgetMoveDeltaY >= cellHeight) {
+      if (!_canMoveWidgetTo(movingItem, nextX, nextY + 1)) break;
+      nextY++;
+      _widgetMoveDeltaY -= cellHeight;
+    }
+    while (_widgetMoveDeltaY <= -cellHeight) {
+      if (!_canMoveWidgetTo(movingItem, nextX, nextY - 1)) break;
+      nextY--;
+      _widgetMoveDeltaY += cellHeight;
+    }
+
+    if (nextX != movingItem.x || nextY != movingItem.y) {
+      setState(() {
+        movingItem.x = nextX;
+        movingItem.y = nextY;
+      });
+    }
+  }
+
+  bool _canMoveWidgetTo(LauncherItem item, int x, int y) {
+    if (x < 0 || y < 0 || x + item.spanX > _columns || y + item.spanY > _rows) {
+      return false;
+    }
+    return !_items.any(
+      (other) =>
+          other.id != item.id &&
+          other.page == item.page &&
+          x < other.x + other.spanX &&
+          x + item.spanX > other.x &&
+          y < other.y + other.spanY &&
+          y + item.spanY > other.y,
+    );
+  }
+
+  void _handleWidgetEditorPointerUp(PointerEvent event) {
+    if (event.pointer != _widgetPressPointer) return;
+    if (_widgetWasDragged) _saveItems();
+    _widgetPressPointer = null;
+    _widgetResizePointer = null;
+    _widgetPressItemId = null;
+    _widgetPressPosition = null;
+    _widgetWasDragged = false;
   }
 
   bool _canResizeWidget(LauncherItem item, int spanX, int spanY) {
