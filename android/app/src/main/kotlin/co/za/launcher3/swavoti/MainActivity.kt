@@ -299,7 +299,14 @@ class MainActivity : FlutterActivity() {
                                 "supportsSplitScreen" -> {
                                     result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
                                 }
-                "getAvailableIconPacks" -> {
+                                "getDeviceTotalMemoryBytes" -> {
+                                    val activityManager =
+                                        getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                                    val memoryInfo = android.app.ActivityManager.MemoryInfo()
+                                    activityManager.getMemoryInfo(memoryInfo)
+                                    result.success(memoryInfo.totalMem)
+                                }
+                                "getAvailableIconPacks" -> {
                     backgroundExecutor.execute {
                         val packs = iconPackManager.getAvailableIconPacks()
                         Handler(Looper.getMainLooper()).post { result.success(packs) }

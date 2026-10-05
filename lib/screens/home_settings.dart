@@ -21,6 +21,7 @@ class _HomeSettingsState extends State<HomeSettings> {
   bool _showHiddenApps = false;
   bool _isDefaultLauncher = false;
   bool _frostedGlassEnabled = false;
+  double? _deviceMemoryGb;
 
   @override
   void initState() {
@@ -30,7 +31,20 @@ class _HomeSettingsState extends State<HomeSettings> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final isDefault = await LauncherService.isDefaultLauncher();
+    final results = await Future.wait([
+      LauncherService.isDefaultLauncher(),
+      LauncherService.getDeviceTotalMemoryGb(),
+    ]);
+    final isDefault = results[0] as bool;
+    final deviceMemoryGb = results[1] as double?;
+    final lowMemoryDevice = deviceMemoryGb != null && deviceMemoryGb < 6;
+    final frostedGlassEnabled =
+        !lowMemoryDevice && (prefs.getBool('frosted_glass_enabled') ?? false);
+    final disabledFrostedGlass = lowMemoryDevice &&
+        (prefs.getBool('frosted_glass_enabled') ?? false);
+    if (disabledFrostedGlass) {
+      await prefs.setBool('frosted_glass_enabled', false);
+    }
 
     if (mounted) {
       setState(() {
@@ -41,9 +55,11 @@ class _HomeSettingsState extends State<HomeSettings> {
         _gridColumns = prefs.getInt('grid_columns') ?? 4;
         _showHiddenApps = prefs.getBool('show_hidden_apps') ?? false;
         _isDefaultLauncher = isDefault;
-        _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? false;
+        _deviceMemoryGb = deviceMemoryGb;
+        _frostedGlassEnabled = frostedGlassEnabled;
         _isLoading = false;
       });
+      if (disabledFrostedGlass) widget.onSettingsChanged?.call();
     }
   }
 
@@ -146,6 +162,39 @@ class _HomeSettingsState extends State<HomeSettings> {
         );
       }
     }
+  }
+
+  Future<void> _showLowMemoryExperimentalInfo() {
+    final ramLabel = _deviceMemoryGb == null
+        ? 'This device reports less than 6 GB of system memory.'
+        : 'This device reports ${_deviceMemoryGb!.toStringAsFixed(1)} GB of system memory.';
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Experimental feature unavailable',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '$ramLabel Wallpaper blur is disabled on devices with under 6 GB RAM to keep the launcher responsive.',
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'The app drawer will use the system dynamic surface color instead.',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -276,15 +325,44 @@ class _HomeSettingsState extends State<HomeSettings> {
                     ),
                   ),
                 ),
-                SwitchListTile(
-                  secondary: const Icon(Icons.blur_on),
-                  title: const Text('Blur Wallpaper Background'),
-                  subtitle: const Text(
-                    'App drawer shows wallpaper with blur when on; solid colour when off',
+                if (_deviceMemoryGb != null && _deviceMemoryGb! < 6)
+                  ListTile(
+                    leading: Icon(
+                      Icons.blur_on,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text(
+                      'Blur Wallpaper Background',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      'Disabled on devices with less than 6 GB RAM',
+                    ),
+                    onTap: _showLowMemoryExperimentalInfo,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Why is this disabled?',
+                          onPressed: _showLowMemoryExperimentalInfo,
+                          icon: const Icon(Icons.more_vert),
+                        ),
+                        Switch(value: false, onChanged: null),
+                      ],
+                    ),
+                  )
+                else
+                  SwitchListTile(
+                    secondary: const Icon(Icons.blur_on),
+                    title: const Text('Blur Wallpaper Background'),
+                    subtitle: const Text(
+                      'App drawer shows wallpaper with blur when on; solid colour when off',
+                    ),
+                    value: _frostedGlassEnabled,
+                    onChanged: _toggleFrostedGlass,
                   ),
-                  value: _frostedGlassEnabled,
-                  onChanged: _toggleFrostedGlass,
-                ),
                 const Divider(),
                 ListTile(
                   leading: const Icon(Icons.info_outline),

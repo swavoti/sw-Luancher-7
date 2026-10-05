@@ -37,6 +37,7 @@ class _SheetRow {
 class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
   final Map<String, List<Map<String, dynamic>>> _groupedWidgets = {};
   final Map<String, _AppIdentity> _appIdentity = {};
+  final Set<String> _expandedPackages = {};
   bool _loadingDone = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -116,15 +117,18 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
       final pkg = keys[i];
       final widgetsForApp = filtered[pkg]!;
       final isLastGroup = i == keys.length - 1;
+      final expanded = _searchQuery.isNotEmpty || _expandedPackages.contains(pkg);
       rows.add(_SheetRow.header(pkg, isLast: isLastGroup));
-      for (var w = 0; w < widgetsForApp.length; w++) {
-        rows.add(
-          _SheetRow.widget(
-            pkg,
-            widgetsForApp[w],
-            isLast: isLastGroup && w == widgetsForApp.length - 1,
-          ),
-        );
+      if (expanded) {
+        for (var w = 0; w < widgetsForApp.length; w++) {
+          rows.add(
+            _SheetRow.widget(
+              pkg,
+              widgetsForApp[w],
+              isLast: isLastGroup && w == widgetsForApp.length - 1,
+            ),
+          );
+        }
       }
     }
     return rows;
@@ -257,6 +261,16 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                         identity: _appIdentity[row.packageName],
                         packageName: row.packageName,
                         count: filtered[row.packageName]?.length ?? 0,
+                        expanded:
+                            _searchQuery.isNotEmpty ||
+                            _expandedPackages.contains(row.packageName),
+                        onTap: _searchQuery.isNotEmpty
+                            ? null
+                            : () => setState(() {
+                                if (!_expandedPackages.add(row.packageName)) {
+                                  _expandedPackages.remove(row.packageName);
+                                }
+                              }),
                       );
                     }
                     return _DraggableWidgetRow(
@@ -288,11 +302,15 @@ class _AppWidgetHeader extends StatelessWidget {
   final _AppIdentity? identity;
   final String packageName;
   final int count;
+  final bool expanded;
+  final VoidCallback? onTap;
 
   const _AppWidgetHeader({
     required this.identity,
     required this.packageName,
     required this.count,
+    required this.expanded,
+    required this.onTap,
   });
 
   @override
@@ -303,9 +321,16 @@ class _AppWidgetHeader extends StatelessWidget {
     final icon = identity?.icon;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(
-        children: [
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
           if (icon != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
@@ -344,15 +369,25 @@ class _AppWidgetHeader extends StatelessWidget {
               ),
             ),
           ),
-          Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 12,
-              color: cs.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: cs.onSurfaceVariant,
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }

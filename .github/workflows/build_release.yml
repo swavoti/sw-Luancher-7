@@ -1,4 +1,4 @@
-name: Build & Release APK
+name: Build & Release APK and AAB
 
 on:
   push:
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build APK & Publish Release
+    name: Build APK and AAB & Publish Release
     runs-on: ubuntu-latest
 
     steps:
@@ -102,13 +102,18 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Rename APK with version
+      - name: Build signed release AAB
+        run: flutter build appbundle --release
+
+      - name: Rename APK and AAB with version
         run: |
           VERSION=${{ steps.tag.outputs.value }}
           cp build/app/outputs/flutter-apk/app-release.apk \
              build/app/outputs/flutter-apk/swavoti-launcher-${VERSION}.apk
+          cp build/app/outputs/bundle/release/app-release.aab \
+             build/app/outputs/bundle/release/swavoti-launcher-${VERSION}.aab
 
-      - name: Create GitHub Release & upload APK
+      - name: Create GitHub Release & upload APK and AAB
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.value }}
@@ -134,8 +139,12 @@ jobs:
             ### Install
             Download `swavoti-launcher-${{ steps.tag.outputs.value }}.apk` below and install on your Android device.
 
+            ### Google Play Store
+            Upload `swavoti-launcher-${{ steps.tag.outputs.value }}.aab` below to the Google Play Console.
+
             > **Note**: You may need to enable *Install from unknown sources* in your device settings. 
             > **Warning**: Google Play Protect occasionally flags unknown launchers. You may need to temporarily turn off Play Protect in the Play Store settings to successfully install the app.
           draft: false
           files: |
             build/app/outputs/flutter-apk/swavoti-launcher-${{ steps.tag.outputs.value }}.apk
+            build/app/outputs/bundle/release/swavoti-launcher-${{ steps.tag.outputs.value }}.aab

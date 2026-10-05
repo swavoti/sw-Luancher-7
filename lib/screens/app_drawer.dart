@@ -197,9 +197,7 @@ class AppDrawerState extends State<AppDrawer> {
         .toList();
     final pageKey = packages.join('\u0000');
     if (!_prefetchedPageKeys.add(pageKey)) return;
-    unawaited(
-      AppDatabaseService.prefetchIcons(packages),
-    );
+    unawaited(AppDatabaseService.prefetchIcons(packages));
   }
 
   @override
@@ -485,30 +483,27 @@ class AppDrawerState extends State<AppDrawer> {
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: SafeArea(
-        top: false,
-        child: Stack(
-          children: [
-            if (_frostedGlassEnabled && _savedWallpaperPath != null)
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                    child: Image.asset(
-                      _savedWallpaperPath!,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                    ),
+      child: Stack(
+        children: [
+          if (_frostedGlassEnabled && _savedWallpaperPath != null)
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                  child: Image.asset(
+                    _savedWallpaperPath!,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
                   ),
                 ),
-              )
-            else
-              Positioned.fill(
-                child: Container(color: Theme.of(context).colorScheme.surface),
               ),
-            RepaintBoundary(child: childContent),
-          ],
-        ),
+            )
+          else
+            Positioned.fill(
+              child: Container(color: Theme.of(context).colorScheme.surface),
+            ),
+          SafeArea(top: true, child: RepaintBoundary(child: childContent)),
+        ],
       ),
     );
   }

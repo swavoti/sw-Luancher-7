@@ -216,6 +216,13 @@ class LauncherService {
     await _systemChannel.invokeMethod('openAccessibilitySettings');
   }
 
+  static Future<double?> getDeviceTotalMemoryGb() async {
+    final bytes = await _systemChannel.invokeMethod<int>(
+      'getDeviceTotalMemoryBytes',
+    );
+    return bytes == null ? null : bytes / (1024 * 1024 * 1024);
+  }
+
   static Future<bool> isDefaultLauncher() async {
     try {
       final bool? result = await _systemChannel.invokeMethod(
