@@ -268,7 +268,8 @@ class MainActivity : FlutterActivity() {
                             this,
                             appWidgetId,
                             0,
-                            REQUEST_CONFIGURE_APPWIDGET
+                            REQUEST_CONFIGURE_APPWIDGET,
+                            Bundle()
                         )
                         result.success(true)
                     } else {
