@@ -1,0 +1,10 @@
+{
+  "name": "codetist-web-preview",
+  "displayName": "Web Preview",
+  "description": "Native Codetist Web Preview Extension",
+  "version": "1.0.0",
+  "publisher": "Codetist-Swavoti-extensions-util",
+  "categories": [
+    "Other"
+  ]
+}

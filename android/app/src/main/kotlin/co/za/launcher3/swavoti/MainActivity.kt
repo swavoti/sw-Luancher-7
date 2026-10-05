@@ -1,7 +1,6 @@
 package co.za.launcher3.swavoti
 
 import android.app.Activity
-import android.app.ActivityManager
 import android.content.Context
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
@@ -47,6 +46,7 @@ class MainActivity : FlutterActivity() {
         get() = application as GoLauncherApplication
 
     private val REQUEST_BIND_APPWIDGET = 100
+    private val REQUEST_CONFIGURE_APPWIDGET = 101
 
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
@@ -234,6 +234,47 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "widgetCapabilities" -> {
+                    val appWidgetId = call.argument<Int>("appWidgetId") ?: -1
+                    val info = if (appWidgetId != -1) {
+                        appWidgetManager.getAppWidgetInfo(appWidgetId)
+                    } else {
+                        null
+                    }
+                    val resizeMode = info?.resizeMode ?: 0
+                    result.success(
+                        mapOf(
+                            "configurable" to (info?.configure != null),
+                            "resizeHorizontal" to (
+                                (resizeMode and android.appwidget.AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
+                            ),
+                            "resizeVertical" to (
+                                (resizeMode and android.appwidget.AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
+                            ),
+                            "minResizeWidth" to (info?.minResizeWidth ?: 0),
+                            "minResizeHeight" to (info?.minResizeHeight ?: 0)
+                        )
+                    )
+                }
+                "configureWidget" -> {
+                    val appWidgetId = call.argument<Int>("appWidgetId") ?: -1
+                    val info = if (appWidgetId != -1) {
+                        appWidgetManager.getAppWidgetInfo(appWidgetId)
+                    } else {
+                        null
+                    }
+                    if (info?.configure != null) {
+                        appWidgetHost.startAppWidgetConfigureActivityForResult(
+                            this,
+                            appWidgetId,
+                            0,
+                            REQUEST_CONFIGURE_APPWIDGET
+                        )
+                        result.success(true)
+                    } else {
+                        result.success(false)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -241,29 +282,8 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                                 "supportsSplitScreen" -> {
-                    val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                    val memoryInfo = ActivityManager.MemoryInfo()
-                    activityManager.getMemoryInfo(memoryInfo)
-                    
-                    val isGoEdition = activityManager.isLowRamDevice
-                    val has3GbRam = memoryInfo.totalMem >= 2.8 * 1024 * 1024 * 1024L
-                    
-                    result.success(!isGoEdition && has3GbRam)
-                }
-                "openRoute" -> {
-                    val route = call.argument<String>("route") ?: "/"
-                    val intent = when (route) {
-                        "/settings" -> Intent(context, SettingsActivity::class.java)
-                        "/wallpaper" -> Intent(context, WallpaperActivity::class.java)
-                        "/edit_icons" -> Intent(context, EditIconsActivity::class.java)
-                        else -> null
-                    }
-                    if (intent != null) {
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-                        startActivity(intent)
-                    }
-                    result.success(null)
-                }
+                                    result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                                }
                 "getAvailableIconPacks" -> {
                     backgroundExecutor.execute {
                         val packs = iconPackManager.getAvailableIconPacks()

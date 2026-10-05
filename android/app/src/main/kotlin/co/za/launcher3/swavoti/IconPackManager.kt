@@ -3,7 +3,6 @@ package co.za.launcher3.swavoti
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -16,21 +15,35 @@ class IconPackManager(private val context: Context) {
 
     fun getAvailableIconPacks(): List<Map<String, String>> {
         val pm = context.packageManager
-        val intent = Intent("org.adw.launcher.THEMES")
-        val resolveInfos = pm.queryIntentActivities(intent, PackageManager.GET_META_DATA)
-        
-        val packs = mutableListOf<Map<String, String>>()
-        for (resolveInfo in resolveInfos) {
-            val packageName = resolveInfo.activityInfo.packageName
-            val label = resolveInfo.loadLabel(pm).toString()
-            packs.add(mapOf("packageName" to packageName, "label" to label))
+        val themeActions = listOf(
+            "org.adw.launcher.THEMES",
+            "com.novalauncher.THEME",
+            "com.anddoes.launcher.THEME",
+            "com.teslacoilsw.launcher.THEME",
+            "com.gau.go.launcherex.theme"
+        )
+        val packsByPackage = linkedMapOf<String, Map<String, String>>()
+        for (action in themeActions) {
+            val intent = Intent(action)
+            val resolveInfos = pm.queryIntentActivities(intent, PackageManager.GET_META_DATA)
+            for (resolveInfo in resolveInfos) {
+                val packageName = resolveInfo.activityInfo.packageName
+                packsByPackage.putIfAbsent(
+                    packageName,
+                    mapOf(
+                        "packageName" to packageName,
+                        "label" to resolveInfo.loadLabel(pm).toString()
+                    )
+                )
+            }
         }
-        return packs
+        return packsByPackage.values.toList()
     }
 
     private fun loadIconPack(packageName: String) {
         if (currentIconPack == packageName) return
         componentToDrawableMap.clear()
+        currentIconPack = null
         
         try {
             val pm = context.packageManager
@@ -49,11 +62,13 @@ class IconPackManager(private val context: Context) {
                     }
                     eventType = parser.next()
                 }
+                parser.close()
             }
+            currentIconPack = packageName
         } catch (e: Throwable) {
-            e.printStackTrace()
+            componentToDrawableMap.clear()
+            android.util.Log.w("IconPackManager", "Unable to load icon pack $packageName", e)
         }
-        currentIconPack = packageName
     }
 
     fun getThemedIcon(appPackageName: String, iconPackPackageName: String): ByteArray? {
@@ -61,22 +76,21 @@ class IconPackManager(private val context: Context) {
         
         loadIconPack(iconPackPackageName)
         
-        // Find component mapping (usually format is ComponentInfo{pkg/class})
-        // We try to match just the package name if exact class is not provided
-        var drawableName: String? = null
-        for ((comp, drw) in componentToDrawableMap) {
-            if (comp.contains(appPackageName)) {
-                drawableName = drw
-                break
-            }
-        }
-        
+        val drawableName = componentToDrawableMap.entries.firstOrNull { (component, _) ->
+            val flattenedComponent = component
+                .removePrefix("ComponentInfo{")
+                .removeSuffix("}")
+            flattenedComponent.substringBefore('/') == appPackageName
+        }?.value
+
         if (drawableName == null) return null
         
         try {
             val pm = context.packageManager
             val res = pm.getResourcesForApplication(iconPackPackageName)
             val resId = res.getIdentifier(drawableName, "drawable", iconPackPackageName)
+                .takeIf { it != 0 }
+                ?: res.getIdentifier(drawableName, "mipmap", iconPackPackageName)
             if (resId != 0) {
                 val drawable = res.getDrawable(resId, null) ?: return null
                 return drawableToByteArray(drawable)

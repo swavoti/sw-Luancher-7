@@ -1,0 +1,9 @@
+{
+  "name": "swavoti-monokai-green",
+  "displayName": "Synthwave '84",
+  "version": "1.0.0",
+  "type": "theme",
+  "contributes": {
+    "themes": [{ "id": "synthwave", "label": "Synthwave '84", "path": "./theme.json" }]
+  }
+}

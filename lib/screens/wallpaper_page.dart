@@ -1,10 +1,8 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
-import 'package:swavoti/screens/edit_icons_page.dart';
 
 class WallpaperPage extends StatefulWidget {
   final Uint8List? homeScreenScreenshot;
@@ -275,7 +273,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
                           ),
                         ),
                         onPressed: () {
-                          LauncherService.openRoute('/edit_icons');
+                          Navigator.of(context).pushNamed('/edit_icons');
                         },
                       ),
                       const SizedBox(height: 16),

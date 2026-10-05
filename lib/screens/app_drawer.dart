@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -100,65 +101,78 @@ class AppDrawerState extends State<AppDrawer> {
       return apps.where((a) => !hidden.contains(a.packageName)).toList();
     }
 
-    // Try fast DB path first
-    final metaApps = filterApps(await AppDatabaseService.getAppMetadata());
-    if (mounted) {
-      setState(() {
-        if (metaApps.isNotEmpty) {
-          _apps = metaApps;
-          _filteredApps = metaApps;
+    // Names from the local cache are displayed immediately. If SQLite is
+    // empty or unavailable, get the launchable apps directly from Android.
+    List<AppInfo> cachedApps = [];
+    try {
+      cachedApps = await AppDatabaseService.getAppMetadata().timeout(
+        const Duration(seconds: 2),
+      );
+    } catch (e) {
+      debugPrint('AppDrawer: app cache read timed out or failed: $e');
+    }
+    var availableApps = filterApps(cachedApps);
+    if (availableApps.isEmpty) {
+      try {
+        final osApps = await InstalledApps.getInstalledApps(
+          excludeSystemApps: false,
+          excludeNonLaunchableApps: true,
+          withIcon: false,
+        );
+        availableApps = filterApps(osApps);
+        if (osApps.isNotEmpty) {
+          unawaited(AppDatabaseService.cacheApps(osApps));
         }
-        // Always unblock the loading state — fresh sync below will populate
-        // if the DB happened to be empty (first install / post-wipe).
-        _isLoading = metaApps.isEmpty; // keep spinner only if truly empty
-      });
-      if (metaApps.isNotEmpty) {
-        AppDatabaseService.prefetchIcons(metaApps.map((a) => a.packageName));
+      } catch (e) {
+        debugPrint('AppDrawer: failed to load installed apps from Android: $e');
       }
     }
 
-    // Always run fresh sync from the OS
-    AppDatabaseService.syncAppsBackground().then((freshApps) {
-      if (!mounted) return;
-      if (freshApps.isNotEmpty) {
-        final apps = filterApps(freshApps);
-        setState(() {
-          _apps = apps;
-          _filteredApps = apps;
-          _isLoading = false;
-        });
-        AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
-      } else {
-        // syncAppsBackground returned empty — fall back to direct OS fetch
-        // as a last resort so the drawer is never permanently stuck.
-        InstalledApps.getInstalledApps(
-              excludeSystemApps: false,
-              excludeNonLaunchableApps: true,
-              withIcon: false,
-            )
-            .then((osFresh) {
-              if (!mounted) return;
-              final apps = filterApps(osFresh);
-              setState(() {
-                _apps = apps;
-                _filteredApps = apps;
-                _isLoading = false;
-              });
-              AppDatabaseService.prefetchIcons(apps.map((a) => a.packageName));
-            })
-            .catchError((_) {
-              if (mounted) setState(() => _isLoading = false);
-            });
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _apps = availableApps;
+        _filteredApps = _filterBySearch(availableApps);
+        _isLoading = false;
+      });
+      _prefetchAndRefreshIcons(availableApps);
+    }
+
+    // Refresh cache in the background; the drawer stays usable while SQLite
+    // and Android are queried.
+    unawaited(
+      AppDatabaseService.syncAppsBackground().then((freshApps) {
+        if (!mounted) return;
+        if (freshApps.isNotEmpty) {
+          final apps = filterApps(freshApps);
+          setState(() {
+            _apps = apps;
+            _filteredApps = _filterBySearch(apps);
+            _isLoading = false;
+          });
+          _prefetchAndRefreshIcons(apps);
+        }
+      }),
+    );
+  }
+
+  List<AppInfo> _filterBySearch(List<AppInfo> apps) {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return apps;
+    return apps.where((app) => app.name.toLowerCase().contains(query)).toList();
+  }
+
+  void _prefetchAndRefreshIcons(List<AppInfo> apps) {
+    unawaited(() async {
+      await AppDatabaseService.prefetchIcons(
+        apps.map((app) => app.packageName),
+      );
+      if (mounted) setState(() {});
+    }());
   }
 
   void _filterApps() {
-    final query = _searchController.text.toLowerCase();
     setState(() {
-      _filteredApps = _apps
-          .where((app) => app.name.toLowerCase().contains(query))
-          .toList();
+      _filteredApps = _filterBySearch(_apps);
     });
   }
 
@@ -406,7 +420,9 @@ class AppDrawerState extends State<AppDrawer> {
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         color: currentPage == index
-                                            ? Theme.of(context).colorScheme.primary
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.primary
                                             : Theme.of(context)
                                                   .colorScheme
                                                   .onSurface
@@ -562,11 +578,18 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    if (_icon != null)
+                    if (_icon != null ||
+                        AppDatabaseService.getCachedIcon(
+                              widget.app.packageName,
+                            ) !=
+                            null)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: Image.memory(
-                          _icon!,
+                          _icon ??
+                              AppDatabaseService.getCachedIcon(
+                                widget.app.packageName,
+                              )!,
                           width: 40,
                           height: 40,
                           fit: BoxFit.cover,
@@ -635,7 +658,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   Widget build(BuildContext context) {
     super.build(context);
     final app = widget.app;
-    final icon = _icon;
+    final icon = _icon ?? AppDatabaseService.getCachedIcon(app.packageName);
     final appItemData = _WorkspaceItemData(
       packageName: app.packageName,
       label: app.name,

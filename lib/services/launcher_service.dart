@@ -109,16 +109,6 @@ class LauncherService {
     }
   }
 
-  static Future<void> openRoute(String route) async {
-    try {
-      await _systemChannel.invokeMethod('openRoute', {
-        'route': route,
-      });
-    } catch (e) {
-      print('Error opening route: $e');
-    }
-  }
-
   static Future<void> shareApp(String packageName) async {
     try {
       await _systemChannel.invokeMethod('shareApp', {
@@ -287,6 +277,32 @@ class LauncherService {
       });
     } catch (e) {
       print('Error deleting widget ID: $e');
+    }
+  }
+
+  static Future<Map<String, dynamic>> widgetCapabilities(int appWidgetId) async {
+    try {
+      final result = await _widgetChannel.invokeMapMethod<String, dynamic>(
+        'widgetCapabilities',
+            {'appWidgetId': appWidgetId},
+      );
+      return result ?? const {};
+    } catch (e) {
+      print('Error checking widget capabilities: $e');
+      return const {};
+    }
+  }
+
+  static Future<bool> configureWidget(int appWidgetId) async {
+    try {
+      return await _widgetChannel.invokeMethod<bool>(
+            'configureWidget',
+            {'appWidgetId': appWidgetId},
+          ) ??
+          false;
+    } catch (e) {
+      print('Error opening widget configuration: $e');
+      return false;
     }
   }
 

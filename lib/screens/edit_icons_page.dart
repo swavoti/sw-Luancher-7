@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:installed_apps/installed_apps.dart';
-import 'package:installed_apps/app_info.dart';
 import 'package:soft_edge_blur/soft_edge_blur.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_database_service.dart';
@@ -32,10 +31,10 @@ class _EditIconsPageState extends State<EditIconsPage> {
     'Teardrop',
   ];
   bool _frostedGlassEnabled = true;
-  
+
   List<Map<String, dynamic>> _availableIconPacks = [];
   String _selectedIconPack = "";
-  
+
   List<Uint8List> _previewIcons = [];
   bool _isLoadingPreview = true;
 
@@ -48,9 +47,8 @@ class _EditIconsPageState extends State<EditIconsPage> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    
     final packs = await LauncherService.getAvailableIconPacks();
-    
+    if (!mounted) return;
     setState(() {
       _selectedShape = prefs.getString('icon_shape') ?? 'Circle';
       _selectedIconPack = prefs.getString('icon_pack') ?? "";
@@ -58,28 +56,31 @@ class _EditIconsPageState extends State<EditIconsPage> {
       _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
     });
   }
-  
+
   Future<void> _loadPreviewIcons() async {
     try {
-      final apps = await InstalledApps.getInstalledApps(excludeSystemApps: false, withIcon: true);
-      if (apps.isNotEmpty) {
-        apps.shuffle(Random());
-        final selected = apps.take(4).toList();
-        final icons = <Uint8List>[];
-        for (var app in selected) {
-          if (app.icon != null) {
-            icons.add(app.icon!);
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _previewIcons = icons;
-            _isLoadingPreview = false;
-          });
-        }
-      }
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: false,
+        withIcon: false,
+      );
+      apps.shuffle(Random());
+      final selected = apps.take(4).toList();
+      final icons = await Future.wait(
+        selected.map((app) async {
+          final info = await InstalledApps.getAppInfo(app.packageName);
+          return info?.icon;
+        }),
+      );
+      if (!mounted) return;
+      setState(() {
+        _previewIcons = icons.whereType<Uint8List>().toList();
+        _isLoadingPreview = false;
+      });
     } catch (e) {
-      if (mounted) setState(() => _isLoadingPreview = false);
+      if (mounted) {
+        debugPrint('EditIconsPage: failed to load preview icons: $e');
+        setState(() => _isLoadingPreview = false);
+      }
     }
   }
 
@@ -93,7 +94,9 @@ class _EditIconsPageState extends State<EditIconsPage> {
 
   Widget _buildShapePreview(String shape, int index) {
     Widget content;
-    if (_isLoadingPreview || _previewIcons.isEmpty || index >= _previewIcons.length) {
+    if (_isLoadingPreview ||
+        _previewIcons.isEmpty ||
+        index >= _previewIcons.length) {
       // Skeleton loader
       content = Container(
         width: 48,
@@ -111,7 +114,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
         fit: BoxFit.cover,
       );
     }
-  
+
     return Container(
       width: 64,
       height: 64,
@@ -123,7 +126,8 @@ class _EditIconsPageState extends State<EditIconsPage> {
       ),
       child: Center(
         child: ClipRRect(
-          borderRadius: _getBorderRadiusForShape(shape) ?? BorderRadius.circular(32),
+          borderRadius:
+              _getBorderRadiusForShape(shape) ?? BorderRadius.circular(32),
           child: content,
         ),
       ),
@@ -299,7 +303,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
                 if (val != null) {
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setString('icon_pack', val);
-                  setState(() => _selectedIconPack = val);
+                  if (mounted) setState(() => _selectedIconPack = val);
                 }
               },
             ),

@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:ui' as ui;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -8,8 +8,6 @@ import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
-import 'package:swavoti/screens/home_settings.dart';
-import 'package:swavoti/screens/wallpaper_page.dart';
 import 'package:swavoti/screens/discover_news.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
@@ -120,6 +118,15 @@ class HomeScreenState extends State<HomeScreen> {
   List<AppInfo> _allDeviceApps = [];
   bool _isLoadingDeviceApps = false;
   bool _supportsSplitScreen = false;
+  String? _editingWidgetId;
+  bool _editingWidgetConfigurable = false;
+  bool _editingWidgetCanResizeX = false;
+  bool _editingWidgetCanResizeY = false;
+  int _editingWidgetMinSpanX = 1;
+  int _editingWidgetMinSpanY = 1;
+  double _resizeDragX = 0;
+  double _resizeDragY = 0;
+  final Map<String, GlobalKey> _widgetItemKeys = {};
 
   // Grid Configuration
   final int _columns = 4;
@@ -189,10 +196,12 @@ class HomeScreenState extends State<HomeScreen> {
       // 3. Process, filter and sort inside an isolated background task (Isolate.run).
       // Runs in an isolated memory heap, consuming < 2MB RAM and terminating immediately.
       if (apps.isNotEmpty) {
-        final processed = await Isolate.run(() => _filterAndSortAppsIsolate(
-          apps,
-          hidden: showHidden ? const [] : hidden,
-        ));
+        final processed = await Isolate.run(
+          () => _filterAndSortAppsIsolate(
+            apps,
+            hidden: showHidden ? const [] : hidden,
+          ),
+        );
 
         if (mounted) {
           setState(() {
@@ -203,18 +212,22 @@ class HomeScreenState extends State<HomeScreen> {
       }
 
       // 4. Background sync with OS to catch any newly installed or uninstalled packages
-      AppDatabaseService.syncAppsBackground().then((freshApps) async {
-        if (!mounted || freshApps.isEmpty) return;
-        final freshProcessed = await Isolate.run(() => _filterAndSortAppsIsolate(
-          freshApps,
-          hidden: showHidden ? const [] : hidden,
-        ));
-        if (mounted) {
-          setState(() {
-            _allDeviceApps = freshProcessed;
-          });
-        }
-      }).catchError((_) {});
+      AppDatabaseService.syncAppsBackground()
+          .then((freshApps) async {
+            if (!mounted || freshApps.isEmpty) return;
+            final freshProcessed = await Isolate.run(
+              () => _filterAndSortAppsIsolate(
+                freshApps,
+                hidden: showHidden ? const [] : hidden,
+              ),
+            );
+            if (mounted) {
+              setState(() {
+                _allDeviceApps = freshProcessed;
+              });
+            }
+          })
+          .catchError((_) {});
     } catch (e) {
       debugPrint('Error preloading split screen apps: $e');
     } finally {
@@ -234,7 +247,9 @@ class HomeScreenState extends State<HomeScreen> {
       if (hiddenSet.contains(a.packageName)) return false;
       return a.isLaunchableApp;
     }).toList();
-    filtered.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    filtered.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
     return filtered;
   }
 
@@ -251,7 +266,7 @@ class HomeScreenState extends State<HomeScreen> {
   /// reliable than OverscrollNotification with BouncingScrollPhysics on Android.
   void _onWorkspaceScroll() {
     if (!_workspaceController.hasClients) return;
-    
+
     // Calculate and apply parallax wallpaper offset without rebuilding widget tree
     final page = _workspaceController.page ?? 0.0;
     if (_totalPages > 1) {
@@ -311,7 +326,8 @@ class HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     // Pull out the default-wallpaper check BEFORE setState so we never
     // call async methods inside a setState closure.
-    final needsDefaultLayout = (prefs.getStringList('launcher_items') ?? []).isEmpty ||
+    final needsDefaultLayout =
+        (prefs.getStringList('launcher_items') ?? []).isEmpty ||
         !(prefs.getStringList('launcher_items') ?? []).any(
           (s) => s.contains('"page":-1'),
         );
@@ -396,14 +412,18 @@ class HomeScreenState extends State<HomeScreen> {
         'com.google.android.youtube',
       };
       final userApps = widget.appCache.values
-          .where((app) =>
-              !dockPackages.contains(app.packageName) &&
-              !app.packageName.startsWith('android') &&
-              app.packageName != 'co.za.launcher3.swavoti')
+          .where(
+            (app) =>
+                !dockPackages.contains(app.packageName) &&
+                !app.packageName.startsWith('android') &&
+                app.packageName != 'co.za.launcher3.swavoti',
+          )
           .toList();
 
       // Pick up to 4, in alphabetical order for consistency
-      userApps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      userApps.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
       final page1Pick = userApps.take(4).toList();
 
       for (int i = 0; i < page1Pick.length; i++) {
@@ -641,120 +661,138 @@ class HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
-    return Stack(
-      children: [
-        // The Workspace
-        GestureDetector(
-          onLongPress: () => setState(() => _isWorkspaceOverviewMode = true),
-          onTap: _isWorkspaceOverviewMode
-              ? () => setState(() => _isWorkspaceOverviewMode = false)
-              : null,
-          child: AnimatedScale(
-            scale: _isWorkspaceOverviewMode ? 0.75 : 1.0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            alignment: const Alignment(0, -0.5),
-            child: RepaintBoundary(
-              key: _repaintBoundaryKey,
-              child: Container(
-                color: Colors.transparent,
-                child: Column(
-                  children: [
-                    SizedBox(height: statusBarHeight + 16),
-                    // Workspace Grid
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final cellWidth = constraints.maxWidth / _columns;
-                            final cellHeight = constraints.maxHeight / _rows;
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _handleWidgetEditorPointerDown,
+      child: Stack(
+        children: [
+          // The Workspace
+          GestureDetector(
+            onLongPress: () => setState(() => _isWorkspaceOverviewMode = true),
+            onTap: _isWorkspaceOverviewMode
+                ? () => setState(() => _isWorkspaceOverviewMode = false)
+                : null,
+            child: AnimatedScale(
+              scale: _isWorkspaceOverviewMode ? 0.75 : 1.0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              alignment: const Alignment(0, -0.5),
+              child: RepaintBoundary(
+                key: _repaintBoundaryKey,
+                child: Container(
+                  color: Colors.transparent,
+                  child: Column(
+                    children: [
+                      SizedBox(height: statusBarHeight + 16),
+                      // Workspace Grid
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final cellWidth = constraints.maxWidth / _columns;
+                              final cellHeight = constraints.maxHeight / _rows;
 
-                            return PageView.builder(
-                              physics: const ClampingScrollPhysics(),
-                              controller: _workspaceController,
-                              itemCount: _totalPages,
-                              onPageChanged: (index) {
-                                setState(() => _currentWorkspacePage = index);
-                              },
-                              itemBuilder: (context, index) {
-                                final pageIndex = index;
-                                final pageItems = _items
-                                    .where((i) => i.page == pageIndex)
-                                    .toList();
+                              return PageView.builder(
+                                physics: const ClampingScrollPhysics(),
+                                controller: _workspaceController,
+                                itemCount: _totalPages,
+                                onPageChanged: (index) {
+                                  setState(() {
+                                    _currentWorkspacePage = index;
+                                    _editingWidgetId = null;
+                                  });
+                                },
+                                itemBuilder: (context, index) {
+                                  final pageIndex = index;
+                                  final pageItems = _items
+                                      .where((i) => i.page == pageIndex)
+                                      .toList();
 
-                                return Stack(
-                                  children: [
-                                    // Drop targets
-                                    for (int y = 0; y < _rows; y++)
-                                      for (int x = 0; x < _columns; x++)
-                                        Positioned(
-                                          left: x * cellWidth,
-                                          top: y * cellHeight,
-                                          width: cellWidth,
-                                          height: cellHeight,
-                                          child: DragTarget<Map<String, dynamic>>(
-                                            onWillAcceptWithDetails:
-                                                (details) => true,
-                                            onAcceptWithDetails: (details) {
-                                              final data = details.data;
-                                              final spanX =
-                                                  data['spanX'] as int? ?? 1;
-                                              final spanY =
-                                                  data['spanY'] as int? ?? 1;
-                                              final targetX = x.clamp(
-                                                0,
-                                                _columns - spanX,
-                                              );
-                                              final targetY = y.clamp(
-                                                0,
-                                                _rows - spanY,
-                                              );
+                                  return Stack(
+                                    children: [
+                                      // Drop targets
+                                      for (int y = 0; y < _rows; y++)
+                                        for (int x = 0; x < _columns; x++)
+                                          Positioned(
+                                            left: x * cellWidth,
+                                            top: y * cellHeight,
+                                            width: cellWidth,
+                                            height: cellHeight,
+                                            child: DragTarget<Map<String, dynamic>>(
+                                              onWillAcceptWithDetails:
+                                                  (details) => true,
+                                              onAcceptWithDetails: (details) {
+                                                final data = details.data;
+                                                final spanX =
+                                                    data['spanX'] as int? ?? 1;
+                                                final spanY =
+                                                    data['spanY'] as int? ?? 1;
+                                                final targetX = x.clamp(
+                                                  0,
+                                                  _columns - spanX,
+                                                );
+                                                final targetY = y.clamp(
+                                                  0,
+                                                  _rows - spanY,
+                                                );
 
-                                              if (data['id'] != null) {
-                                                final itemId =
-                                                    data['id'] as String;
-                                                setState(() {
-                                                  final item = _items
-                                                      .firstWhere(
-                                                        (i) => i.id == itemId,
-                                                      );
-                                                  // Check if there's already an item at target position
-                                                  final existingIdx = _items
-                                                      .indexWhere(
-                                                        (i) =>
-                                                            i.id != itemId &&
-                                                            i.page ==
-                                                                pageIndex &&
-                                                            i.x == targetX &&
-                                                            i.y == targetY,
-                                                      );
-                                                  if (existingIdx != -1) {
-                                                    final target =
-                                                        _items[existingIdx];
-                                                    if (target.type == 'app' &&
-                                                        item.type == 'app') {
-                                                      target.type = 'folder';
-                                                      target.label = 'Unnamed text';
-                                                      target.folderApps = [
-                                                        target.packageName,
-                                                        item.packageName,
-                                                      ];
-                                                      _items.remove(item);
-                                                    } else if (target.type ==
-                                                            'folder' &&
-                                                        item.type == 'app') {
-                                                      target.folderApps ??= [];
-                                                      if (target.folderApps!.length < 8) {
-                                                        if (!target.folderApps!
-                                                            .contains(
-                                                              item.packageName,
-                                                            )) {
-                                                          target.folderApps!.add(
-                                                            item.packageName,
-                                                          );
-                                                        }
+                                                if (data['id'] != null) {
+                                                  final itemId =
+                                                      data['id'] as String;
+                                                  setState(() {
+                                                    final item = _items
+                                                        .firstWhere(
+                                                          (i) => i.id == itemId,
+                                                        );
+                                                    // Check if there's already an item at target position
+                                                    final existingIdx = _items
+                                                        .indexWhere(
+                                                          (i) =>
+                                                              i.id != itemId &&
+                                                              i.page ==
+                                                                  pageIndex &&
+                                                              i.x == targetX &&
+                                                              i.y == targetY,
+                                                        );
+                                                    if (existingIdx != -1) {
+                                                      final target =
+                                                          _items[existingIdx];
+                                                      if (target.type ==
+                                                              'app' &&
+                                                          item.type == 'app') {
+                                                        target.type = 'folder';
+                                                        target.label =
+                                                            'Unnamed text';
+                                                        target.folderApps = [
+                                                          target.packageName,
+                                                          item.packageName,
+                                                        ];
                                                         _items.remove(item);
+                                                      } else if (target.type ==
+                                                              'folder' &&
+                                                          item.type == 'app') {
+                                                        target.folderApps ??=
+                                                            [];
+                                                        if (target
+                                                                .folderApps!
+                                                                .length <
+                                                            8) {
+                                                          if (!target
+                                                              .folderApps!
+                                                              .contains(
+                                                                item.packageName,
+                                                              )) {
+                                                            target.folderApps!.add(
+                                                              item.packageName,
+                                                            );
+                                                          }
+                                                          _items.remove(item);
+                                                        } else {
+                                                          item.x = targetX;
+                                                          item.y = targetY;
+                                                          item.page = pageIndex;
+                                                        }
                                                       } else {
                                                         item.x = targetX;
                                                         item.y = targetY;
@@ -765,495 +803,587 @@ class HomeScreenState extends State<HomeScreen> {
                                                       item.y = targetY;
                                                       item.page = pageIndex;
                                                     }
-                                                  } else {
-                                                    item.x = targetX;
-                                                    item.y = targetY;
-                                                    item.page = pageIndex;
-                                                  }
-                                                });
-                                                _saveItems();
-                                              } else if (data['type'] ==
-                                                  'app') {
-                                                final existingIdx = _items
-                                                    .indexWhere(
-                                                      (i) =>
-                                                          i.page == pageIndex &&
-                                                          i.x == targetX &&
-                                                          i.y == targetY,
-                                                    );
-                                                setState(() {
-                                                if (data['source_folder_id'] != null) {
-                                                  final folder = _items.firstWhere((i) => i.id == data['source_folder_id']);
-                                                  folder.folderApps?.remove(data['packageName']);
-                                                  if (folder.folderApps?.isEmpty == true) {
-                                                    _items.remove(folder);
-                                                  }
-                                                }
-
-                                                  if (existingIdx != -1) {
-                                                    final target =
-                                                        _items[existingIdx];
-                                                    if (target.type == 'app') {
-                                                      target.type = 'folder';
-                                                      target.label = 'Unnamed text';
-                                                      target.folderApps = [
-                                                        target.packageName,
+                                                  });
+                                                  _saveItems();
+                                                } else if (data['type'] ==
+                                                    'app') {
+                                                  final existingIdx = _items
+                                                      .indexWhere(
+                                                        (i) =>
+                                                            i.page ==
+                                                                pageIndex &&
+                                                            i.x == targetX &&
+                                                            i.y == targetY,
+                                                      );
+                                                  setState(() {
+                                                    if (data['source_folder_id'] !=
+                                                        null) {
+                                                      final folder = _items
+                                                          .firstWhere(
+                                                            (i) =>
+                                                                i.id ==
+                                                                data['source_folder_id'],
+                                                          );
+                                                      folder.folderApps?.remove(
                                                         data['packageName'],
-                                                      ];
-                                                      _saveItems();
-                                                    } else if (target.type ==
-                                                        'folder') {
-                                                      target.folderApps ??= [];
-                                                      if (target.folderApps!.length < 8) {
-                                                        if (!target.folderApps!.contains(data['packageName'])) {
-                                                          target.folderApps!.add(data['packageName']);
-                                                        }
-                                                        _saveItems();
+                                                      );
+                                                      if (folder
+                                                              .folderApps
+                                                              ?.isEmpty ==
+                                                          true) {
+                                                        _items.remove(folder);
                                                       }
                                                     }
-                                                  } else {
-                                                    _addNewItem(
-                                                      LauncherItem(
-                                                        id: DateTime.now()
-                                                            .millisecondsSinceEpoch
-                                                            .toString(),
-                                                        type: 'app',
-                                                        packageName:
-                                                            data['packageName'],
-                                                        label: data['label'],
-                                                        x: targetX,
-                                                        y: targetY,
-                                                        page: pageIndex,
+
+                                                    if (existingIdx != -1) {
+                                                      final target =
+                                                          _items[existingIdx];
+                                                      if (target.type ==
+                                                          'app') {
+                                                        target.type = 'folder';
+                                                        target.label =
+                                                            'Unnamed text';
+                                                        target.folderApps = [
+                                                          target.packageName,
+                                                          data['packageName'],
+                                                        ];
+                                                        _saveItems();
+                                                      } else if (target.type ==
+                                                          'folder') {
+                                                        target.folderApps ??=
+                                                            [];
+                                                        if (target
+                                                                .folderApps!
+                                                                .length <
+                                                            8) {
+                                                          if (!target
+                                                              .folderApps!
+                                                              .contains(
+                                                                data['packageName'],
+                                                              )) {
+                                                            target.folderApps!.add(
+                                                              data['packageName'],
+                                                            );
+                                                          }
+                                                          _saveItems();
+                                                        }
+                                                      }
+                                                    } else {
+                                                      _addNewItem(
+                                                        LauncherItem(
+                                                          id: DateTime.now()
+                                                              .millisecondsSinceEpoch
+                                                              .toString(),
+                                                          type: 'app',
+                                                          packageName:
+                                                              data['packageName'],
+                                                          label: data['label'],
+                                                          x: targetX,
+                                                          y: targetY,
+                                                          page: pageIndex,
+                                                        ),
+                                                      );
+                                                    }
+                                                  });
+                                                } else if (data['type'] ==
+                                                    'widget_preview') {
+                                                  LauncherService.allocateWidgetId().then((
+                                                    id,
+                                                  ) {
+                                                    if (id != -1) {
+                                                      LauncherService.bindWidget(
+                                                        id,
+                                                        data['providerPackage'],
+                                                        data['providerClass'],
+                                                      ).then((success) {
+                                                        if (success) {
+                                                          _addNewItem(
+                                                            LauncherItem(
+                                                              id: DateTime.now()
+                                                                  .millisecondsSinceEpoch
+                                                                  .toString(),
+                                                              type: 'widget',
+                                                              packageName:
+                                                                  data['providerPackage'],
+                                                              className:
+                                                                  data['providerClass'],
+                                                              appWidgetId: id,
+                                                              x: targetX,
+                                                              y: targetY,
+                                                              spanX: 4,
+                                                              spanY: 2,
+                                                              page: pageIndex,
+                                                              label:
+                                                                  data['label'],
+                                                            ),
+                                                          );
+                                                        }
+                                                      });
+                                                    }
+                                                  });
+                                                }
+                                              },
+                                              builder: (context, candidateData, _) {
+                                                return Container(
+                                                  margin: const EdgeInsets.all(
+                                                    4,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    border: Border.all(
+                                                      color:
+                                                          candidateData
+                                                              .isNotEmpty
+                                                          ? Theme.of(context)
+                                                                .colorScheme
+                                                                .primary
+                                                                .withOpacity(
+                                                                  0.5,
+                                                                )
+                                                          : Colors.transparent,
+                                                      width: 2,
+                                                    ),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          12,
+                                                        ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+
+                                      // Placed Items
+                                      ...pageItems.map((item) {
+                                        return Positioned(
+                                          left: item.x * cellWidth,
+                                          top: item.y * cellHeight,
+                                          width: item.spanX * cellWidth,
+                                          height: item.spanY * cellHeight,
+                                          child: item.type == 'widget'
+                                              ? KeyedSubtree(
+                                                  key: _widgetItemKeys
+                                                      .putIfAbsent(
+                                                        item.id,
+                                                        () => GlobalKey(),
                                                       ),
+                                                  child: GestureDetector(
+                                                    onLongPress: () =>
+                                                        _beginWidgetEdit(item),
+                                                    child: _buildItemContent(
+                                                      item,
+                                                      cellWidth,
+                                                      cellHeight,
+                                                    ),
+                                                  ),
+                                                )
+                                              : LongPressDraggable<
+                                                  Map<String, dynamic>
+                                                >(
+                                                  data: item.toJson(),
+                                                  delay: const Duration(
+                                                    milliseconds: 150,
+                                                  ),
+                                                  onDragStarted: () {
+                                                    setState(
+                                                      () => _isDragging = true,
                                                     );
-                                                  }
-                                                });
-                                              } else if (data['type'] ==
-                                                  'widget_preview') {
-                                                LauncherService.allocateWidgetId().then((
-                                                  id,
-                                                ) {
-                                                  if (id != -1) {
-                                                    LauncherService.bindWidget(
-                                                      id,
-                                                      data['providerPackage'],
-                                                      data['providerClass'],
-                                                    ).then((success) {
-                                                      if (success) {
-                                                        _addNewItem(
-                                                          LauncherItem(
-                                                            id: DateTime.now()
-                                                                .millisecondsSinceEpoch
-                                                                .toString(),
-                                                            type: 'widget',
-                                                            packageName:
-                                                                data['providerPackage'],
-                                                            className:
-                                                                data['providerClass'],
-                                                            appWidgetId: id,
-                                                            x: targetX,
-                                                            y: targetY,
-                                                            spanX: 4,
-                                                            spanY: 2,
-                                                            page: pageIndex,
-                                                            label:
-                                                                data['label'],
-                                                          ),
+                                                    if (item.type == 'app') {
+                                                      widget.onDragStarted
+                                                          ?.call(
+                                                            item.packageName,
+                                                          );
+                                                    }
+                                                  },
+                                                  onDragEnd: (_) {
+                                                    setState(
+                                                      () => _isDragging = false,
+                                                    );
+                                                    widget.onDragEnded?.call();
+                                                  },
+                                                  onDraggableCanceled: (_, __) {
+                                                    setState(
+                                                      () => _isDragging = false,
+                                                    );
+                                                    widget.onDragEnded?.call();
+                                                  },
+                                                  feedback: Material(
+                                                    color: Colors.transparent,
+                                                    child: SizedBox(
+                                                      width:
+                                                          item.spanX *
+                                                          cellWidth,
+                                                      height:
+                                                          item.spanY *
+                                                          cellHeight,
+                                                      child: _buildItemContent(
+                                                        item,
+                                                        cellWidth,
+                                                        cellHeight,
+                                                        isFeedback: true,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  childWhenDragging:
+                                                      const SizedBox.shrink(),
+                                                  child: GestureDetector(
+                                                    onTap: () {
+                                                      if (item.type == 'app') {
+                                                        LauncherService.startApp(
+                                                          item.packageName,
                                                         );
                                                       }
-                                                    });
-                                                  }
-                                                });
-                                              }
-                                            },
-                                            builder:
-                                                (context, candidateData, _) {
-                                                  return Container(
-                                                    margin:
-                                                        const EdgeInsets.all(4),
-                                                    decoration: BoxDecoration(
-                                                      border: Border.all(
+                                                    },
+                                                    onLongPress: () =>
+                                                        _showItemContextMenu(
+                                                          item,
+                                                        ),
+                                                    child: _buildItemContent(
+                                                      item,
+                                                      cellWidth,
+                                                      cellHeight,
+                                                    ),
+                                                  ),
+                                                ),
+                                        );
+                                      }),
+
+                                      // Edge drag prev page
+                                      if (_isDragging && pageIndex > 0)
+                                        Positioned(
+                                          left: 0,
+                                          top: 0,
+                                          bottom: 0,
+                                          width: 24,
+                                          child:
+                                              DragTarget<Map<String, dynamic>>(
+                                                onWillAcceptWithDetails: (_) {
+                                                  _workspaceController
+                                                      .previousPage(
+                                                        duration:
+                                                            const Duration(
+                                                              milliseconds: 300,
+                                                            ),
+                                                        curve: Curves.easeInOut,
+                                                      );
+                                                  return false;
+                                                },
+                                                builder:
+                                                    (
+                                                      context,
+                                                      candidateData,
+                                                      _,
+                                                    ) {
+                                                      return Container(
                                                         color:
                                                             candidateData
                                                                 .isNotEmpty
-                                                            ? Theme.of(context)
-                                                                  .colorScheme
-                                                                  .primary
+                                                            ? Colors.white
                                                                   .withOpacity(
-                                                                    0.5,
+                                                                    0.2,
                                                                   )
                                                             : Colors
                                                                   .transparent,
-                                                        width: 2,
-                                                      ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
-                                                          ),
+                                                      );
+                                                    },
+                                              ),
+                                        ),
+
+                                      // Edge drag next page
+                                      if (_isDragging &&
+                                          pageIndex < _totalPages - 1)
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          bottom: 0,
+                                          width: 24,
+                                          child:
+                                              DragTarget<Map<String, dynamic>>(
+                                                onWillAcceptWithDetails: (_) {
+                                                  _workspaceController.nextPage(
+                                                    duration: const Duration(
+                                                      milliseconds: 300,
                                                     ),
+                                                    curve: Curves.easeInOut,
                                                   );
+                                                  return false;
                                                 },
-                                          ),
-                                        ),
-
-                                    // Placed Items
-                                    ...pageItems.map((item) {
-                                      return Positioned(
-                                        left: item.x * cellWidth,
-                                        top: item.y * cellHeight,
-                                        width: item.spanX * cellWidth,
-                                        height: item.spanY * cellHeight,
-                                        child:
-                                            LongPressDraggable<
-                                              Map<String, dynamic>
-                                            >(
-                                              data: item.toJson(),
-                                              delay: const Duration(
-                                                milliseconds: 150,
+                                                builder:
+                                                    (
+                                                      context,
+                                                      candidateData,
+                                                      _,
+                                                    ) {
+                                                      return Container(
+                                                        color:
+                                                            candidateData
+                                                                .isNotEmpty
+                                                            ? Colors.white
+                                                                  .withOpacity(
+                                                                    0.2,
+                                                                  )
+                                                            : Colors
+                                                                  .transparent,
+                                                      );
+                                                    },
                                               ),
-                                              onDragStarted: () {
-                                                setState(
-                                                  () => _isDragging = true,
-                                                );
-                                                if (item.type == 'app') {
-                                                  widget.onDragStarted?.call(
-                                                    item.packageName,
-                                                  );
-                                                }
-                                              },
-                                              onDragEnd: (_) {
-                                                setState(
-                                                  () => _isDragging = false,
-                                                );
-                                                widget.onDragEnded?.call();
-                                              },
-                                              onDraggableCanceled: (_, __) {
-                                                setState(
-                                                  () => _isDragging = false,
-                                                );
-                                                widget.onDragEnded?.call();
-                                              },
-                                              feedback: Material(
-                                                color: Colors.transparent,
-                                                child: SizedBox(
-                                                  width: item.spanX * cellWidth,
-                                                  height:
-                                                      item.spanY * cellHeight,
-                                                  child: _buildItemContent(
-                                                    item,
-                                                    cellWidth,
-                                                    cellHeight,
-                                                    isFeedback: true,
+                                        ),
+                                    ],
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+
+                      // ── Pill Dot Page Indicators ──────────────────────────────
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Discover dot (outlined)
+                          GestureDetector(
+                            onTap: () {
+                              if (!_isNavigatingToDiscover) {
+                                _isNavigatingToDiscover = true;
+                                Navigator.of(context)
+                                    .push(
+                                      PageRouteBuilder(
+                                        opaque: true,
+                                        pageBuilder: (_, __, ___) =>
+                                            const DiscoverNewsPage(),
+                                        transitionsBuilder:
+                                            (
+                                              _,
+                                              animation,
+                                              __,
+                                              child,
+                                            ) => SlideTransition(
+                                              position:
+                                                  Tween<Offset>(
+                                                    begin: const Offset(-1, 0),
+                                                    end: Offset.zero,
+                                                  ).animate(
+                                                    CurvedAnimation(
+                                                      parent: animation,
+                                                      curve:
+                                                          Curves.easeOutCubic,
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
-                                              childWhenDragging:
-                                                  const SizedBox.shrink(),
-                                              child: GestureDetector(
-                                                onTap: () {
-                                                  if (item.type == 'app') {
-                                                    LauncherService.startApp(item.packageName);
-                                                  }
-                                                },
-                                                onLongPress: () =>
-                                                    _showItemContextMenu(item),
-                                                child: _buildItemContent(
-                                                  item,
-                                                  cellWidth,
-                                                  cellHeight,
-                                                ),
-                                              ),
+                                              child: child,
                                             ),
-                                      );
-                                    }),
-
-                                    // Edge drag prev page
-                                    if (_isDragging && pageIndex > 0)
-                                      Positioned(
-                                        left: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        width: 24,
-                                        child: DragTarget<Map<String, dynamic>>(
-                                          onWillAcceptWithDetails: (_) {
-                                            _workspaceController.previousPage(
-                                              duration: const Duration(
-                                                milliseconds: 300,
-                                              ),
-                                              curve: Curves.easeInOut,
-                                            );
-                                            return false;
-                                          },
-                                          builder: (context, candidateData, _) {
-                                            return Container(
-                                              color: candidateData.isNotEmpty
-                                                  ? Colors.white.withOpacity(
-                                                      0.2,
-                                                    )
-                                                  : Colors.transparent,
-                                            );
-                                          },
+                                        transitionDuration: const Duration(
+                                          milliseconds: 320,
                                         ),
+                                        reverseTransitionDuration:
+                                            const Duration(milliseconds: 280),
                                       ),
+                                    )
+                                    .then(
+                                      (_) => _isNavigatingToDiscover = false,
+                                    );
+                              }
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white60,
+                                  width: 1.5,
+                                ),
+                                color: Colors.transparent,
+                              ),
+                            ),
+                          ),
+                          // Workspace pill dots
+                          ...List.generate(_totalPages, (index) {
+                            final isActive = _currentWorkspacePage == index;
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeOutCubic,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              width: isActive ? 22 : 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                color: isActive
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.35),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
 
-                                    // Edge drag next page
-                                    if (_isDragging &&
-                                        pageIndex < _totalPages - 1)
-                                      Positioned(
-                                        right: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        width: 24,
-                                        child: DragTarget<Map<String, dynamic>>(
-                                          onWillAcceptWithDetails: (_) {
-                                            _workspaceController.nextPage(
-                                              duration: const Duration(
-                                                milliseconds: 300,
-                                              ),
-                                              curve: Curves.easeInOut,
-                                            );
-                                            return false;
-                                          },
-                                          builder: (context, candidateData, _) {
-                                            return Container(
-                                              color: candidateData.isNotEmpty
-                                                  ? Colors.white.withOpacity(
-                                                      0.2,
-                                                    )
-                                                  : Colors.transparent,
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                  ],
-                                );
-                              },
+                      // Persistent Remove Zone — only visible while dragging
+                      if (_isDragging)
+                        DragTarget<Map<String, dynamic>>(
+                          onAcceptWithDetails: (details) {
+                            final id = details.data['id'] as String?;
+                            if (id != null) {
+                              final item = _items.firstWhere((i) => i.id == id);
+                              _removeItem(item);
+                            }
+                            setState(() => _isDragging = false);
+                            widget.onDragEnded?.call();
+                          },
+                          builder: (context, candidateData, rejectedData) {
+                            final isHovered = candidateData.isNotEmpty;
+                            return AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.symmetric(vertical: 16),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: isHovered
+                                    ? Colors.red.withOpacity(0.85)
+                                    : Colors.black.withOpacity(0.5),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.delete_outline,
+                                color: isHovered
+                                    ? Colors.white
+                                    : Colors.white70,
+                                size: 32,
+                              ),
                             );
                           },
                         ),
-                      ),
-                    ),
 
-                    // ── Pill Dot Page Indicators ──────────────────────────────
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        // Discover dot (outlined)
-                        GestureDetector(
-                          onTap: () {
-                            if (!_isNavigatingToDiscover) {
-                              _isNavigatingToDiscover = true;
-                              Navigator.of(context)
-                                  .push(
-                                    PageRouteBuilder(
-                                      opaque: true,
-                                      pageBuilder: (_, __, ___) =>
-                                          const DiscoverNewsPage(),
-                                      transitionsBuilder:
-                                          (
-                                            _,
-                                            animation,
-                                            __,
-                                            child,
-                                          ) => SlideTransition(
-                                            position:
-                                                Tween<Offset>(
-                                                  begin: const Offset(-1, 0),
-                                                  end: Offset.zero,
-                                                ).animate(
-                                                  CurvedAnimation(
-                                                    parent: animation,
-                                                    curve: Curves.easeOutCubic,
-                                                  ),
-                                                ),
-                                            child: child,
-                                          ),
-                                      transitionDuration: const Duration(
-                                        milliseconds: 320,
-                                      ),
-                                      reverseTransitionDuration: const Duration(
-                                        milliseconds: 280,
-                                      ),
-                                    ),
-                                  )
-                                  .then((_) => _isNavigatingToDiscover = false);
-                            }
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white60,
-                                width: 1.5,
-                              ),
-                              color: Colors.transparent,
-                            ),
-                          ),
-                        ),
-                        // Workspace pill dots
-                        ...List.generate(_totalPages, (index) {
-                          final isActive = _currentWorkspacePage == index;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOutCubic,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            width: isActive ? 22 : 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(4),
-                              color: isActive
-                                  ? Colors.white
-                                  : Colors.white.withValues(alpha: 0.35),
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                      // ── Search Bar Removed (Now a Grid Widget) ─────────────────
 
-                    // Persistent Remove Zone — only visible while dragging
-                    if (_isDragging)
-                      DragTarget<Map<String, dynamic>>(
-                        onAcceptWithDetails: (details) {
-                          final id = details.data['id'] as String?;
-                          if (id != null) {
-                            final item = _items.firstWhere((i) => i.id == id);
-                            _removeItem(item);
-                          }
-                          setState(() => _isDragging = false);
-                          widget.onDragEnded?.call();
-                        },
-                        builder: (context, candidateData, rejectedData) {
-                          final isHovered = candidateData.isNotEmpty;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(vertical: 16),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: isHovered
-                                  ? Colors.red.withOpacity(0.85)
-                                  : Colors.black.withOpacity(0.5),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.delete_outline,
-                              color: isHovered ? Colors.white : Colors.white70,
-                              size: 32,
-                            ),
-                          );
-                        },
-                      ),
+                      // App Dock
+                      Container(
+                        height: 90,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final cellWidth = constraints.maxWidth / 4;
+                            final dockItems = _items
+                                .where((i) => i.page == -1)
+                                .toList();
 
-                    // ── Search Bar Removed (Now a Grid Widget) ─────────────────
-
-                    // App Dock
-                    Container(
-                      height: 90,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final cellWidth = constraints.maxWidth / 4;
-                          final dockItems = _items
-                              .where((i) => i.page == -1)
-                              .toList();
-
-                          return Stack(
-                            children: [
-                              for (int x = 0; x < 4; x++)
-                                Positioned(
-                                  left: x * cellWidth,
-                                  top: 0,
-                                  width: cellWidth,
-                                  height: 90,
-                                  child: DragTarget<Map<String, dynamic>>(
-                                    onWillAcceptWithDetails: (details) => true,
-                                    onAcceptWithDetails: (details) {
-                                      final data = details.data;
-                                      if (data['id'] != null) {
-                                        setState(() {
-                                          final item = _items.firstWhere(
-                                            (i) => i.id == data['id'],
-                                          );
-                                          item.x = x;
-                                          item.y = 0;
-                                          item.page = -1;
-                                        });
-                                        _saveItems();
-                                      } else if (data['type'] == 'app') {
-                                        _addNewItem(
-                                          LauncherItem(
-                                            id: DateTime.now()
-                                                .millisecondsSinceEpoch
-                                                .toString(),
-                                            type: 'app',
-                                            packageName: data['packageName'],
-                                            label: data['label'],
-                                            x: x,
-                                            y: 0,
-                                            page: -1,
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    builder:
-                                        (context, candidateData, rejectedData) {
-                                          return Container(
-                                            margin: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              border: Border.all(
-                                                color: candidateData.isNotEmpty
-                                                    ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                          .withOpacity(0.5)
-                                                    : Colors.transparent,
-                                                width: 2,
-                                              ),
+                            return Stack(
+                              children: [
+                                for (int x = 0; x < 4; x++)
+                                  Positioned(
+                                    left: x * cellWidth,
+                                    top: 0,
+                                    width: cellWidth,
+                                    height: 90,
+                                    child: DragTarget<Map<String, dynamic>>(
+                                      onWillAcceptWithDetails: (details) =>
+                                          true,
+                                      onAcceptWithDetails: (details) {
+                                        final data = details.data;
+                                        if (data['id'] != null) {
+                                          setState(() {
+                                            final item = _items.firstWhere(
+                                              (i) => i.id == data['id'],
+                                            );
+                                            item.x = x;
+                                            item.y = 0;
+                                            item.page = -1;
+                                          });
+                                          _saveItems();
+                                        } else if (data['type'] == 'app') {
+                                          _addNewItem(
+                                            LauncherItem(
+                                              id: DateTime.now()
+                                                  .millisecondsSinceEpoch
+                                                  .toString(),
+                                              type: 'app',
+                                              packageName: data['packageName'],
+                                              label: data['label'],
+                                              x: x,
+                                              y: 0,
+                                              page: -1,
                                             ),
                                           );
-                                        },
-                                  ),
-                                ),
-
-                              ...dockItems.map((item) {
-                                return Positioned(
-                                  left: item.x * cellWidth,
-                                  top: 0,
-                                  width: cellWidth,
-                                  height: 90,
-                                  child:
-                                      LongPressDraggable<Map<String, dynamic>>(
-                                        data: item.toJson(),
-                                        delay: const Duration(
-                                          milliseconds: 150,
-                                        ),
-                                        onDragStarted: () {
-                                          setState(() => _isDragging = true);
-                                          if (item.type == 'app') {
-                                            widget.onDragStarted?.call(
-                                              item.packageName,
+                                        }
+                                      },
+                                      builder:
+                                          (
+                                            context,
+                                            candidateData,
+                                            rejectedData,
+                                          ) {
+                                            return Container(
+                                              margin: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
+                                                border: Border.all(
+                                                  color:
+                                                      candidateData.isNotEmpty
+                                                      ? Theme.of(context)
+                                                            .colorScheme
+                                                            .primary
+                                                            .withOpacity(0.5)
+                                                      : Colors.transparent,
+                                                  width: 2,
+                                                ),
+                                              ),
                                             );
-                                          }
-                                        },
-                                        onDragEnd: (_) {
-                                          setState(() => _isDragging = false);
-                                          widget.onDragEnded?.call();
-                                        },
-                                        onDraggableCanceled: (_, __) {
-                                          setState(() => _isDragging = false);
-                                          widget.onDragEnded?.call();
-                                        },
-                                        feedback: Material(
-                                          color: Colors.transparent,
-                                          child: Opacity(
-                                            opacity: 0.7,
+                                          },
+                                    ),
+                                  ),
+
+                                ...dockItems.map((item) {
+                                  return Positioned(
+                                    left: item.x * cellWidth,
+                                    top: 0,
+                                    width: cellWidth,
+                                    height: 90,
+                                    child:
+                                        LongPressDraggable<
+                                          Map<String, dynamic>
+                                        >(
+                                          data: item.toJson(),
+                                          delay: const Duration(
+                                            milliseconds: 150,
+                                          ),
+                                          onDragStarted: () {
+                                            setState(() => _isDragging = true);
+                                            if (item.type == 'app') {
+                                              widget.onDragStarted?.call(
+                                                item.packageName,
+                                              );
+                                            }
+                                          },
+                                          onDragEnd: (_) {
+                                            setState(() => _isDragging = false);
+                                            widget.onDragEnded?.call();
+                                          },
+                                          onDraggableCanceled: (_, __) {
+                                            setState(() => _isDragging = false);
+                                            widget.onDragEnded?.call();
+                                          },
+                                          feedback: Material(
+                                            color: Colors.transparent,
+                                            child: Opacity(
+                                              opacity: 0.7,
+                                              child: _buildItemContent(
+                                                item,
+                                                cellWidth,
+                                                90,
+                                              ),
+                                            ),
+                                          ),
+                                          childWhenDragging:
+                                              const SizedBox.shrink(),
+                                          child: GestureDetector(
+                                            onTap: () =>
+                                                LauncherService.startApp(
+                                                  item.packageName,
+                                                ),
+                                            onLongPress: () =>
+                                                _showItemContextMenu(item),
                                             child: _buildItemContent(
                                               item,
                                               cellWidth,
@@ -1261,98 +1391,79 @@ class HomeScreenState extends State<HomeScreen> {
                                             ),
                                           ),
                                         ),
-                                        childWhenDragging:
-                                            const SizedBox.shrink(),
-                                        child: GestureDetector(
-                                          onTap: () => LauncherService.startApp(
-                                            item.packageName,
-                                          ),
-                                          onLongPress: () =>
-                                              _showItemContextMenu(item),
-                                          child: _buildItemContent(
-                                            item,
-                                            cellWidth,
-                                            90,
-                                          ),
-                                        ),
-                                      ),
-                                );
-                              }),
-                            ],
-                          );
+                                  );
+                                }),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Workspace Settings Options Menu
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            bottom: _isWorkspaceOverviewMode ? 48 : -200,
+            left: 0,
+            right: 0,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: _isWorkspaceOverviewMode ? 1.0 : 0.0,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildMenuButton(
+                      icon: Icons.wallpaper,
+                      label: 'Wallpaper',
+                      onTap: () {
+                        setState(() => _isWorkspaceOverviewMode = false);
+                        Navigator.of(context).pushNamed('/wallpaper');
+                      },
+                    ),
+                    if (_supportsSplitScreen)
+                      _buildMenuButton(
+                        icon: Icons.splitscreen,
+                        label: 'Split Screen',
+                        onTap: () {
+                          setState(() => _isWorkspaceOverviewMode = false);
+                          _openSplitScreenPicker();
                         },
                       ),
+                    _buildMenuButton(
+                      icon: Icons.widgets,
+                      label: 'Widgets',
+                      onTap: () {
+                        setState(() => _isWorkspaceOverviewMode = false);
+                        _openWidgetsSheet();
+                      },
                     ),
-                    const SizedBox(height: 16),
+                    _buildMenuButton(
+                      icon: Icons.settings,
+                      label: 'Settings',
+                      onTap: () async {
+                        setState(() => _isWorkspaceOverviewMode = false);
+                        await Navigator.of(context).pushNamed('/settings');
+                        if (!mounted) return;
+                        await _reloadSettings();
+                        widget.onSettingsChanged();
+                      },
+                    ),
                   ],
                 ),
               ),
             ),
           ),
-        ),
-
-        // Workspace Settings Options Menu
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          bottom: _isWorkspaceOverviewMode ? 48 : -200,
-          left: 0,
-          right: 0,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 200),
-            opacity: _isWorkspaceOverviewMode ? 1.0 : 0.0,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildMenuButton(
-                    icon: Icons.wallpaper,
-                    label: 'Wallpaper',
-                    onTap: () {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      LauncherService.openRoute('/wallpaper');
-                    },
-                  ),
-                  if (_supportsSplitScreen)
-                    _buildMenuButton(
-                      icon: Icons.splitscreen,
-                      label: 'Split Screen',
-                      onTap: () {
-                        setState(() => _isWorkspaceOverviewMode = false);
-                        _openSplitScreenPicker();
-                      },
-                    ),
-                  _buildMenuButton(
-                    icon: Icons.widgets,
-                    label: 'Widgets',
-                    onTap: () {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      _openWidgetsSheet();
-                    },
-                  ),
-                  _buildMenuButton(
-                    icon: Icons.settings,
-                    label: 'Settings',
-                    onTap: () {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      LauncherService.openRoute('/settings');
-                      Future.value().then((_) async {
-                        // Reload settings FIRST before notifying parent.
-                        // Calling onSettingsChanged() first triggers a parent
-                        // rebuild while we are still in our own setState cycle,
-                        // which causes a crash on back-navigation.
-                        await _reloadSettings();
-                        widget.onSettingsChanged();
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1363,7 +1474,7 @@ class HomeScreenState extends State<HomeScreen> {
     bool isFeedback = false,
   }) {
     if (item.type == 'widget' && item.appWidgetId != null) {
-      return Container(
+      final widgetView = Container(
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
         child: ClipRRect(
@@ -1371,6 +1482,10 @@ class HomeScreenState extends State<HomeScreen> {
           child: _WidgetWrapper(appWidgetId: item.appWidgetId!),
         ),
       );
+      if (!isFeedback && _editingWidgetId == item.id) {
+        return _buildWidgetEditor(item, widgetView, cellWidth, cellHeight);
+      }
+      return widgetView;
     } else if (item.type == 'search_widget') {
       return Padding(
         padding: const EdgeInsets.all(8.0),
@@ -1417,14 +1532,15 @@ class HomeScreenState extends State<HomeScreen> {
                             children: [
                               Text(
                                 item.label,
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.bold),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.edit, size: 20),
                                 onPressed: () {
-                                  final controller = TextEditingController(text: item.label);
+                                  final controller = TextEditingController(
+                                    text: item.label,
+                                  );
                                   showDialog(
                                     context: context,
                                     builder: (context) => AlertDialog(
@@ -1435,7 +1551,8 @@ class HomeScreenState extends State<HomeScreen> {
                                       ),
                                       actions: [
                                         TextButton(
-                                          onPressed: () => Navigator.pop(context),
+                                          onPressed: () =>
+                                              Navigator.pop(context),
                                           child: const Text('Cancel'),
                                         ),
                                         TextButton(
@@ -1456,7 +1573,7 @@ class HomeScreenState extends State<HomeScreen> {
                               ),
                             ],
                           );
-                        }
+                        },
                       ),
                       const SizedBox(height: 24),
                       Wrap(
@@ -1467,35 +1584,35 @@ class HomeScreenState extends State<HomeScreen> {
                           final cachedApp = widget.appCache[pkg];
                           Widget buildApp(AppInfo app) {
                             final appWidget = Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconShapeClipper(
-                                    shape: _iconShape,
-                                    size: 56,
-                                    child: app.icon != null
-                                        ? Image.memory(
-                                            app.icon!,
-                                            width: 56,
-                                            height: 56,
-                                            fit: BoxFit.cover,
-                                            cacheWidth: 168,
-                                          )
-                                        : const Icon(Icons.android, size: 56),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconShapeClipper(
+                                  shape: _iconShape,
+                                  size: 56,
+                                  child: app.icon != null
+                                      ? Image.memory(
+                                          app.icon!,
+                                          width: 56,
+                                          height: 56,
+                                          fit: BoxFit.cover,
+                                          cacheWidth: 168,
+                                        )
+                                      : const Icon(Icons.android, size: 56),
+                                ),
+                                const SizedBox(height: 4),
+                                SizedBox(
+                                  width: 64,
+                                  child: Text(
+                                    app.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(fontSize: 11),
                                   ),
-                                  const SizedBox(height: 4),
-                                  SizedBox(
-                                    width: 64,
-                                    child: Text(
-                                      app.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            
+                                ),
+                              ],
+                            );
+
                             return LongPressDraggable<Map<String, dynamic>>(
                               data: {
                                 'type': 'app',
@@ -1792,16 +1909,6 @@ class HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                 ],
-                if (item.type == 'widget') ...[
-                  ListTile(
-                    leading: const Icon(Icons.aspect_ratio),
-                    title: const Text('Resize Widget'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showResizeDialog(item);
-                    },
-                  ),
-                ],
               ],
             ),
           ),
@@ -1810,91 +1917,228 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showResizeDialog(LauncherItem item) {
-    int currentSpanX = item.spanX;
-    int currentSpanY = item.spanY;
+  void _beginWidgetEdit(LauncherItem item) {
+    if (item.appWidgetId == null) return;
+    setState(() {
+      _editingWidgetId = item.id;
+      _editingWidgetConfigurable = false;
+      _editingWidgetCanResizeX = false;
+      _editingWidgetCanResizeY = false;
+      _editingWidgetMinSpanX = item.spanX;
+      _editingWidgetMinSpanY = item.spanY;
+    });
+    LauncherService.widgetCapabilities(item.appWidgetId!).then((capabilities) {
+      if (!mounted || _editingWidgetId != item.id) return;
+      final canResizeX = capabilities['resizeHorizontal'] == true;
+      final canResizeY = capabilities['resizeVertical'] == true;
+      final box = _widgetItemKeys[item.id]?.currentContext?.findRenderObject();
+      final cellWidth = box is RenderBox && box.hasSize
+          ? box.size.width / item.spanX
+          : 1.0;
+      final cellHeight = box is RenderBox && box.hasSize
+          ? box.size.height / item.spanY
+          : 1.0;
+      final minWidth = capabilities['minResizeWidth'] as int? ?? 0;
+      final minHeight = capabilities['minResizeHeight'] as int? ?? 0;
+      setState(() {
+        _editingWidgetConfigurable = capabilities['configurable'] == true;
+        _editingWidgetCanResizeX = canResizeX;
+        _editingWidgetCanResizeY = canResizeY;
+        _editingWidgetMinSpanX = canResizeX
+            ? (minWidth / cellWidth).ceil().clamp(1, _columns).toInt()
+            : item.spanX;
+        _editingWidgetMinSpanY = canResizeY
+            ? (minHeight / cellHeight).ceil().clamp(1, _rows).toInt()
+            : item.spanY;
+      });
+    });
+  }
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Resize Widget'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Width:'),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: currentSpanX > 1
-                                ? () => setDialogState(() => currentSpanX--)
-                                : null,
-                          ),
-                          Text('$currentSpanX'),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            onPressed: (item.x + currentSpanX) < _columns
-                                ? () => setDialogState(() => currentSpanX++)
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Height:'),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove_circle_outline),
-                            onPressed: currentSpanY > 1
-                                ? () => setDialogState(() => currentSpanY--)
-                                : null,
-                          ),
-                          Text('$currentSpanY'),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            onPressed: (item.y + currentSpanY) < _rows
-                                ? () => setDialogState(() => currentSpanY++)
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      item.spanX = currentSpanX;
-                      item.spanY = currentSpanY;
-                    });
-                    _saveItems();
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  void _handleWidgetEditorPointerDown(PointerDownEvent event) {
+    final widgetId = _editingWidgetId;
+    if (widgetId == null) return;
+    final renderObject = _widgetItemKeys[widgetId]?.currentContext
+        ?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      setState(() => _editingWidgetId = null);
+      return;
+    }
+
+    final localPosition = renderObject.globalToLocal(event.position);
+    final bounds = Offset.zero & renderObject.size;
+    if (!bounds.contains(localPosition)) {
+      setState(() => _editingWidgetId = null);
+    }
+  }
+
+  bool _canResizeWidget(LauncherItem item, int spanX, int spanY) {
+    if (spanX < 1 ||
+        spanY < 1 ||
+        (spanX != item.spanX && spanX < _editingWidgetMinSpanX) ||
+        (spanY != item.spanY && spanY < _editingWidgetMinSpanY) ||
+        (spanX != item.spanX && !_editingWidgetCanResizeX) ||
+        (spanY != item.spanY && !_editingWidgetCanResizeY) ||
+        item.x + spanX > _columns ||
+        item.y + spanY > _rows) {
+      return false;
+    }
+    return !_items.any(
+      (other) =>
+          other.id != item.id &&
+          other.page == item.page &&
+          item.x < other.x + other.spanX &&
+          item.x + spanX > other.x &&
+          item.y < other.y + other.spanY &&
+          item.y + spanY > other.y,
     );
   }
+
+  void _resizeWidgetByDrag(
+    LauncherItem item,
+    Offset delta,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    _resizeDragX += delta.dx;
+    _resizeDragY += delta.dy;
+    var changed = false;
+
+    while (_resizeDragX >= cellWidth) {
+      if (!_canResizeWidget(item, item.spanX + 1, item.spanY)) {
+        _resizeDragX = 0;
+        break;
+      }
+      item.spanX++;
+      _resizeDragX -= cellWidth;
+      changed = true;
+    }
+    while (_resizeDragX <= -cellWidth) {
+      if (!_canResizeWidget(item, item.spanX - 1, item.spanY)) {
+        _resizeDragX = 0;
+        break;
+      }
+      item.spanX--;
+      _resizeDragX += cellWidth;
+      changed = true;
+    }
+    while (_resizeDragY >= cellHeight) {
+      if (!_canResizeWidget(item, item.spanX, item.spanY + 1)) {
+        _resizeDragY = 0;
+        break;
+      }
+      item.spanY++;
+      _resizeDragY -= cellHeight;
+      changed = true;
+    }
+    while (_resizeDragY <= -cellHeight) {
+      if (!_canResizeWidget(item, item.spanX, item.spanY - 1)) {
+        _resizeDragY = 0;
+        break;
+      }
+      item.spanY--;
+      _resizeDragY += cellHeight;
+      changed = true;
+    }
+
+    if (changed && mounted) setState(() {});
+  }
+
+  Widget _buildWidgetEditor(
+    LauncherItem item,
+    Widget child,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(child: child),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        ),
+        if (_editingWidgetConfigurable)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Material(
+              color: Theme.of(context).colorScheme.surface,
+              shape: const CircleBorder(),
+              child: IconButton(
+                tooltip: 'Widget settings',
+                visualDensity: VisualDensity.compact,
+                iconSize: 20,
+                onPressed: () =>
+                    LauncherService.configureWidget(item.appWidgetId!),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ),
+          ),
+        Positioned(
+          top: 8,
+          left: 8,
+          child: Material(
+            color: Theme.of(context).colorScheme.surface,
+            shape: const CircleBorder(),
+            child: IconButton(
+              tooltip: 'Remove widget',
+              visualDensity: VisualDensity.compact,
+              iconSize: 20,
+              onPressed: () {
+                setState(() => _editingWidgetId = null);
+                _removeItem(item);
+              },
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+        ),
+        if (_editingWidgetCanResizeX || _editingWidgetCanResizeY)
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: GestureDetector(
+              onPanStart: (_) {
+                _resizeDragX = 0;
+                _resizeDragY = 0;
+              },
+              onPanUpdate: (details) => _resizeWidgetByDrag(
+                item,
+                details.delta,
+                cellWidth,
+                cellHeight,
+              ),
+              onPanEnd: (_) => _saveItems(),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(14),
+                  ),
+                ),
+                child: Icon(
+                  Icons.open_in_full_rounded,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
 }
 
 class _WidgetWrapper extends StatefulWidget {
@@ -1933,7 +2177,8 @@ class _SplitScreenPickerSheet extends StatefulWidget {
   });
 
   @override
-  State<_SplitScreenPickerSheet> createState() => _SplitScreenPickerSheetState();
+  State<_SplitScreenPickerSheet> createState() =>
+      _SplitScreenPickerSheetState();
 }
 
 class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
@@ -1951,18 +2196,26 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
 
     if (_apps.isEmpty) {
       _isLoading = true;
-      InstalledApps.getInstalledApps(excludeSystemApps: false, excludeNonLaunchableApps: true, withIcon: false).then((apps) {
-        if (!mounted) return;
-        apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-        setState(() {
-          _apps = apps;
-          _filteredApps = List.from(_apps);
-          _isLoading = false;
-        });
-      }).catchError((_) {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-      });
+      InstalledApps.getInstalledApps(
+            excludeSystemApps: false,
+            excludeNonLaunchableApps: true,
+            withIcon: false,
+          )
+          .then((apps) {
+            if (!mounted) return;
+            apps.sort(
+              (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+            );
+            setState(() {
+              _apps = apps;
+              _filteredApps = List.from(_apps);
+              _isLoading = false;
+            });
+          })
+          .catchError((_) {
+            if (!mounted) return;
+            setState(() => _isLoading = false);
+          });
     }
   }
 
@@ -2025,7 +2278,9 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.4,
+                    ),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -2069,8 +2324,12 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
                           )
                         : null,
                     filled: true,
-                    fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                    fillColor: theme.colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.5),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 0,
+                      horizontal: 16,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide.none,
@@ -2084,33 +2343,33 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
                 child: _isLoading && _filteredApps.isEmpty
                     ? const Center(child: CircularProgressIndicator())
                     : _filteredApps.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No apps found',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            controller: scrollController,
-                            itemCount: _filteredApps.length,
-                            // Strict memory constraint: only decode visible tiles (< 2MB RAM)
-                            itemBuilder: (context, index) {
-                              final app = _filteredApps[index];
-                              return _SplitScreenTile(
-                                app: app,
-                                iconShape: widget.iconShape,
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  LauncherService.startApp(
-                                    app.packageName,
-                                    splitScreen: true,
-                                  );
-                                },
+                    ? Center(
+                        child: Text(
+                          'No apps found',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: _filteredApps.length,
+                        // Strict memory constraint: only decode visible tiles (< 2MB RAM)
+                        itemBuilder: (context, index) {
+                          final app = _filteredApps[index];
+                          return _SplitScreenTile(
+                            app: app,
+                            iconShape: widget.iconShape,
+                            onTap: () {
+                              Navigator.pop(context);
+                              LauncherService.startApp(
+                                app.packageName,
+                                splitScreen: true,
                               );
                             },
-                          ),
+                          );
+                        },
+                      ),
               ),
             ],
           ),
@@ -2172,4 +2431,3 @@ class _SplitScreenTile extends StatelessWidget {
     );
   }
 }
-

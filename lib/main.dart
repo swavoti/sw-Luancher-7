@@ -1,6 +1,4 @@
 import 'dart:ui';
-import 'dart:io';
-import 'dart:async';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,14 +54,12 @@ class SwavotiApp extends StatefulWidget {
 class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   SharedPreferences? _prefs;
   Map<String, AppInfo> _appCache = {};
-  Timer? _ramCheckTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _hydrate();
-    _startRamChecker();
   }
 
   @override
@@ -84,24 +80,6 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
     }
   }
 
-  void _startRamChecker() {
-    // Background RAM usage checker. Runs every 10 seconds.
-    _ramCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      final currentRamMB = ProcessInfo.currentRss / (1024 * 1024);
-      
-      // If RAM exceeds 150MB, kill the caches and rebuild silently
-      if (currentRamMB > 150) {
-        debugPrint('RAM Spike Detected: ${currentRamMB.toStringAsFixed(1)} MB. Dropping caches...');
-        PaintingBinding.instance.imageCache.clear();
-        PaintingBinding.instance.imageCache.clearLiveImages();
-        
-        // Silently rebuild the widget tree to drop detached nodes 
-        // without showing any blank screens.
-        if (mounted) setState(() {});
-      }
-    });
-  }
-
   @override
   void didHaveMemoryPressure() {
     super.didHaveMemoryPressure();
@@ -115,7 +93,6 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _ramCheckTimer?.cancel();
     super.dispose();
   }
 

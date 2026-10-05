@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
-import 'package:swavoti/screens/edit_icons_page.dart';
 import 'package:swavoti/screens/search_settings.dart';
 
 class HomeSettings extends StatefulWidget {
@@ -215,7 +214,7 @@ class _HomeSettingsState extends State<HomeSettings> {
                   subtitle: const Text('Change app icon shape style'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    LauncherService.openRoute('/edit_icons');
+                    Navigator.of(context).pushNamed('/edit_icons');
                   },
                 ),
                 const Divider(),

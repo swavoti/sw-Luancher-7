@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Preview</title>
+  <style>
+    :root {
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-input: #3c3c3c;
+      --text-main: #cccccc;
+      --border-color: #333333;
+      --button-hover: rgba(255, 255, 255, 0.1);
+      --accent: #0e639c;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg-primary);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    /* Native VS Code Header Toolbar */
+    .toolbar {
+      height: 38px;
+      background-color: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 6px;
+      user-select: none;
+      z-index: 100;
+    }
+
+    .tool-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-main);
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0.8;
+      transition: opacity 0.15s, background-color 0.15s;
+    }
+
+    .tool-btn:hover {
+      opacity: 1;
+      background-color: var(--button-hover);
+    }
+
+    .tool-btn svg {
+      width: 15px;
+      height: 15px;
+      fill: currentColor;
+    }
+
+    /* VS Code Address Bar Input */
+    .address-bar {
+      flex: 1;
+      height: 24px;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      border-radius: 2px;
+      padding: 0 8px;
+      color: #ffffff;
+      font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .address-bar:focus {
+      border-color: var(--accent);
+    }
+
+    /* Preview Workspace */
+    #viewport {
+      flex: 1;
+      position: relative;
+      background: #ffffff;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #ffffff;
+    }
+
+    /* Standby Overlay (No crude empty state cards) */
+    .standby-state {
+      position: absolute;
+      inset: 0;
+      background: var(--bg-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #858585;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top VS Code Navigation Bar -->
+  <div class="toolbar">
+    <button class="tool-btn" id="btn-refresh" title="Reload Page">
+      <svg viewBox="0 0 16 16">
+        <path d="M13.6 2.4A7 7 0 1 0 15 8h-1.5a5.5 5.5 0 1 1-1.1-3.4L10 7h5V2l-1.4 0.4z"/>
+      </svg>
+    </button>
+    <input type="text" id="address-input" class="address-bar" placeholder="about:blank" spellcheck="false">
+  </div>
+
+  <!-- Main Viewport -->
+  <div id="viewport">
+    <div id="standby" class="standby-state">Waiting for active document or dev server...</div>
+    <iframe id="preview-frame" style="display: none;"></iframe>
+  </div>
+
+  <script>
+    const frame = document.getElementById('preview-frame');
+    const standby = document.getElementById('standby');
+    const addressInput = document.getElementById('address-input');
+    const btnRefresh = document.getElementById('btn-refresh');
+
+    let currentPath = null;
+    let lastContent = null;
+    let devServerUrl = null;
+
+    async function updatePreview() {
+      if (!window.ideAPI) return;
+
+      try {
+        // 1. Check for running dev server in terminal output
+        if (typeof window.ideAPI.getTerminalOutput === 'function') {
+          const terminalOutput = await window.ideAPI.getTerminalOutput();
+          if (terminalOutput) {
+            const cleanOutput = terminalOutput.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+            const matches = [...cleanOutput.matchAll(/http:\/\/(localhost|127\.0\.0\.1):\d+/gi)];
+
+            if (matches.length > 0) {
+              const url = matches[matches.length - 1][0];
+              if (devServerUrl !== url) {
+                devServerUrl = url;
+                currentPath = null;
+                lastContent = null;
+
+                addressInput.value = url;
+                frame.src = url;
+                showFrame();
+              }
+              return;
+            } else {
+              devServerUrl = null;
+            }
+          }
+        }
+
+        // 2. Fetch Active File Path
+        const activePath = await window.ideAPI.getActiveFilePath();
+        if (!activePath) return;
+
+        // Reads the active path or opens associated HTML files
+        const content = await window.ideAPI.readFile(activePath);
+        if (!content) return;
+
+        addressInput.value = activePath;
+
+        if (content !== lastContent || activePath !== currentPath) {
+          lastContent = content;
+          currentPath = activePath;
+
+          // Render via Blob URL
+          const blob = new Blob([content], { type: 'text/html' });
+          const blobUrl = URL.createObjectURL(blob);
+          
+          frame.src = blobUrl;
+          showFrame();
+        }
+      } catch (err) {
+        console.error('Preview error:', err);
+      }
+    }
+
+    function showFrame() {
+      standby.style.display = 'none';
+      frame.style.display = 'block';
+    }
+
+    // Refresh button event
+    btnRefresh.addEventListener('click', () => {
+      if (devServerUrl) {
+        frame.src = devServerUrl;
+      } else if (frame.src) {
+        updatePreview();
+      }
+    });
+
+    // Address bar manually entered navigation
+    addressInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const value = addressInput.value.trim();
+        if (value.startsWith('http://') || value.startsWith('https://')) {
+          devServerUrl = value;
+          frame.src = value;
+          showFrame();
+        }
+      }
+    });
+
+    // 500ms active file polling rate
+    setInterval(updatePreview, 500);
+    updatePreview();
+  </script>
+</body>
+</html>
