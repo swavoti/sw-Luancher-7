@@ -8,6 +8,7 @@ import 'package:installed_apps/installed_apps.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/services/app_lock_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
 import 'package:swavoti/screens/discover_news.dart';
 import 'package:swavoti/widgets/search_widget.dart';
@@ -15,6 +16,7 @@ import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'dart:isolate';
 import 'package:swavoti/services/app_database_service.dart';
+import 'package:swavoti/services/lightweight_mode.dart';
 
 class LauncherItem {
   final String id;
@@ -164,8 +166,10 @@ class HomeScreenState extends State<HomeScreen> {
     // is critical for the gesture snap-back fix — the system must see a
     // completely static layout the moment the window hand-off completes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      LauncherService.preloadWidgets();
-      _preloadSplitScreenApps();
+      if (!LightweightMode.isEnabled) {
+        LauncherService.preloadWidgets();
+        _preloadSplitScreenApps();
+      }
       LauncherService.supportsSplitScreen().then((value) {
         if (mounted) setState(() => _supportsSplitScreen = value);
       });
@@ -1250,7 +1254,8 @@ class HomeScreenState extends State<HomeScreen> {
                                                 child: GestureDetector(
                                                   onTap: () {
                                                     if (item.type == 'app') {
-                                                      LauncherService.startApp(
+                                                      AppLockService.launchApp(
+                                                        context,
                                                         item.packageName,
                                                       );
                                                     }
@@ -1554,7 +1559,8 @@ class HomeScreenState extends State<HomeScreen> {
                                               const SizedBox.shrink(),
                                           child: GestureDetector(
                                             onTap: () =>
-                                                LauncherService.startApp(
+                                                AppLockService.launchApp(
+                                                  context,
                                                   item.packageName,
                                                 ),
                                             onLongPress: () =>
@@ -1793,9 +1799,13 @@ class HomeScreenState extends State<HomeScreen> {
                                 child: appWidget,
                               ),
                               child: GestureDetector(
-                                onTap: () {
+                                onTap: () async {
+                                  final launch = AppLockService.launchApp(
+                                    context,
+                                    pkg,
+                                  );
                                   Navigator.pop(context);
-                                  LauncherService.startApp(pkg);
+                                  await launch;
                                 },
                                 child: appWidget,
                               ),
@@ -2499,12 +2509,14 @@ class _SplitScreenPickerSheetState extends State<_SplitScreenPickerSheet> {
                           return _SplitScreenTile(
                             app: app,
                             iconShape: widget.iconShape,
-                            onTap: () {
-                              Navigator.pop(context);
-                              LauncherService.startApp(
+                            onTap: () async {
+                              final launch = AppLockService.launchApp(
+                                context,
                                 app.packageName,
                                 splitScreen: true,
                               );
+                              Navigator.pop(context);
+                              await launch;
                             },
                           );
                         },

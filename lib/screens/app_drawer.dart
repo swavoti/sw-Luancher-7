@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/services/app_lock_service.dart';
 import 'package:swavoti/services/app_database_service.dart';
+import 'package:swavoti/services/lightweight_mode.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
@@ -55,10 +57,12 @@ class AppDrawerState extends State<AppDrawer> {
   bool _frostedGlassEnabled = true;
   final ValueNotifier<int> _pageNotifier = ValueNotifier<int>(0);
   final Map<String, Uint8List> _iconCache = {};
+  int _iconCacheBytes = 0;
   final Set<String> _prefetchedPageKeys = {};
   String _iconPack = '';
   int _iconGeneration = 0;
   int _currentPage = 0;
+  DateTime? _lastLightweightAppRefresh;
 
   // Grid scroll key
   final GlobalKey _gridKey = GlobalKey();
@@ -66,6 +70,8 @@ class AppDrawerState extends State<AppDrawer> {
   // Approximate row height in the grid
   static const double _cellSize = 90.0; // approx icon cell height
   static const int _gridColumns = 4;
+  int get _maxDrawerIconCacheBytes =>
+      LightweightMode.isEnabled ? 2 << 20 : 8 << 20;
 
   @override
   void initState() {
@@ -94,17 +100,36 @@ class AppDrawerState extends State<AppDrawer> {
         final iconPack = prefs.getString('icon_pack') ?? '';
         if (iconPack != _iconPack) {
           _iconPack = iconPack;
-          _iconCache.clear();
+          clearIconCache();
           _prefetchedPageKeys.clear();
           _iconGeneration++;
         }
+        if (LightweightMode.isEnabled) clearIconCache();
         _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
         _savedWallpaperPath = prefs.getString('saved_wallpaper_path');
       });
     }
   }
 
-  Future<void> _loadApps() async {
+  void clearIconCache() {
+    _iconCache.clear();
+    _iconCacheBytes = 0;
+  }
+
+  void _cacheDrawerIcon(String packageName, Uint8List icon) {
+    final previous = _iconCache.remove(packageName);
+    if (previous != null) _iconCacheBytes -= previous.lengthInBytes;
+    if (icon.lengthInBytes > _maxDrawerIconCacheBytes) return;
+
+    _iconCache[packageName] = icon;
+    _iconCacheBytes += icon.lengthInBytes;
+    while (_iconCacheBytes > _maxDrawerIconCacheBytes) {
+      final oldestPackage = _iconCache.keys.first;
+      _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
+    }
+  }
+
+  Future<void> _loadApps({bool refreshOnDemand = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final hidden = prefs.getStringList('hidden_apps') ?? [];
     final showHidden = prefs.getBool('show_hidden_apps') ?? false;
@@ -151,20 +176,35 @@ class AppDrawerState extends State<AppDrawer> {
 
     // Refresh cache in the background; the drawer stays usable while SQLite
     // and Android are queried.
-    unawaited(
-      AppDatabaseService.syncAppsBackground().then((freshApps) {
-        if (!mounted) return;
-        if (freshApps.isNotEmpty) {
-          final apps = filterApps(freshApps);
-          if (_sameApps(_apps, apps)) return;
-          setState(() {
-            _apps = apps;
-            _filteredApps = _filterBySearch(apps);
-            _isLoading = false;
-          });
-        }
-      }),
-    );
+    if (!LightweightMode.isEnabled || refreshOnDemand) {
+      unawaited(
+        AppDatabaseService.syncAppsBackground().then((freshApps) {
+          if (!mounted) return;
+          if (freshApps.isNotEmpty) {
+            final apps = filterApps(freshApps);
+            if (_sameApps(_apps, apps)) return;
+            setState(() {
+              _apps = apps;
+              _filteredApps = _filterBySearch(apps);
+              _isLoading = false;
+            });
+          }
+        }),
+      );
+    }
+  }
+
+  Future<void> refreshApps() {
+    if (LightweightMode.isEnabled) {
+      final lastRefresh = _lastLightweightAppRefresh;
+      final now = DateTime.now();
+      if (lastRefresh != null &&
+          now.difference(lastRefresh) < const Duration(minutes: 5)) {
+        return Future<void>.value();
+      }
+      _lastLightweightAppRefresh = now;
+    }
+    return _loadApps(refreshOnDemand: true);
   }
 
   bool _sameApps(List<AppInfo> first, List<AppInfo> second) {
@@ -191,6 +231,7 @@ class AppDrawerState extends State<AppDrawer> {
   }
 
   void _prefetchPage(List<AppInfo> apps, int itemsPerPage, int pageIndex) {
+    if (LightweightMode.isEnabled && pageIndex != _currentPage) return;
     final start = pageIndex * itemsPerPage;
     if (start >= apps.length) return;
     final end = (start + itemsPerPage).clamp(0, apps.length);
@@ -383,6 +424,7 @@ class AppDrawerState extends State<AppDrawer> {
                           child: PageView.builder(
                             itemCount: pages,
                             onPageChanged: (page) {
+                              _currentPage = page;
                               _pageNotifier.value = page;
                               _prefetchPage(gridApps, itemsPerPage, page + 1);
                             },
@@ -440,9 +482,8 @@ class AppDrawerState extends State<AppDrawer> {
                                     onDragEnded: widget.onDragEnded,
                                     cachedIcon: _iconCache[app.packageName],
                                     iconGeneration: _iconGeneration,
-                                    onIconLoaded: (icon) {
-                                      _iconCache[app.packageName] = icon;
-                                    },
+                                    onIconLoaded: (icon) =>
+                                        _cacheDrawerIcon(app.packageName, icon),
                                   );
                                 },
                               );
@@ -493,7 +534,9 @@ class AppDrawerState extends State<AppDrawer> {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: Stack(
         children: [
-          if (_frostedGlassEnabled && _savedWallpaperPath != null)
+          if (!LightweightMode.isEnabled &&
+              _frostedGlassEnabled &&
+              _savedWallpaperPath != null)
             Positioned.fill(
               child: RepaintBoundary(
                 child: ImageFiltered(
@@ -516,7 +559,9 @@ class AppDrawerState extends State<AppDrawer> {
             Positioned.fill(
               child: Container(color: Theme.of(context).colorScheme.surface),
             ),
-          if (_frostedGlassEnabled && _savedWallpaperPath != null)
+          if (!LightweightMode.isEnabled &&
+              _frostedGlassEnabled &&
+              _savedWallpaperPath != null)
             Positioned.fill(
               child: ColoredBox(
                 color: Theme.of(
@@ -688,7 +733,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
                 title: const Text('Open'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  LauncherService.startApp(app.packageName);
+                  AppLockService.launchApp(context, app.packageName);
                 },
               ),
               ListTile(
@@ -794,7 +839,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
         ),
       ),
       child: GestureDetector(
-        onTap: () => LauncherService.startApp(app.packageName),
+        onTap: () => AppLockService.launchApp(context, app.packageName),
         onLongPress: () {
           // If drag didn't activate, show context menu
           if (!_dragStarted) {

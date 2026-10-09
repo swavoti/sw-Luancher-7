@@ -70,6 +70,7 @@ class MainActivity : FlutterActivity() {
         // the window for QuickStep and is a common Android 10 snap-back cause.
         window.decorView.setLayerType(View.LAYER_TYPE_NONE, null)
         reportFullyDrawn()
+        NotificationDotService.refreshCurrentMedia()
         homeEventSink?.success("onHomeResumed")
     }
 
@@ -300,17 +301,29 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
-                                "supportsSplitScreen" -> {
-                                    result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
-                                }
-                                "getDeviceTotalMemoryBytes" -> {
-                                    val activityManager =
-                                        getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
-                                    val memoryInfo = android.app.ActivityManager.MemoryInfo()
-                                    activityManager.getMemoryInfo(memoryInfo)
-                                    result.success(memoryInfo.totalMem)
-                                }
-                                "getAvailableIconPacks" -> {
+                "supportsSplitScreen" -> {
+                    result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+                }
+                "getDeviceTotalMemoryBytes" -> {
+                    val activityManager =
+                        getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                    val memoryInfo = android.app.ActivityManager.MemoryInfo()
+                    activityManager.getMemoryInfo(memoryInfo)
+                    result.success(memoryInfo.totalMem)
+                }
+                "getDeviceMemoryInfo" -> {
+                    val activityManager =
+                        getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+                    val memoryInfo = android.app.ActivityManager.MemoryInfo()
+                    activityManager.getMemoryInfo(memoryInfo)
+                    result.success(
+                        mapOf(
+                            "totalRamBytes" to memoryInfo.totalMem,
+                            "isLowRamDevice" to activityManager.isLowRamDevice
+                        )
+                    )
+                }
+                "getAvailableIconPacks" -> {
                     backgroundExecutor.execute {
                         val packs = iconPackManager.getAvailableIconPacks()
                         Handler(Looper.getMainLooper()).post { result.success(packs) }

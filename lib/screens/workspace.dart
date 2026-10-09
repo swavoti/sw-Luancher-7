@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:swavoti/screens/home_screen.dart';
+import 'package:swavoti/services/lightweight_mode.dart';
 import 'package:swavoti/screens/app_drawer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -52,6 +53,10 @@ class WorkspaceState extends State<Workspace>
   Future<void> refreshLauncherSettings() async {
     await _homeScreenKey.currentState?.refreshSettings();
     await _appDrawerKey.currentState?.loadSettings();
+  }
+
+  void clearTransientMemoryCaches() {
+    _appDrawerKey.currentState?.clearIconCache();
   }
 
   @override
@@ -112,6 +117,9 @@ class WorkspaceState extends State<Workspace>
 
   void _openDrawer() {
     _appDrawerKey.currentState?.loadSettings();
+    if (LightweightMode.isEnabled) {
+      _appDrawerKey.currentState?.refreshApps();
+    }
     _drawerController.animateTo(
       1.0,
       duration: const Duration(milliseconds: 360),

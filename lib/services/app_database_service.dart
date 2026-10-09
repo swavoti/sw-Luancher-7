@@ -14,7 +14,8 @@ class AppDatabaseService {
   static Database? _database;
 
   static final Map<String, Uint8List> _iconCache = {};
-  static const int _maxIconCacheBytes = 32 << 20;
+  static bool _lightweightMode = false;
+  static int get _maxIconCacheBytes => _lightweightMode ? 8 << 20 : 32 << 20;
   static int _iconCacheBytes = 0;
   static int _iconCacheGeneration = 0;
   static String currentIconPack = "";
@@ -22,7 +23,21 @@ class AppDatabaseService {
 
   static final List<void Function()> _taskQueue = [];
   static int _runningTasks = 0;
-  static const int _maxConcurrentTasks = 3;
+  static int get _maxConcurrentTasks => _lightweightMode ? 1 : 3;
+
+  static void setLightweightMode(bool enabled) {
+    _lightweightMode = enabled;
+    while (_iconCacheBytes > _maxIconCacheBytes && _iconCache.isNotEmpty) {
+      final oldestPackage = _iconCache.keys.first;
+      _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
+    }
+    _pumpQueue();
+  }
+
+  static void clearMemoryIconCache() {
+    _iconCache.clear();
+    _iconCacheBytes = 0;
+  }
 
   static Future<T> _enqueue<T>(Future<T> Function() task) {
     final completer = Completer<T>();
@@ -307,7 +322,7 @@ class AppDatabaseService {
       }
     }
 
-    await Future.wait(List.generate(6, (_) => worker()));
+    await Future.wait(List.generate(_lightweightMode ? 1 : 6, (_) => worker()));
   }
 
   static Future<void> cacheApps(List<AppInfo> apps) async {

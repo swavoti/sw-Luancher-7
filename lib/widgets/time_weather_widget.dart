@@ -35,7 +35,7 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
         debugPrint('TimeWeatherWidget: media session stream failed: $error');
       },
     );
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(const Duration(minutes: 1), (timer) {
       if (mounted) setState(() => _currentTime = DateTime.now());
     });
   }
@@ -199,10 +199,7 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
             ),
             if (_media != null && _media!.title.isNotEmpty) ...[
               const SizedBox(height: 6),
-              _CompactNowPlaying(
-                media: _media!,
-                onTap: _showMediaPlayer,
-              ),
+              _CompactNowPlaying(media: _media!, onTap: _showMediaPlayer),
             ],
           ],
         ),
@@ -411,9 +408,9 @@ class _ExpandedMusicPlayerState extends State<_ExpandedMusicPlayer> {
               alignment: Alignment.centerLeft,
               child: Text(
                 _media.artist,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(color: cs.onSurfaceVariant),
               ),
             ),
           const SizedBox(height: 14),
@@ -429,7 +426,7 @@ class _ExpandedMusicPlayerState extends State<_ExpandedMusicPlayer> {
             )
           else
             M3EProgressIndicator.linearWavy(
-            value: progress ?? (_media.isPlaying ? null : 0),
+              value: progress ?? (_media.isPlaying ? null : 0),
               color: cs.primary,
               trackColor: cs.primary.withValues(alpha: 0.18),
             ),
@@ -462,7 +459,9 @@ class _ExpandedMusicPlayerState extends State<_ExpandedMusicPlayer> {
                   padding: const EdgeInsets.all(18),
                 ),
                 child: Icon(
-                  _media.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  _media.isPlaying
+                      ? Icons.pause_rounded
+                      : Icons.play_arrow_rounded,
                   size: 32,
                 ),
               ),

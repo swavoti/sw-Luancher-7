@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:swavoti/services/feed_provider.dart';
 
 class DiscoverNewsPage extends StatefulWidget {
   const DiscoverNewsPage({super.key});
@@ -30,9 +31,7 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
   Future<void> _initWebView() async {
     final prefs = await SharedPreferences.getInstance();
     final provider = prefs.getString('feed_provider') ?? 'msn';
-    final url = provider == 'yahoo'
-        ? 'https://www.yahoo.com'
-        : 'https://www.msn.com';
+    final url = FeedProvider.fromId(provider).url;
 
     final existingController = _sharedController;
     if (existingController == null) {

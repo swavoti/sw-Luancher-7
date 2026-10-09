@@ -1,9 +1,11 @@
 package co.za.launcher3.swavoti
 
+import android.app.Notification
 import android.content.ComponentName
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Handler
@@ -130,8 +132,18 @@ class NotificationDotService : NotificationListenerService() {
     private fun activeMediaController(): MediaController? {
         val manager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
         val component = ComponentName(this, NotificationDotService::class.java)
-        return manager.getActiveSessions(component)
-            .filter { it.metadata != null }
+        val controllers = manager.getActiveSessions(component).toMutableList()
+        getActiveNotifications().orEmpty().forEach { statusBarNotification ->
+            val token = mediaSessionToken(statusBarNotification.notification)
+            if (token != null && controllers.none { it.sessionToken == token }) {
+                controllers.add(MediaController(this, token))
+            }
+        }
+        return controllers
+            .filter {
+                it.metadata != null ||
+                    it.playbackState?.state == PlaybackState.STATE_PLAYING
+            }
             .sortedByDescending {
                 it.playbackState?.state == PlaybackState.STATE_PLAYING
             }
@@ -141,10 +153,10 @@ class NotificationDotService : NotificationListenerService() {
     fun refreshMedia() {
         val data = try {
             val controller = activeMediaController()
-            val metadata = controller?.metadata
-            if (controller == null || metadata == null) {
+            if (controller == null) {
                 null
             } else {
+                val metadata = controller.metadata
                 val playback = controller.playbackState
                 val state = playback?.state
                 val reportedPosition = playback?.position ?: 0L
@@ -156,16 +168,43 @@ class NotificationDotService : NotificationListenerService() {
                     reportedPosition
                 }
                 val packageName = controller.packageName
-                val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
-                val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
-                    ?: metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
-                    ?: ""
+                val notification = activeMediaNotification(controller)
+                val notificationExtras = notification?.extras
+                val description = metadata?.description
+                val title = listOf(
+                    metadata?.getText(MediaMetadata.METADATA_KEY_TITLE)?.toString(),
+                    metadata?.getText(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)?.toString(),
+                    description?.title?.toString(),
+                    metadata?.getText(MediaMetadata.METADATA_KEY_ALBUM)?.toString(),
+                    notificationExtras?.getCharSequence(Notification.EXTRA_TITLE)?.toString(),
+                    notificationExtras?.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+                    notificationExtras?.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
+                ).firstOrNull { !it.isNullOrBlank() }
+                    ?: try {
+                        packageManager.getApplicationLabel(
+                            packageManager.getApplicationInfo(packageName, 0)
+                        ).toString()
+                    } catch (e: Exception) {
+                        android.util.Log.w(
+                            "NotificationDotService",
+                            "Could not read media app label for $packageName",
+                            e
+                        )
+                        packageName
+                    }
+                val artist = listOf(
+                    metadata?.getText(MediaMetadata.METADATA_KEY_ARTIST)?.toString(),
+                    metadata?.getText(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)?.toString(),
+                    metadata?.getText(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)?.toString(),
+                    description?.subtitle?.toString(),
+                    notificationExtras?.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
+                ).firstOrNull { !it.isNullOrBlank() } ?: ""
                 val previous = mediaSnapshot
                 val samePackage = previous?.get("packageName") == packageName
                 val sameTrack = samePackage &&
                     previous?.get("title") == title &&
                     previous?.get("artist") == artist
-                val appIcon = if (samePackage) {
+                val appIcon = if (samePackage && previous?.get("appIcon") != null) {
                     previous?.get("appIcon")
                 } else {
                     try {
@@ -183,19 +222,19 @@ class NotificationDotService : NotificationListenerService() {
                     "packageName" to packageName,
                     "title" to title,
                     "artist" to artist,
-                    "albumArt" to if (sameTrack) {
-                        previous?.get("albumArt")
-                    } else {
-                        bitmapToBytes(
-                            metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                                ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
-                            82
-                        )
-                    },
+                    "albumArt" to (
+                        previous?.get("albumArt").takeIf { sameTrack && it != null }
+                            ?: bitmapToBytes(
+                                metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                                    ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                                    ?: notificationArtwork(notification),
+                                82
+                            )
+                        ),
                     "appIcon" to appIcon,
                     "isPlaying" to (state == PlaybackState.STATE_PLAYING),
                     "positionMs" to position,
-                    "durationMs" to (metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)),
+                    "durationMs" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L),
                 )
             }
         } catch (e: Exception) {
@@ -205,6 +244,31 @@ class NotificationDotService : NotificationListenerService() {
         val changed = data != mediaSnapshot
         mediaSnapshot = data
         if (changed) mediaListener?.invoke(data)
+    }
+
+    private fun activeMediaNotification(controller: MediaController): Notification? {
+        return getActiveNotifications()
+            .asSequence()
+            .filter { it.packageName == controller.packageName }
+            .map { it.notification }
+            .firstOrNull { notification ->
+                val token = mediaSessionToken(notification)
+                token == controller.sessionToken ||
+                    notification.category == Notification.CATEGORY_TRANSPORT
+            }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun mediaSessionToken(notification: Notification): MediaSession.Token? {
+        return notification.extras
+            ?.getParcelable(Notification.EXTRA_MEDIA_SESSION) as? MediaSession.Token
+    }
+
+    @Suppress("DEPRECATION")
+    private fun notificationArtwork(notification: Notification?): Bitmap? {
+        val extras = notification?.extras ?: return null
+        return extras.getParcelable(Notification.EXTRA_LARGE_ICON) as? Bitmap
+            ?: extras.getParcelable(Notification.EXTRA_LARGE_ICON_BIG) as? Bitmap
     }
 
     private fun bitmapToBytes(source: Bitmap?, maxSize: Int): ByteArray? {

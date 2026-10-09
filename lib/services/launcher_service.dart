@@ -36,6 +36,31 @@ class MediaPlaybackInfo {
   }
 }
 
+class DeviceMemoryInfo {
+  final int totalRamBytes;
+  final bool isLowRamDevice;
+
+  const DeviceMemoryInfo({
+    required this.totalRamBytes,
+    required this.isLowRamDevice,
+  });
+
+  factory DeviceMemoryInfo.fromMap(Map<dynamic, dynamic> value) {
+    return DeviceMemoryInfo(
+      totalRamBytes: (value['totalRamBytes'] as num).toInt(),
+      isLowRamDevice: value['isLowRamDevice'] as bool,
+    );
+  }
+
+  bool get shouldRecommendLightweightMode =>
+      isLowRamDevice || totalRamBytes <= 3584 * 1024 * 1024;
+
+  String get approximateRamLabel {
+    final wholeGigabytes = (totalRamBytes / (1024 * 1024 * 1024)).round();
+    return 'About $wholeGigabytes GB RAM';
+  }
+}
+
 class LauncherService {
   static const _systemChannel = MethodChannel('co.za.launcher3.swavoti/system');
   static const _widgetChannel = MethodChannel(
@@ -44,9 +69,7 @@ class LauncherService {
   static const _notificationChannel = EventChannel(
     'co.za.launcher3.swavoti/notifications',
   );
-  static const _mediaChannel = EventChannel(
-    'co.za.launcher3.swavoti/media',
-  );
+  static const _mediaChannel = EventChannel('co.za.launcher3.swavoti/media');
 
   static List<Map<String, dynamic>>? _cachedWidgets;
 
@@ -248,6 +271,19 @@ class LauncherService {
     } catch (e) {
       print('Error opening Notification Settings: $e');
     }
+  }
+
+  static Future<DeviceMemoryInfo> getDeviceMemoryInfo() async {
+    final value = await _systemChannel.invokeMapMethod<String, dynamic>(
+      'getDeviceMemoryInfo',
+    );
+    if (value == null) {
+      throw PlatformException(
+        code: 'DEVICE_MEMORY_UNAVAILABLE',
+        message: 'Android did not return device memory information.',
+      );
+    }
+    return DeviceMemoryInfo.fromMap(value);
   }
 
   static Stream<MediaPlaybackInfo?> get mediaPlaybackStream {

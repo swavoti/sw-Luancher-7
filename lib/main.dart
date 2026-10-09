@@ -8,7 +8,9 @@ import 'package:swavoti/screens/workspace.dart';
 import 'package:swavoti/screens/edit_icons_page.dart';
 import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
+import 'package:swavoti/screens/welcome_screen.dart';
 import 'package:swavoti/services/app_database_service.dart';
+import 'package:swavoti/services/lightweight_mode.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,9 +27,6 @@ void main() {
     return true; // Prevent app crash
   };
 
-  PaintingBinding.instance.imageCache.maximumSize = 400;
-  PaintingBinding.instance.imageCache.maximumSizeBytes = 80 << 20;
-
   // Make status bar and navigation bar transparent for edge-to-edge
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -41,7 +40,12 @@ void main() {
   // cache when the widget tree first builds. This eliminates one async round-
   // trip from the hot path and is safe because ensureInitialized() is called
   // above.
-  SharedPreferences.getInstance().then((_) => runApp(const SwavotiApp()));
+  SharedPreferences.getInstance().then((prefs) {
+    LightweightMode.apply(
+      prefs.getBool(LightweightMode.preferenceKey) ?? false,
+    );
+    runApp(const SwavotiApp());
+  });
 }
 
 class SwavotiApp extends StatefulWidget {
@@ -53,6 +57,7 @@ class SwavotiApp extends StatefulWidget {
 
 class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   SharedPreferences? _prefs;
+  bool _welcomeCompleted = false;
   Map<String, AppInfo> _appCache = {};
   ColorScheme? _lightDynamicColor;
   ColorScheme? _darkDynamicColor;
@@ -70,6 +75,9 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.reload();
+      LightweightMode.apply(
+        prefs.getBool(LightweightMode.preferenceKey) ?? false,
+      );
       final savedPack = prefs.getString('icon_pack') ?? '';
       if (AppDatabaseService.currentIconPack != savedPack) {
         AppDatabaseService.currentIconPack = savedPack;
@@ -92,6 +100,17 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
     }
   }
 
+  void _refreshAfterSettingsChanged() {
+    final prefs = _prefs;
+    if (prefs != null) {
+      LightweightMode.apply(
+        prefs.getBool(LightweightMode.preferenceKey) ?? false,
+      );
+    }
+    _workspaceKey.currentState?.refreshLauncherSettings();
+    setState(() {});
+  }
+
   @override
   void didHaveMemoryPressure() {
     super.didHaveMemoryPressure();
@@ -99,6 +118,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
     debugPrint('OS Memory Pressure Received! Dropping caches...');
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
+    AppDatabaseService.clearMemoryIconCache();
+    _workspaceKey.currentState?.clearTransientMemoryCaches();
     if (mounted) setState(() {});
   }
 
@@ -113,19 +134,26 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   Future<void> _hydrate() async {
     // SharedPreferences is already warm from the pre-runApp call in main().
     final prefs = await SharedPreferences.getInstance();
+    LightweightMode.apply(
+      prefs.getBool(LightweightMode.preferenceKey) ?? false,
+    );
     AppDatabaseService.currentIconPack = prefs.getString('icon_pack') ?? "";
 
     // Show the UI immediately with whatever we have.
-    if (mounted) setState(() => _prefs = prefs);
+    final welcomeCompleted = prefs.getBool('welcome_completed') ?? false;
+    if (mounted) {
+      setState(() {
+        _prefs = prefs;
+        _welcomeCompleted = welcomeCompleted;
+      });
+    }
+    if (!welcomeCompleted) return;
 
     // Load app metadata and fresh sync concurrently — both happen off-frame.
     final cachedApps = await AppDatabaseService.getAppMetadata();
     final appCache = {for (final app in cachedApps) app.packageName: app};
 
     if (mounted) setState(() => _appCache = appCache);
-
-    // Sync fresh data from OS in background (never blocks paint).
-    AppDatabaseService.syncAppsBackground();
   }
 
   @override
@@ -163,10 +191,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           initialRoute: '/',
           navigatorObservers: [UnfocusOnPageCloseObserver()],
           routes: {
-            '/settings': (context) => HomeSettings(
-              onSettingsChanged: () =>
-                  _workspaceKey.currentState?.refreshLauncherSettings(),
-            ),
+            '/settings': (context) =>
+                HomeSettings(onSettingsChanged: _refreshAfterSettingsChanged),
             '/wallpaper': (context) => const WallpaperPage(),
             '/edit_icons': (context) => EditIconsPage(
               backgroundWallpaperPath: '',
@@ -200,14 +226,21 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
               },
             ),
           ),
-          home: PopScope(
-            canPop: false,
-            child: Workspace(
-              key: _workspaceKey,
-              prefs: prefs,
-              appCache: _appCache,
-            ),
-          ),
+          home: _welcomeCompleted
+              ? PopScope(
+                  canPop: false,
+                  child: Workspace(
+                    key: _workspaceKey,
+                    prefs: prefs,
+                    appCache: _appCache,
+                  ),
+                )
+              : WelcomeScreen(
+                  onFinished: (enabled) {
+                    LightweightMode.apply(enabled);
+                    setState(() => _welcomeCompleted = true);
+                  },
+                ),
           debugShowCheckedModeBanner: false,
         );
       },
