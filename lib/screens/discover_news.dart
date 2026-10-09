@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,9 +12,14 @@ class DiscoverNewsPage extends StatefulWidget {
 }
 
 class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
+  static WebViewController? _sharedController;
+  static String? _loadedUrl;
+  static bool _sharedIsLoading = true;
+  static bool _sharedHasError = false;
+
   late WebViewController _webViewController;
-  bool _isLoading = true;
-  bool _hasError = false;
+  bool _isLoading = _sharedIsLoading;
+  bool _hasError = _sharedHasError;
 
   @override
   void initState() {
@@ -27,40 +34,68 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         ? 'https://www.yahoo.com'
         : 'https://www.msn.com';
 
-    _webViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (progress) {
-            if (mounted) setState(() => _isLoading = progress < 100);
-          },
-          onPageStarted: (_) {
-            if (mounted)
-              setState(() {
-                _isLoading = true;
-                _hasError = false;
-              });
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() => _isLoading = false);
-          },
-          onWebResourceError: (error) {
-            if (mounted && error.isForMainFrame == true) {
+    final existingController = _sharedController;
+    if (existingController == null) {
+      final controller = WebViewController();
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      _sharedController = controller;
+      _webViewController = controller;
+    } else {
+      _webViewController = existingController;
+    }
+    await _webViewController.setNavigationDelegate(
+      NavigationDelegate(
+        onProgress: (progress) {
+          _sharedIsLoading = progress < 100;
+          if (mounted) setState(() => _isLoading = _sharedIsLoading);
+        },
+        onPageStarted: (_) {
+          _sharedIsLoading = true;
+          _sharedHasError = false;
+          if (mounted) {
+            setState(() {
+              _isLoading = true;
+              _hasError = false;
+            });
+          }
+        },
+        onPageFinished: (_) {
+          _sharedIsLoading = false;
+          if (mounted) setState(() => _isLoading = false);
+        },
+        onWebResourceError: (error) {
+          if (error.isForMainFrame == true) {
+            _sharedIsLoading = false;
+            _sharedHasError = true;
+            if (mounted) {
               setState(() {
                 _isLoading = false;
                 _hasError = true;
               });
             }
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(url));
+          }
+        },
+      ),
+    );
+
+    if (_loadedUrl != url) {
+      _sharedIsLoading = true;
+      _sharedHasError = false;
+      await _webViewController.loadRequest(Uri.parse(url));
+      _loadedUrl = url;
+    } else if (mounted) {
+      setState(() {
+        _isLoading = _sharedIsLoading;
+        _hasError = _sharedHasError;
+      });
+    }
 
     if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onHorizontalDragEnd: (details) {
@@ -73,7 +108,7 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         }
       },
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: cs.surface,
         body: SafeArea(
           child: Stack(
             children: [
@@ -82,24 +117,29 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.wifi_off,
                         size: 64,
-                        color: Colors.white54,
+                        color: cs.onSurfaceVariant,
                       ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'No Internet Connection',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: cs.onSurface,
                         ),
                       ),
                       const SizedBox(height: 16),
-                      ElevatedButton(
+                      FilledButton(
                         onPressed: () {
-                          setState(() => _hasError = false);
+                          setState(() {
+                            _hasError = false;
+                            _isLoading = true;
+                            _sharedHasError = false;
+                            _sharedIsLoading = true;
+                          });
                           _webViewController.reload();
                         },
                         child: const Text('Retry'),
@@ -108,13 +148,24 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
                   ),
                 )
               else
-                WebViewWidget(controller: _webViewController),
+                WebViewWidget(
+                  controller: _webViewController,
+                  gestureRecognizers: {
+                    Factory<VerticalDragGestureRecognizer>(
+                      () => VerticalDragGestureRecognizer(),
+                    ),
+                  },
+                ),
               if (_isLoading && !_hasError)
-                const Positioned(
+                Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: LinearProgressIndicator(minHeight: 2),
+                  child: LinearProgressIndicator(
+                    minHeight: 2,
+                    color: cs.primary,
+                    backgroundColor: cs.surfaceContainerHighest,
+                  ),
                 ),
             ],
           ),

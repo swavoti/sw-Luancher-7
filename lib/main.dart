@@ -54,6 +54,8 @@ class SwavotiApp extends StatefulWidget {
 class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   SharedPreferences? _prefs;
   Map<String, AppInfo> _appCache = {};
+  ColorScheme? _lightDynamicColor;
+  ColorScheme? _darkDynamicColor;
   final GlobalKey<WorkspaceState> _workspaceKey = GlobalKey<WorkspaceState>();
 
   @override
@@ -72,7 +74,20 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       if (AppDatabaseService.currentIconPack != savedPack) {
         AppDatabaseService.currentIconPack = savedPack;
         await AppDatabaseService.clearIconCache();
-        setState(() {});
+        if (mounted) setState(() {});
+      }
+      try {
+        final palette = await DynamicColorPlugin.getCorePalette();
+        if (mounted && palette != null) {
+          setState(() {
+            _lightDynamicColor = palette.toColorScheme().harmonized();
+            _darkDynamicColor = palette
+                .toColorScheme(brightness: Brightness.dark)
+                .harmonized();
+          });
+        }
+      } on Exception catch (error) {
+        debugPrint('Could not refresh dynamic colors: $error');
       }
     }
   }
@@ -129,6 +144,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
         ColorScheme lightColorScheme;
         ColorScheme darkColorScheme;
 
+        lightDynamic = _lightDynamicColor ?? lightDynamic;
+        darkDynamic = _darkDynamicColor ?? darkDynamic;
         if (lightDynamic != null && darkDynamic != null) {
           lightColorScheme = lightDynamic.harmonized();
           darkColorScheme = darkDynamic.harmonized();
@@ -144,6 +161,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
         return MaterialApp(
           title: 'Go Launcher 7',
           initialRoute: '/',
+          navigatorObservers: [UnfocusOnPageCloseObserver()],
           routes: {
             '/settings': (context) => HomeSettings(
               onSettingsChanged: () =>
@@ -169,6 +187,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
             ),
           ),
           themeMode: ThemeMode.system,
+          themeAnimationDuration: const Duration(milliseconds: 400),
+          themeAnimationCurve: Curves.easeInOutCubicEmphasized,
           darkTheme: ThemeData(
             colorScheme: darkColorScheme,
             scaffoldBackgroundColor: Colors.transparent,
@@ -192,6 +212,17 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
         );
       },
     );
+  }
+}
+
+class UnfocusOnPageCloseObserver extends NavigatorObserver {
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final focus = FocusManager.instance.primaryFocus;
+      if (focus?.hasFocus ?? false) focus!.unfocus();
+    });
   }
 }
 

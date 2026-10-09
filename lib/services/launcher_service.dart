@@ -1,6 +1,41 @@
 import 'package:flutter/services.dart';
 import 'dart:typed_data';
 
+class MediaPlaybackInfo {
+  final String packageName;
+  final String title;
+  final String artist;
+  final Uint8List? albumArt;
+  final Uint8List? appIcon;
+  final bool isPlaying;
+  final int positionMs;
+  final int durationMs;
+
+  const MediaPlaybackInfo({
+    required this.packageName,
+    required this.title,
+    required this.artist,
+    required this.albumArt,
+    required this.appIcon,
+    required this.isPlaying,
+    required this.positionMs,
+    required this.durationMs,
+  });
+
+  factory MediaPlaybackInfo.fromMap(Map<dynamic, dynamic> value) {
+    return MediaPlaybackInfo(
+      packageName: value['packageName'] as String? ?? '',
+      title: value['title'] as String? ?? '',
+      artist: value['artist'] as String? ?? '',
+      albumArt: value['albumArt'] as Uint8List?,
+      appIcon: value['appIcon'] as Uint8List?,
+      isPlaying: value['isPlaying'] as bool? ?? false,
+      positionMs: value['positionMs'] as int? ?? 0,
+      durationMs: value['durationMs'] as int? ?? 0,
+    );
+  }
+}
+
 class LauncherService {
   static const _systemChannel = MethodChannel('co.za.launcher3.swavoti/system');
   static const _widgetChannel = MethodChannel(
@@ -8,6 +43,9 @@ class LauncherService {
   );
   static const _notificationChannel = EventChannel(
     'co.za.launcher3.swavoti/notifications',
+  );
+  static const _mediaChannel = EventChannel(
+    'co.za.launcher3.swavoti/media',
   );
 
   static List<Map<String, dynamic>>? _cachedWidgets;
@@ -210,6 +248,35 @@ class LauncherService {
     } catch (e) {
       print('Error opening Notification Settings: $e');
     }
+  }
+
+  static Stream<MediaPlaybackInfo?> get mediaPlaybackStream {
+    return _mediaChannel.receiveBroadcastStream().map((event) {
+      return event is Map ? MediaPlaybackInfo.fromMap(event) : null;
+    });
+  }
+
+  static Future<bool> controlMedia(String action, {int? positionMs}) async {
+    return await _systemChannel.invokeMethod<bool>('controlMedia', {
+          'action': action,
+          if (positionMs != null) 'positionMs': positionMs,
+        }) ??
+        false;
+  }
+
+  static Future<void> showMediaOutputSwitcher() async {
+    await _systemChannel.invokeMethod('showMediaOutputSwitcher');
+  }
+
+  static Future<bool> openMediaApp(String packageName) async {
+    return await _systemChannel.invokeMethod<bool>('launchMediaApp', {
+          'packageName': packageName,
+        }) ??
+        false;
+  }
+
+  static Future<Uint8List?> pickWallpaperImage() async {
+    return _systemChannel.invokeMethod<Uint8List>('pickWallpaperImage');
   }
 
   static Future<void> openAccessibilitySettings() async {

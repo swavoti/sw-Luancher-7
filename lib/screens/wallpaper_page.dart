@@ -1,6 +1,7 @@
-import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
 
@@ -41,13 +42,22 @@ class _WallpaperPageState extends State<WallpaperPage> {
 
       final prefs = await SharedPreferences.getInstance();
       final savedWallpaper = prefs.getString('saved_wallpaper_path');
+      final savedFileExists =
+          savedWallpaper != null &&
+          !savedWallpaper.startsWith('assets/') &&
+          await File(savedWallpaper).exists();
+      final preview =
+          savedWallpaper != null &&
+              (savedWallpaper.startsWith('assets/') || savedFileExists)
+          ? savedWallpaper
+          : imagePaths.isNotEmpty
+          ? imagePaths.first
+          : '';
 
       if (mounted) {
         setState(() {
           _wallpapers = imagePaths;
-          if (_wallpapers.isNotEmpty) {
-            _currentPreview = savedWallpaper ?? _wallpapers.first;
-          }
+          _currentPreview = preview;
           _isLoading = false;
         });
       }
@@ -93,6 +103,11 @@ class _WallpaperPageState extends State<WallpaperPage> {
                     ],
                   ),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.add_photo_alternate_outlined),
+                  title: const Text('Choose from device'),
+                  onTap: _pickWallpaperFromDevice,
+                ),
                 Expanded(
                   child: GridView.builder(
                     controller: scrollController,
@@ -131,6 +146,27 @@ class _WallpaperPageState extends State<WallpaperPage> {
         );
       },
     );
+  }
+
+  Future<void> _pickWallpaperFromDevice() async {
+    Navigator.pop(context);
+    try {
+      final bytes = await LauncherService.pickWallpaperImage();
+      if (bytes == null) return;
+      final directory = await getApplicationSupportDirectory();
+      final file = File(
+        '${directory.path}/wallpaper_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      if (!mounted) return;
+      setState(() => _currentPreview = file.path);
+      _showActionSheet(file.path);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not select wallpaper: $error')),
+      );
+    }
   }
 
   void _showActionSheet(String assetPath) {
@@ -175,14 +211,19 @@ class _WallpaperPageState extends State<WallpaperPage> {
   }
 
   Future<void> _setWallpaper(String assetPath, int type) async {
-    Navigator.pop(context); // Close action sheet
+    Navigator.pop(context);
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Setting wallpaper...')));
 
     try {
-      final ByteData data = await rootBundle.load(assetPath);
-      final Uint8List bytes = data.buffer.asUint8List();
+      final Uint8List bytes;
+      if (assetPath.startsWith('assets/')) {
+        final data = await rootBundle.load(assetPath);
+        bytes = data.buffer.asUint8List();
+      } else {
+        bytes = await File(assetPath).readAsBytes();
+      }
       final success = await LauncherService.setWallpaper(bytes, type);
 
       if (success) {
@@ -198,14 +239,20 @@ class _WallpaperPageState extends State<WallpaperPage> {
                   ? 'Wallpaper set successfully!'
                   : 'Failed to set wallpaper.',
             ),
-            backgroundColor: success ? Colors.green : Colors.red,
+            backgroundColor: success
+                ? Theme.of(context).colorScheme.inverseSurface
+                : Theme.of(context).colorScheme.error,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
+        final colorScheme = Theme.of(context).colorScheme;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: colorScheme.error,
+          ),
         );
       }
     }
@@ -244,20 +291,23 @@ class _WallpaperPageState extends State<WallpaperPage> {
                 ],
               ),
             )
-          : _wallpapers.isEmpty
-          ? const Center(
-              child: Text('No wallpapers found in assets/wallpapers/'),
-            )
           : Column(
               children: [
                 const SizedBox(height: 32),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildPreviewScreen('Lock Screen', isLockScreen: true),
-                    _buildPreviewScreen('Home Screen', isLockScreen: false),
-                  ],
-                ),
+                if (_currentPreview.isNotEmpty)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildPreviewScreen('Lock Screen', isLockScreen: true),
+                      _buildPreviewScreen('Home Screen', isLockScreen: false),
+                    ],
+                  )
+                else
+                  const Expanded(
+                    child: Center(
+                      child: Text('Choose a wallpaper from your device.'),
+                    ),
+                  ),
                 const Spacer(),
                 Padding(
                   padding: const EdgeInsets.all(32.0),
@@ -318,7 +368,9 @@ class _WallpaperPageState extends State<WallpaperPage> {
             border: Border.all(color: colorScheme.outline, width: 4),
             image: _currentPreview.isNotEmpty
                 ? DecorationImage(
-                    image: AssetImage(_currentPreview),
+                    image: _currentPreview.startsWith('assets/')
+                        ? AssetImage(_currentPreview)
+                        : FileImage(File(_currentPreview)),
                     fit: BoxFit.cover,
                   )
                 : null,

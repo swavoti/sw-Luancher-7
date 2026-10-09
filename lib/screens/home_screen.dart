@@ -1600,9 +1600,10 @@ class HomeScreenState extends State<HomeScreen> {
                   _buildMenuButton(
                     icon: Icons.wallpaper,
                     label: 'Wallpaper',
-                    onTap: () {
+                    onTap: () async {
                       setState(() => _isWorkspaceOverviewMode = false);
-                      Navigator.of(context).pushNamed('/wallpaper');
+                      await Navigator.of(context).pushNamed('/wallpaper');
+                      if (mounted) widget.onSettingsChanged();
                     },
                   ),
                   if (_supportsSplitScreen)
@@ -1648,6 +1649,7 @@ class HomeScreenState extends State<HomeScreen> {
     double cellHeight, {
     bool isFeedback = false,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     if (item.type == 'widget' && item.appWidgetId != null) {
       final widgetView = Container(
         margin: const EdgeInsets.all(4),
@@ -1898,6 +1900,8 @@ class HomeScreenState extends State<HomeScreen> {
       );
     } else {
       Widget buildAppIcon(AppInfo app, int notificationCount) {
+        final showNotificationDots =
+            widget.prefs.getBool('notification_dots_enabled') ?? false;
         return Container(
           padding: const EdgeInsets.all(8),
           child: Column(
@@ -1906,14 +1910,14 @@ class HomeScreenState extends State<HomeScreen> {
               Stack(
                 children: [
                 _buildHomeAppIcon(app, 56),
-                  if (notificationCount > 0)
+                  if (showNotificationDots && notificationCount > 0)
                     Positioned(
                       right: 0,
                       top: 0,
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
+                        decoration: BoxDecoration(
+                          color: colorScheme.error,
                           shape: BoxShape.circle,
                         ),
                         constraints: const BoxConstraints(
@@ -1922,8 +1926,8 @@ class HomeScreenState extends State<HomeScreen> {
                         ),
                         child: Text(
                           '$notificationCount',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: colorScheme.onError,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),

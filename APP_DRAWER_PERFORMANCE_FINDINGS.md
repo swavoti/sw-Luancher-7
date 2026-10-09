@@ -6,7 +6,7 @@ No files were modified. This is analysis only.
 
 ## Critical (prime freeze culprits)
 
-### 1. Every app item is permanently keep-alive
+### 1. Every app item is permanSSSSently keep-alive
 Lines ~476-479: `_AppDrawerItemState` mixes in `AutomaticKeepAliveClientMixin` with `wantKeepAlive => true`.
 - `PageView.builder` (line ~338) and `GridView.builder` (line ~353) are lazy and are supposed to recycle off-screen children. Forcing keep-alive defeats that.
 - After swiping several pages, every item state plus its decoded icon bitmap stays resident forever.

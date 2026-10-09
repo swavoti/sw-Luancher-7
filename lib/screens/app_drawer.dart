@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:installed_apps/app_info.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -6,9 +7,8 @@ import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
 import 'dart:ui';
-import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
 
 class AppDrawer extends StatefulWidget {
   final Map<String, int> notifications;
@@ -51,6 +51,7 @@ class AppDrawerState extends State<AppDrawer> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   String _iconShape = 'Circle';
+  bool _notificationDotsEnabled = false;
   bool _frostedGlassEnabled = true;
   final ValueNotifier<int> _pageNotifier = ValueNotifier<int>(0);
   final Map<String, Uint8List> _iconCache = {};
@@ -88,6 +89,8 @@ class AppDrawerState extends State<AppDrawer> {
     if (mounted) {
       setState(() {
         _iconShape = prefs.getString('icon_shape') ?? 'Circle';
+        _notificationDotsEnabled =
+            prefs.getBool('notification_dots_enabled') ?? false;
         final iconPack = prefs.getString('icon_pack') ?? '';
         if (iconPack != _iconPack) {
           _iconPack = iconPack;
@@ -213,8 +216,7 @@ class AppDrawerState extends State<AppDrawer> {
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    onTap: () =>
-                        FocusScope.of(context).requestFocus(FocusNode()),
+                    onTap: () => FocusScope.of(context).unfocus(),
                     borderRadius: BorderRadius.circular(28),
                     child: Ink(
                       decoration: BoxDecoration(
@@ -389,8 +391,11 @@ class AppDrawerState extends State<AppDrawer> {
                                 WidgetsBinding.instance.addPostFrameCallback((
                                   _,
                                 ) {
-                                  if (mounted && pages > 1) {
-                                    _prefetchPage(gridApps, itemsPerPage, 1);
+                                  if (mounted) {
+                                    _prefetchPage(gridApps, itemsPerPage, 0);
+                                    if (pages > 1) {
+                                      _prefetchPage(gridApps, itemsPerPage, 1);
+                                    }
                                   }
                                 });
                               }
@@ -420,8 +425,11 @@ class AppDrawerState extends State<AppDrawer> {
                                 itemBuilder: (context, index) {
                                   final app = pageApps[index];
                                   final notificationCount =
-                                      widget.notifications[app.packageName] ??
-                                      0;
+                                      _notificationDotsEnabled
+                                      ? (widget.notifications[app
+                                                .packageName] ??
+                                            0)
+                                      : 0;
                                   return _AppDrawerItem(
                                     key: ValueKey(app.packageName),
                                     app: app,
@@ -490,17 +498,31 @@ class AppDrawerState extends State<AppDrawer> {
               child: RepaintBoundary(
                 child: ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                  child: Image.asset(
-                    _savedWallpaperPath!,
-                    fit: BoxFit.cover,
-                    alignment: Alignment.center,
-                  ),
+                  child: _savedWallpaperPath!.startsWith('assets/')
+                      ? Image.asset(
+                          _savedWallpaperPath!,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                        )
+                      : Image.file(
+                          File(_savedWallpaperPath!),
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                        ),
                 ),
               ),
             )
           else
             Positioned.fill(
               child: Container(color: Theme.of(context).colorScheme.surface),
+            ),
+          if (_frostedGlassEnabled && _savedWallpaperPath != null)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surface.withValues(alpha: 0.16),
+              ),
             ),
           SafeArea(top: true, child: RepaintBoundary(child: childContent)),
         ],
@@ -541,11 +563,7 @@ class _AppDrawerItem extends StatefulWidget {
   State<_AppDrawerItem> createState() => _AppDrawerItemState();
 }
 
-class _AppDrawerItemState extends State<_AppDrawerItem>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
+class _AppDrawerItemState extends State<_AppDrawerItem> {
   bool _dragStarted = false;
   Uint8List? _icon;
   int _iconLoadGeneration = 0;
@@ -682,14 +700,8 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                 },
               ),
               ListTile(
-                leading: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: Colors.red,
-                ),
-                title: const Text(
-                  'Uninstall',
-                  style: TextStyle(color: Colors.red),
-                ),
+                leading: Icon(Icons.delete_outline_rounded, color: cs.error),
+                title: Text('Uninstall', style: TextStyle(color: cs.error)),
                 onTap: () {
                   Navigator.pop(ctx);
                   LauncherService.uninstallApp(app.packageName);
@@ -705,7 +717,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
+    final cs = Theme.of(context).colorScheme;
     final app = widget.app;
     final icon = _icon ?? AppDatabaseService.getCachedIcon(app.packageName);
     final appItemData = _WorkspaceItemData(
@@ -813,8 +825,8 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                     top: 0,
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
+                      decoration: BoxDecoration(
+                        color: cs.error,
                         shape: BoxShape.circle,
                       ),
                       constraints: const BoxConstraints(
@@ -823,8 +835,8 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
                       ),
                       child: Text(
                         '${widget.notificationCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: cs.onError,
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                         ),

@@ -29,7 +29,6 @@ class WorkspaceState extends State<Workspace>
 
   // ── Custom drawer animation ──────────────────────────────────────────────
   late AnimationController _drawerController;
-  double _drawerDrag = 0.0; // 0 = closed, 1 = open
   bool _drawerOpen = false;
   double? _dragStartY;
   double? _dragStartExtent;
@@ -37,6 +36,7 @@ class WorkspaceState extends State<Workspace>
   // Discover page animation
   late final AnimationController _discoverController;
   late final Animation<double> _discoverAnimation;
+  late final Listenable _homeAnimation;
 
   // Drag bubble state
   String? _draggingPackage;
@@ -60,14 +60,11 @@ class WorkspaceState extends State<Workspace>
     WidgetsBinding.instance.addObserver(this);
     _checkDefaultLauncher();
 
-    _drawerController =
-        AnimationController(
-          vsync: this,
-          duration: const Duration(milliseconds: 340),
-          value: 0.0,
-        )..addListener(() {
-          if (mounted) setState(() => _drawerDrag = _drawerController.value);
-        });
+    _drawerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 340),
+      value: 0.0,
+    );
 
     _discoverController = AnimationController(
       vsync: this,
@@ -78,6 +75,7 @@ class WorkspaceState extends State<Workspace>
       curve: Curves.easeOutQuart,
       reverseCurve: Curves.easeInQuart,
     );
+    _homeAnimation = Listenable.merge([_drawerController, _discoverAnimation]);
 
     try {
       _notificationSubscription = LauncherService.notificationsStream.listen(
@@ -170,7 +168,6 @@ class WorkspaceState extends State<Workspace>
     // Upward = negative dy = opening drawer
     final newExtent = (_dragStartExtent! - dy / screenHeight).clamp(0.0, 1.0);
     _drawerController.value = newExtent;
-    setState(() => _drawerDrag = newExtent);
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
@@ -183,7 +180,7 @@ class WorkspaceState extends State<Workspace>
       _openDrawer();
     } else if (velocity < -300) {
       _closeDrawer();
-    } else if (extent > 0.4) {
+    } else if (extent >= 0.3) {
       _openDrawer();
     } else {
       _closeDrawer();
@@ -210,7 +207,6 @@ class WorkspaceState extends State<Workspace>
     final screenHeight = MediaQuery.of(context).size.height;
     final newExtent = (_dragStartExtent! - dy / screenHeight).clamp(0.0, 1.0);
     _drawerController.value = newExtent;
-    setState(() => _drawerDrag = newExtent);
   }
 
   void _onDrawerDragEnd(DragEndDetails details) {
@@ -224,7 +220,7 @@ class WorkspaceState extends State<Workspace>
       _closeDrawer();
     } else if (velocity < -400) {
       _openDrawer();
-    } else if (extent > 0.6) {
+    } else if (extent >= 0.5) {
       _openDrawer();
     } else {
       _closeDrawer();
@@ -235,7 +231,6 @@ class WorkspaceState extends State<Workspace>
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    final drawerOffsetY = screenHeight * (1.0 - _drawerDrag);
 
     return PopScope(
       canPop: false,
@@ -249,20 +244,21 @@ class WorkspaceState extends State<Workspace>
           children: [
             // ── Home Screen ─────────────────────────────────────────
             AnimatedBuilder(
-              animation: _discoverAnimation,
+              animation: _homeAnimation,
               builder: (context, child) {
                 final screenWidth = MediaQuery.of(context).size.width;
                 final discoverExtent = _discoverAnimation.value;
+                final drawerDrag = _drawerController.value;
                 return Transform.translate(
                   offset: Offset(
                     screenWidth * 0.25 * discoverExtent,
-                    -screenHeight * 0.18 * _drawerDrag,
+                    -screenHeight * 0.18 * drawerDrag,
                   ),
                   child: Transform.scale(
-                    scale: 1.0 - 0.05 * _drawerDrag,
+                    scale: 1.0 - 0.05 * drawerDrag,
                     child: Opacity(
                       opacity:
-                          ((1.0 - _drawerDrag * 3.0) *
+                          ((1.0 - drawerDrag * 3.0) *
                                   (1.0 - discoverExtent * 0.7))
                               .clamp(0.0, 1.0),
                       child: child,
@@ -300,8 +296,15 @@ class WorkspaceState extends State<Workspace>
             ),
 
             // ── App Drawer (finger-tracking slide) ─────────────────
-            Transform.translate(
-              offset: Offset(0, drawerOffsetY),
+            AnimatedBuilder(
+              animation: _drawerController,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(
+                  0,
+                  screenHeight * (1.0 - _drawerController.value),
+                ),
+                child: child,
+              ),
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onVerticalDragStart: _onDrawerDragStart,

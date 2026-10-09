@@ -7,6 +7,7 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
@@ -33,6 +34,7 @@ class MainActivity : FlutterActivity() {
     private val WIDGET_CHANNEL = "co.za.launcher3.swavoti/widgets"
     private val SYSTEM_CHANNEL = "co.za.launcher3.swavoti/system"
     private val NOTIFICATION_CHANNEL = "co.za.launcher3.swavoti/notifications"
+    private val MEDIA_CHANNEL = "co.za.launcher3.swavoti/media"
     private val HOME_EVENT_CHANNEL = "co.za.launcher3.swavoti/home_events"
 
     // Sink for firing events to Dart the instant we resume to foreground
@@ -48,9 +50,11 @@ class MainActivity : FlutterActivity() {
 
     private val REQUEST_BIND_APPWIDGET = 100
     private val REQUEST_CONFIGURE_APPWIDGET = 101
+    private val REQUEST_PICK_WALLPAPER = 102
 
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
+    private var pendingWallpaperPickerResult: MethodChannel.Result? = null
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private lateinit var iconPackManager: IconPackManager
 
@@ -390,6 +394,68 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "pickWallpaperImage" -> {
+                    if (pendingWallpaperPickerResult != null) {
+                        result.error(
+                            "PICKER_ALREADY_OPEN",
+                            "A wallpaper image picker is already open.",
+                            null
+                        )
+                    } else {
+                        pendingWallpaperPickerResult = result
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "image/*"
+                        }
+                        try {
+                            startActivityForResult(intent, REQUEST_PICK_WALLPAPER)
+                        } catch (e: Exception) {
+                            pendingWallpaperPickerResult = null
+                            result.error("PICKER_FAILED", e.message, null)
+                        }
+                    }
+                }
+                "controlMedia" -> {
+                    val action = call.argument<String>("action") ?: ""
+                    val position = call.argument<Number>("positionMs")?.toLong()
+                    result.success(NotificationDotService.controlMedia(action, position))
+                }
+                "launchMediaApp" -> {
+                    val packageName = call.argument<String>("packageName")
+                    val launchIntent = packageName?.let {
+                        packageManager.getLaunchIntentForPackage(it)
+                    }
+                    if (launchIntent == null) {
+                        result.success(false)
+                    } else {
+                        try {
+                            startActivity(launchIntent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("MEDIA_APP_LAUNCH_FAILED", e.message, null)
+                        }
+                    }
+                }
+                "showMediaOutputSwitcher" -> {
+                    try {
+                        val mediaOutputIntent = Intent(
+                            "com.android.systemui.action.LAUNCH_MEDIA_OUTPUT_DIALOG"
+                        ).setPackage("com.android.systemui")
+                        startActivity(mediaOutputIntent)
+                    } catch (_: Exception) {
+                        try {
+                            startActivity(Intent("android.settings.panel.action.VOLUME"))
+                        } catch (_: Exception) {
+                            try {
+                                startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                            } catch (e: Exception) {
+                                result.error("MEDIA_OUTPUT_UNAVAILABLE", e.message, null)
+                                return@setMethodCallHandler
+                            }
+                        }
+                    }
+                    result.success(true)
+                }
                 "setWallpaperOffset" -> {
                     val offset = call.argument<Double>("offset")?.toFloat() ?: 0f
                     try {
@@ -588,10 +654,72 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, MEDIA_CHANNEL).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    NotificationDotService.mediaListener = { media ->
+                        Handler(Looper.getMainLooper()).post {
+                            events?.success(media)
+                        }
+                    }
+                    NotificationDotService.mediaListener?.invoke(
+                        NotificationDotService.mediaSnapshot
+                    )
+                    NotificationDotService.refreshCurrentMedia()
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    NotificationDotService.mediaListener = null
+                }
+            }
+        )
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_WALLPAPER) {
+            val pickerResult = pendingWallpaperPickerResult
+            pendingWallpaperPickerResult = null
+            if (pickerResult == null) return
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                pickerResult.success(null)
+                return
+            }
+            try {
+                val uri = data.data!!
+                val bounds = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input, null, bounds)
+                }
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    throw IllegalArgumentException("Selected file is not a supported image.")
+                }
+                var sampleSize = 1
+                while (bounds.outWidth / sampleSize > 2400 ||
+                    bounds.outHeight / sampleSize > 2400
+                ) {
+                    sampleSize *= 2
+                }
+                val bitmap = contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(
+                        input,
+                        null,
+                        BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                    )
+                } ?: throw IllegalArgumentException("Could not read the selected image.")
+                val bytes = ByteArrayOutputStream().use { output ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)
+                    output.toByteArray()
+                }
+                pickerResult.success(bytes)
+            } catch (e: Exception) {
+                pickerResult.error("WALLPAPER_READ_FAILED", e.message, null)
+            }
+            return
+        }
         if (requestCode == REQUEST_BIND_APPWIDGET) {
             if (resultCode == Activity.RESULT_OK) {
                 pendingWidgetMethodResult?.success(true)

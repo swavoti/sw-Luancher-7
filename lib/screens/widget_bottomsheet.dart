@@ -40,6 +40,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
   final Map<String, List<Map<String, dynamic>>> _groupedWidgets = {};
   final Map<String, _AppIdentity> _appIdentity = {};
   final Set<String> _expandedPackages = {};
+  final Set<String> _requestedAppIcons = {};
   bool _loadingDone = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -81,26 +82,40 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
         withIcon: false,
       );
       final appsByPackage = {for (final app in apps) app.packageName: app};
-      final packages = _groupedWidgets.keys.toList();
-      final icons = await Future.wait(
-        packages.map(AppDatabaseService.loadIcon),
-      );
       if (!mounted) return;
       setState(() {
-        for (var i = 0; i < packages.length; i++) {
-          final packageName = packages[i];
+        for (final packageName in _groupedWidgets.keys) {
           final app = appsByPackage[packageName];
-          final icon = icons[i];
-          if (app != null || icon != null) {
-            _appIdentity[packageName] = _AppIdentity(
-              app?.name ?? packageName.split('.').last,
-              icon,
-            );
-          }
+          final existing = _appIdentity[packageName];
+          _appIdentity[packageName] = _AppIdentity(
+            app?.name ?? existing?.name ?? packageName.split('.').last,
+            existing?.icon,
+          );
         }
       });
     } catch (e) {
       debugPrint('WidgetBottomSheet: failed to load app labels: $e');
+    }
+  }
+
+  void _requestAppIcon(String packageName) {
+    if (!_requestedAppIcons.add(packageName)) return;
+    unawaited(_loadAppIcon(packageName));
+  }
+
+  Future<void> _loadAppIcon(String packageName) async {
+    try {
+      final icon = await AppDatabaseService.loadIcon(packageName);
+      if (!mounted || icon == null) return;
+      final identity = _appIdentity[packageName];
+      setState(() {
+        _appIdentity[packageName] = _AppIdentity(
+          identity?.name ?? packageName.split('.').last,
+          icon,
+        );
+      });
+    } catch (e) {
+      debugPrint('WidgetBottomSheet: failed to load app icon: $e');
     }
   }
 
@@ -271,6 +286,9 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                   itemBuilder: (context, index) {
                     final row = rows[index];
                     if (row.isHeader) {
+                      if (_appIdentity[row.packageName]?.icon == null) {
+                        _requestAppIcon(row.packageName);
+                      }
                       return _AppWidgetHeader(
                         identity: _appIdentity[row.packageName],
                         packageName: row.packageName,

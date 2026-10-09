@@ -42,28 +42,28 @@ class _SearchWidgetState extends State<SearchWidget> {
       onLongPress: () {
         showDialog(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Remove Search Widget?'),
-            content: const Text(
-              'You can re-enable this later in Home Settings.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
+          builder: (context) {
+            final errorColor = Theme.of(context).colorScheme.error;
+            return AlertDialog(
+              title: const Text('Remove Search Widget?'),
+              content: const Text(
+                'You can re-enable this later in Home Settings.',
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  widget.onRemove();
-                },
-                child: const Text(
-                  'Remove',
-                  style: TextStyle(color: Colors.red),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
                 ),
-              ),
-            ],
-          ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    widget.onRemove();
+                  },
+                  child: Text('Remove', style: TextStyle(color: errorColor)),
+                ),
+              ],
+            );
+          },
         );
       },
       onTap: () {
