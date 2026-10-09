@@ -38,12 +38,6 @@ class NotificationDotService : NotificationListenerService() {
                         }
                     }
 
-                    private fun emitMediaSnapshot() {
-                        val snapshot = mediaSnapshot
-                        Handler(Looper.getMainLooper()).post {
-                            mediaListener?.invoke(snapshot)
-                        }
-                    }
                     "previous" -> controls.skipToPrevious()
                     "next" -> controls.skipToNext()
                     "seek" -> controls.seekTo(positionMs ?: 0L)
@@ -54,6 +48,13 @@ class NotificationDotService : NotificationListenerService() {
             } catch (e: Exception) {
                 android.util.Log.w("NotificationDotService", "Media action failed", e)
                 false
+            }
+        }
+
+        private fun emitMediaSnapshot() {
+            val snapshot = mediaSnapshot
+            Handler(Looper.getMainLooper()).post {
+                mediaListener?.invoke(snapshot)
             }
         }
     }
