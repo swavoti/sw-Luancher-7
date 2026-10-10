@@ -83,6 +83,10 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
         AppDatabaseService.currentIconPack = savedPack;
         await AppDatabaseService.clearIconCache();
         if (mounted) setState(() {});
+        // Re-warm icons with the new pack while the user is on home.
+        if (!LightweightMode.isEnabled && _appCache.isNotEmpty) {
+          AppDatabaseService.prefetchIcons(_appCache.keys.toList());
+        }
       }
       try {
         final palette = await DynamicColorPlugin.getCorePalette();

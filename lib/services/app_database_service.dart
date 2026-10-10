@@ -309,8 +309,13 @@ class AppDatabaseService {
   }
 
   static Future<void> prefetchIcons(Iterable<String> packageNames) async {
+    final inflightSuffix = '\u0000$currentIconPack\u0000$_iconCacheGeneration';
     final pending = packageNames
-        .where((p) => !_iconCache.containsKey(p) && !_inflight.containsKey(p))
+        .where(
+          (p) =>
+              !_iconCache.containsKey(p) &&
+              !_inflight.containsKey('$p$inflightSuffix'),
+        )
         .toList();
     if (pending.isEmpty) return;
 

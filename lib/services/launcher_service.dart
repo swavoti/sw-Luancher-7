@@ -89,6 +89,33 @@ class LauncherService {
     }
   }
 
+  static Future<bool> isBiometricAvailable() async {
+    try {
+      return await _systemChannel.invokeMethod<bool>('isBiometricAvailable') ??
+          false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Shows the system biometric prompt. Returns true only on success.
+  static Future<bool> authenticateBiometric({
+    String title = 'Unlock',
+    String? subtitle,
+    String negativeText = 'Use PIN',
+  }) async {
+    try {
+      return await _systemChannel.invokeMethod<bool>('authenticateBiometric', {
+            'title': title,
+            'subtitle': subtitle,
+            'negativeText': negativeText,
+          }) ??
+          false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // System Actions
   static Future<List<Map<String, dynamic>>> getAvailableIconPacks() async {
     try {

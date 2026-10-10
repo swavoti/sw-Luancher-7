@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/gestures.dart';
@@ -169,11 +170,50 @@ class HomeScreenState extends State<HomeScreen> {
       if (!LightweightMode.isEnabled) {
         LauncherService.preloadWidgets();
         _preloadSplitScreenApps();
+      } else {
+        // Lightweight mode: skip the full app list, but still warm the
+        // icons the drawer shows on its first page.
+        _preloadLightweightDrawerIcons();
       }
       LauncherService.supportsSplitScreen().then((value) {
         if (mounted) setState(() => _supportsSplitScreen = value);
       });
     });
+  }
+
+  /// Number of icons warmed in lightweight mode (≈ first drawer page).
+  static const int _lightweightIconPrefetchCount = 24;
+
+  /// Warm AppDatabaseService's shared icon cache while the user sits on the
+  /// home screen, so the app drawer opens with icons already decoded in RAM.
+  /// Delayed slightly so it never competes with the first frame or a
+  /// gesture-nav hand-off.
+  void _warmDrawerIcons(List<AppInfo> apps) {
+    if (apps.isEmpty) return;
+    final packages = apps.map((a) => a.packageName);
+    final targets = LightweightMode.isEnabled
+        ? packages.take(_lightweightIconPrefetchCount).toList()
+        : packages.toList();
+    Future<void>.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      unawaited(AppDatabaseService.prefetchIcons(targets));
+    });
+  }
+
+  Future<void> _preloadLightweightDrawerIcons() async {
+    try {
+      final apps = await AppDatabaseService.getAppMetadata();
+      if (apps.isEmpty || !mounted) return;
+      final hidden = widget.prefs.getStringList('hidden_apps') ?? [];
+      final showHidden = widget.prefs.getBool('show_hidden_apps') ?? false;
+      final processed = _filterAndSortAppsIsolate(
+        apps,
+        hidden: showHidden ? const [] : hidden,
+      );
+      _warmDrawerIcons(processed);
+    } catch (e) {
+      debugPrint('Error preloading lightweight drawer icons: $e');
+    }
   }
 
   Future<void> _preloadSplitScreenApps() async {
@@ -213,6 +253,8 @@ class HomeScreenState extends State<HomeScreen> {
             _allDeviceApps = processed;
             _isLoadingDeviceApps = false;
           });
+          // 3b. Preload icons too, so the drawer opens fully painted.
+          _warmDrawerIcons(processed);
         }
       }
 
@@ -230,6 +272,8 @@ class HomeScreenState extends State<HomeScreen> {
               setState(() {
                 _allDeviceApps = freshProcessed;
               });
+              // Already-cached icons are skipped; only new installs load.
+              _warmDrawerIcons(freshProcessed);
             }
           })
           .catchError((_) {});

@@ -12,7 +12,12 @@ class AppLockService {
   static const _pinSaltKey = 'app_lock.pin_salt';
   static const _pinHashKey = 'app_lock.pin_hash';
   static const _lockedPackagesKey = 'app_lock.locked_packages';
+  static const _biometricEnabledKey = 'app_lock.biometric_enabled';
   static const _storage = FlutterSecureStorage();
+
+  /// PINs can be any length between these limits.
+  static const int minPinLength = 4;
+  static const int maxPinLength = 16;
 
   static String _hashPin(String pin, String salt) =>
       sha256.convert(utf8.encode('$salt:$pin')).toString();
@@ -21,6 +26,25 @@ class AppLockService {
     final salt = await _storage.read(key: _pinSaltKey);
     final hash = await _storage.read(key: _pinHashKey);
     return salt != null && hash != null;
+  }
+
+  /// True only when the user turned biometrics on AND the device still has
+  /// enrolled biometrics (so the PIN screen never shows a dead button).
+  static Future<bool> isBiometricEnabled() async {
+    final preferences = await SharedPreferences.getInstance();
+    if (!(preferences.getBool(_biometricEnabledKey) ?? false)) return false;
+    return LauncherService.isBiometricAvailable();
+  }
+
+  static Future<void> setBiometricEnabled(bool enabled) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_biometricEnabledKey, enabled);
+  }
+
+  /// Raw saved preference (ignores device availability) for the settings switch.
+  static Future<bool> isBiometricPreferenceOn() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_biometricEnabledKey) ?? false;
   }
 
   static Future<void> savePin(String pin) async {

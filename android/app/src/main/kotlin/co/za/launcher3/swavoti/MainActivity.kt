@@ -304,6 +304,15 @@ class MainActivity : FlutterActivity() {
                 "supportsSplitScreen" -> {
                     result.success(Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
                 }
+                "isBiometricAvailable" -> {
+                    result.success(isBiometricAvailable())
+                }
+                "authenticateBiometric" -> {
+                    val title = call.argument<String>("title") ?: "Unlock"
+                    val subtitle = call.argument<String>("subtitle")
+                    val negative = call.argument<String>("negativeText") ?: "Use PIN"
+                    authenticateBiometric(title, subtitle, negative, result)
+                }
                 "getDeviceTotalMemoryBytes" -> {
                     val activityManager =
                         getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -744,6 +753,78 @@ class MainActivity : FlutterActivity() {
             }
             pendingWidgetIdToBind = -1
             pendingWidgetMethodResult = null
+        }
+    }
+
+    private var biometricCancellation: android.os.CancellationSignal? = null
+
+    /** True when the device has enrolled biometrics the platform prompt can use. */
+    @android.annotation.SuppressLint("NewApi")
+    private fun isBiometricAvailable(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val manager = getSystemService(android.hardware.biometrics.BiometricManager::class.java)
+                    ?: return false
+                val status = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    manager.canAuthenticate(
+                        android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    manager.canAuthenticate()
+                }
+                status == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS
+            } else {
+                packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_FINGERPRINT)
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Shows the system biometric prompt. Replies true on success, false otherwise. */
+    @android.annotation.SuppressLint("NewApi")
+    private fun authenticateBiometric(
+        title: String,
+        subtitle: String?,
+        negativeText: String,
+        result: MethodChannel.Result
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || !isBiometricAvailable()) {
+            result.success(false)
+            return
+        }
+        biometricCancellation?.cancel()
+        val cancellation = android.os.CancellationSignal()
+        biometricCancellation = cancellation
+        var replied = false
+        fun reply(success: Boolean) {
+            if (replied) return
+            replied = true
+            if (biometricCancellation === cancellation) biometricCancellation = null
+            result.success(success)
+        }
+        try {
+            val builder = android.hardware.biometrics.BiometricPrompt.Builder(this)
+                .setTitle(title)
+                .setNegativeButton(negativeText, mainExecutor) { _, _ -> reply(false) }
+            if (!subtitle.isNullOrEmpty()) builder.setSubtitle(subtitle)
+            builder.build().authenticate(
+                cancellation,
+                mainExecutor,
+                object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        authResult: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?
+                    ) = reply(true)
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence?) =
+                        reply(false)
+                }
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Biometric prompt failed", e)
+            reply(false)
         }
     }
 
