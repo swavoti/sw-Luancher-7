@@ -3,6 +3,7 @@ import 'dart:async';
 
 import "package:swavoti/services/launcher_service.dart";
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -14,6 +15,7 @@ class AppDatabaseService {
   static Database? _database;
 
   static final Map<String, Uint8List> _iconCache = {};
+  static final Map<String, MemoryImage> _memoryImageCache = {};
   static bool _lightweightMode = false;
   static int get _maxIconCacheBytes => _lightweightMode ? 8 << 20 : 32 << 20;
   static int _iconCacheBytes = 0;
@@ -23,19 +25,21 @@ class AppDatabaseService {
 
   static final List<void Function()> _taskQueue = [];
   static int _runningTasks = 0;
-  static int get _maxConcurrentTasks => _lightweightMode ? 1 : 3;
+  static int get _maxConcurrentTasks => _lightweightMode ? 1 : 4;
 
   static void setLightweightMode(bool enabled) {
     _lightweightMode = enabled;
     while (_iconCacheBytes > _maxIconCacheBytes && _iconCache.isNotEmpty) {
       final oldestPackage = _iconCache.keys.first;
       _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
+      _memoryImageCache.remove(oldestPackage);
     }
     _pumpQueue();
   }
 
   static void clearMemoryIconCache() {
     _iconCache.clear();
+    _memoryImageCache.clear();
     _iconCacheBytes = 0;
   }
 
@@ -74,15 +78,36 @@ class AppDatabaseService {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'apps_cache.db');
 
+    Future<void> ensureColumns(Database db) async {
+      final columns = await db.rawQuery('PRAGMA table_info(apps)');
+      final columnNames = columns.map((c) => c['name'] as String).toSet();
+      if (!columnNames.contains('os_icon')) {
+        await db.execute('ALTER TABLE apps ADD COLUMN os_icon BLOB');
+      }
+      if (!columnNames.contains('themed_icon')) {
+        await db.execute('ALTER TABLE apps ADD COLUMN themed_icon BLOB');
+      }
+      if (!columnNames.contains('themed_pack')) {
+        await db.execute('ALTER TABLE apps ADD COLUMN themed_pack TEXT');
+      }
+      if (columnNames.contains('icon')) {
+        await db.execute(
+          'UPDATE apps SET os_icon = icon WHERE os_icon IS NULL AND icon IS NOT NULL',
+        );
+      }
+    }
+
     Future<Database> open() => openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS apps(
             packageName TEXT PRIMARY KEY,
             name TEXT,
-            icon BLOB
+            os_icon BLOB,
+            themed_icon BLOB,
+            themed_pack TEXT
           )
         ''');
         await db.execute('PRAGMA journal_mode=WAL');
@@ -92,13 +117,12 @@ class AppDatabaseService {
           CREATE TABLE IF NOT EXISTS apps(
             packageName TEXT PRIMARY KEY,
             name TEXT,
-            icon BLOB
+            os_icon BLOB,
+            themed_icon BLOB,
+            themed_pack TEXT
           )
         ''');
-        final columns = await db.rawQuery('PRAGMA table_info(apps)');
-        if (!columns.any((column) => column['name'] == 'icon')) {
-          await db.execute('ALTER TABLE apps ADD COLUMN icon BLOB');
-        }
+        await ensureColumns(db);
         await db.execute('PRAGMA journal_mode=WAL');
       },
       onOpen: (db) async {
@@ -114,9 +138,13 @@ class AppDatabaseService {
               CREATE TABLE apps(
                 packageName TEXT PRIMARY KEY,
                 name TEXT,
-                icon BLOB
+                os_icon BLOB,
+                themed_icon BLOB,
+                themed_pack TEXT
               )
             ''');
+          } else {
+            await ensureColumns(db);
           }
         } catch (e) {
           debugPrint('AppDatabaseService: integrity check failed: $e');
@@ -169,26 +197,40 @@ class AppDatabaseService {
 
   static Uint8List? getCachedIcon(String packageName) {
     final icon = _iconCache.remove(packageName);
-    if (icon != null) _iconCache[packageName] = icon;
+    if (icon != null) {
+      _iconCache[packageName] = icon;
+      final img = _memoryImageCache.remove(packageName);
+      if (img != null) _memoryImageCache[packageName] = img;
+    }
     return icon;
+  }
+
+  static MemoryImage? getCachedImage(String packageName) {
+    final icon = getCachedIcon(packageName);
+    if (icon == null) return null;
+    return _memoryImageCache.putIfAbsent(packageName, () => MemoryImage(icon));
   }
 
   static void _cacheIcon(String packageName, Uint8List icon) {
     final previous = _iconCache.remove(packageName);
     if (previous != null) _iconCacheBytes -= previous.lengthInBytes;
+    _memoryImageCache.remove(packageName);
     if (icon.lengthInBytes > _maxIconCacheBytes) return;
 
     _iconCache[packageName] = icon;
+    _memoryImageCache[packageName] = MemoryImage(icon);
     _iconCacheBytes += icon.lengthInBytes;
     while (_iconCacheBytes > _maxIconCacheBytes) {
       final oldestPackage = _iconCache.keys.first;
       _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
+      _memoryImageCache.remove(oldestPackage);
     }
   }
 
   static void _removeCachedIcon(String packageName) {
     final icon = _iconCache.remove(packageName);
     if (icon != null) _iconCacheBytes -= icon.lengthInBytes;
+    _memoryImageCache.remove(packageName);
   }
 
   static Future<Uint8List?> loadIcon(String packageName) {
@@ -201,18 +243,19 @@ class AppDatabaseService {
     return _inflight.putIfAbsent(inflightKey, () async {
       Database? db;
       Uint8List? blob;
+      Map<String, dynamic>? row;
       try {
         db = await database;
         final rows = await db.query(
           'apps',
-          columns: ['icon'],
+          columns: ['os_icon', 'themed_icon', 'themed_pack'],
           where: 'packageName = ?',
           whereArgs: [packageName],
           limit: 1,
         );
 
         if (rows.isNotEmpty) {
-          blob = rows.first['icon'] as Uint8List?;
+          row = rows.first;
         }
       } catch (e) {
         debugPrint(
@@ -220,34 +263,58 @@ class AppDatabaseService {
         );
       }
 
+      final rowThemedPack = row?['themed_pack'] as String?;
+      final rowThemedIcon = row?['themed_icon'] as Uint8List?;
+      final rowOsIcon = row?['os_icon'] as Uint8List?;
+
       if (iconPack.isNotEmpty) {
-        try {
-          final themed = await _enqueue(
-            () => LauncherService.getThemedIcon(packageName, iconPack),
-          );
-          if (themed != null) blob = themed;
-        } catch (e) {
-          debugPrint(
-            'AppDatabaseService themed icon error for $packageName: $e',
-          );
+        if (rowThemedPack == iconPack) {
+          // This app was already evaluated for the current icon pack!
+          if (rowThemedIcon != null && rowThemedIcon.isNotEmpty) {
+            blob = rowThemedIcon;
+          } else {
+            // Pack does not support this app (sentinel NULL). Immediately fallback to OS icon.
+            blob = rowOsIcon;
+          }
+        } else {
+          // Needs lookup from the icon pack
+          try {
+            final themed = await _enqueue(
+              () => LauncherService.getThemedIcon(packageName, iconPack),
+            );
+            if (themed != null && themed.isNotEmpty) {
+              blob = themed;
+              if (db != null) {
+                await _persistThemedIcon(db, packageName, themed, iconPack);
+              }
+            } else {
+              // Mark themed_icon as null with current pack so we never query native again for this app
+              if (db != null) {
+                await _persistThemedIcon(db, packageName, null, iconPack);
+              }
+              blob = rowOsIcon;
+            }
+          } catch (e) {
+            debugPrint(
+              'AppDatabaseService themed icon error for $packageName: $e',
+            );
+            blob = rowOsIcon;
+          }
         }
+      } else {
+        blob = rowOsIcon;
       }
+
+      // If OS icon is still needed and was not in SQLite:
       if (blob == null || blob.isEmpty) {
         try {
-          final appInfo = await _enqueue(
-            () => InstalledApps.getAppInfo(packageName),
+          final osIcon = await _enqueue(
+            () => LauncherService.getOsIcon(packageName),
           );
-          final osIcon = appInfo?.icon;
           if (osIcon != null && osIcon.isNotEmpty) {
             blob = osIcon;
             if (db != null) {
-              try {
-                await _persistIcon(db, packageName, osIcon);
-              } catch (e) {
-                debugPrint(
-                  'AppDatabaseService.loadIcon cache write error for $packageName: $e',
-                );
-              }
+              await _persistOsIcon(db, packageName, osIcon);
             }
           }
         } catch (e) {
@@ -268,41 +335,67 @@ class AppDatabaseService {
     });
   }
 
-  static Future<void> _persistIcon(
+  static Future<void> _persistThemedIcon(
+    Database db,
+    String packageName,
+    Uint8List? blob,
+    String iconPack,
+  ) async {
+    try {
+      final updated = await db.update(
+        'apps',
+        {'themed_icon': blob, 'themed_pack': iconPack},
+        where: 'packageName = ?',
+        whereArgs: [packageName],
+      );
+      if (updated == 0) {
+        await db.insert('apps', {
+          'packageName': packageName,
+          'name': packageName,
+          'themed_icon': blob,
+          'themed_pack': iconPack,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    } catch (e) {
+      debugPrint('AppDatabaseService._persistThemedIcon error for $packageName: $e');
+    }
+  }
+
+  static Future<void> _persistOsIcon(
     Database db,
     String packageName,
     Uint8List blob,
   ) async {
-    final updated = await db.update(
-      'apps',
-      {'icon': blob},
-      where: 'packageName = ?',
-      whereArgs: [packageName],
-    );
-    if (updated == 0) {
-      await db.insert('apps', {
-        'packageName': packageName,
-        'name': packageName,
-        'icon': blob,
-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
-      await db.update(
+    try {
+      final updated = await db.update(
         'apps',
-        {'icon': blob},
+        {'os_icon': blob},
         where: 'packageName = ?',
         whereArgs: [packageName],
       );
+      if (updated == 0) {
+        await db.insert('apps', {
+          'packageName': packageName,
+          'name': packageName,
+          'os_icon': blob,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    } catch (e) {
+      debugPrint('AppDatabaseService._persistOsIcon error for $packageName: $e');
     }
   }
 
-  /// Warm SQLite + memory for every listed package, a few at a time.
+  /// Clears in-memory icon caches and resets themed icons in SQLite.
+  /// NOTE: os_icon is permanently preserved across icon pack changes!
   static Future<void> clearIconCache() async {
     _iconCacheGeneration++;
     _iconCache.clear();
+    _memoryImageCache.clear();
     _iconCacheBytes = 0;
     _inflight.clear();
     try {
       final db = await database;
-      await db.execute('UPDATE apps SET icon = NULL');
+      await db.execute('UPDATE apps SET themed_icon = NULL, themed_pack = NULL');
     } catch (e) {
       debugPrint('Error clearing icon cache: $e');
     }

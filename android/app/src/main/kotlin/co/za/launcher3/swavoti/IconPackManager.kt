@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream
 class IconPackManager(private val context: Context) {
     private var currentIconPack: String? = null
     private val componentToDrawableMap = mutableMapOf<String, String>()
+    private val packageToDrawableMap = HashMap<String, String>()
 
     fun getAvailableIconPacks(): List<Map<String, Any>> {
         val pm = context.packageManager
@@ -41,9 +42,11 @@ class IconPackManager(private val context: Context) {
         return packsByPackage.values.toList()
     }
 
+    @Synchronized
     private fun loadIconPack(packageName: String) {
         if (currentIconPack == packageName) return
         componentToDrawableMap.clear()
+        packageToDrawableMap.clear()
         currentIconPack = null
         
         try {
@@ -59,6 +62,13 @@ class IconPackManager(private val context: Context) {
                         val drawable = parser.getAttributeValue(null, "drawable")
                         if (component != null && drawable != null) {
                             componentToDrawableMap[component] = drawable
+                            val flattened = component
+                                .removePrefix("ComponentInfo{")
+                                .removeSuffix("}")
+                            val pkg = flattened.substringBefore('/')
+                            if (pkg.isNotEmpty() && !packageToDrawableMap.containsKey(pkg)) {
+                                packageToDrawableMap[pkg] = drawable
+                            }
                         }
                     }
                     eventType = parser.next()
@@ -68,6 +78,7 @@ class IconPackManager(private val context: Context) {
             currentIconPack = packageName
         } catch (e: Throwable) {
             componentToDrawableMap.clear()
+            packageToDrawableMap.clear()
             android.util.Log.w("IconPackManager", "Unable to load icon pack $packageName", e)
         }
     }
@@ -77,12 +88,13 @@ class IconPackManager(private val context: Context) {
         
         loadIconPack(iconPackPackageName)
         
-        val drawableName = componentToDrawableMap.entries.firstOrNull { (component, _) ->
-            val flattenedComponent = component
-                .removePrefix("ComponentInfo{")
-                .removeSuffix("}")
-            flattenedComponent.substringBefore('/') == appPackageName
-        }?.value
+        val drawableName = packageToDrawableMap[appPackageName]
+            ?: componentToDrawableMap.entries.firstOrNull { (component, _) ->
+                val flattenedComponent = component
+                    .removePrefix("ComponentInfo{")
+                    .removeSuffix("}")
+                flattenedComponent.substringBefore('/') == appPackageName
+            }?.value
 
         if (drawableName == null) return null
         

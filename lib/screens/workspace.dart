@@ -116,6 +116,7 @@ class WorkspaceState extends State<Workspace>
   }
 
   void _openDrawer() {
+    _appDrawerKey.currentState?.prefetchFirstPage();
     _appDrawerKey.currentState?.loadSettings();
     if (LightweightMode.isEnabled) {
       _appDrawerKey.currentState?.refreshApps();
@@ -163,6 +164,7 @@ class WorkspaceState extends State<Workspace>
   // ── Finger-tracking gesture handlers ─────────────────────────────────────
 
   void _onVerticalDragStart(DragStartDetails details) {
+    _appDrawerKey.currentState?.prefetchFirstPage();
     _dragStartY = details.globalPosition.dy;
     _dragStartExtent = _drawerController.value;
     // Stop any in-progress animation

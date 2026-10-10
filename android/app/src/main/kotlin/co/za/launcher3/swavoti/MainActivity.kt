@@ -56,6 +56,9 @@ class MainActivity : FlutterActivity() {
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
     private var pendingWallpaperPickerResult: MethodChannel.Result? = null
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private val iconExecutor = Executors.newFixedThreadPool(
+        Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+    )
     private lateinit var iconPackManager: IconPackManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -341,9 +344,22 @@ class MainActivity : FlutterActivity() {
                 "getThemedIcon" -> {
                     val appPackage = call.argument<String>("appPackage") ?: ""
                     val iconPackPackage = call.argument<String>("iconPackPackage") ?: ""
-                    backgroundExecutor.execute {
+                    iconExecutor.execute {
                         try {
                             val bytes = iconPackManager.getThemedIcon(appPackage, iconPackPackage)
+                            Handler(Looper.getMainLooper()).post { result.success(bytes) }
+                        } catch (e: Throwable) {
+                            Handler(Looper.getMainLooper()).post { result.success(null) }
+                        }
+                    }
+                }
+                "getOsIcon" -> {
+                    val packageName = call.argument<String>("packageName") ?: ""
+                    iconExecutor.execute {
+                        try {
+                            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                            val drawable = packageManager.getApplicationIcon(appInfo)
+                            val bytes = drawableToByteArray(drawable)
                             Handler(Looper.getMainLooper()).post { result.success(bytes) }
                         } catch (e: Throwable) {
                             Handler(Looper.getMainLooper()).post { result.success(null) }

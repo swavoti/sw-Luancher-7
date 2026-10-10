@@ -48,17 +48,57 @@ class _WorkspaceItemData {
 }
 
 class _AppDrawerPageScrollPhysics extends PageScrollPhysics {
-  const _AppDrawerPageScrollPhysics({super.parent});
+  const _AppDrawerPageScrollPhysics({required this.startPage, super.parent});
 
+  final int Function() startPage;
   static final SpringDescription _pageSpring =
       SpringDescription.withDampingRatio(mass: 1, stiffness: 1600, ratio: 1);
 
   @override
-  SpringDescription get spring => _pageSpring;
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    if (position.outOfRange || position.viewportDimension <= 0) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+
+    final viewport = position.viewportDimension;
+    final firstPage = (position.minScrollExtent / viewport).ceil();
+    final lastPage = (position.maxScrollExtent / viewport).floor();
+    final originPage = startPage().clamp(firstPage, lastPage).toInt();
+    final currentPage = position.pixels / viewport;
+    final progress = currentPage - originPage;
+
+    var targetPage = originPage;
+    if (velocity.abs() >= 300) {
+      targetPage += velocity.sign.toInt();
+    } else if (progress.abs() >= 0.12) {
+      targetPage += progress.sign.toInt();
+    }
+    targetPage = targetPage.clamp(firstPage, lastPage).toInt();
+
+    final targetPixels = targetPage.toDouble() * viewport;
+    final tolerance = toleranceFor(position);
+    if ((targetPixels - position.pixels).abs() < tolerance.distance) {
+      return null;
+    }
+
+    return ScrollSpringSimulation(
+      _pageSpring,
+      position.pixels,
+      targetPixels,
+      velocity,
+      tolerance: tolerance,
+    );
+  }
 
   @override
   _AppDrawerPageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _AppDrawerPageScrollPhysics(parent: buildParent(ancestor));
+    return _AppDrawerPageScrollPhysics(
+      startPage: startPage,
+      parent: buildParent(ancestor),
+    );
   }
 }
 
@@ -71,12 +111,11 @@ class AppDrawerState extends State<AppDrawer> {
   bool _notificationDotsEnabled = false;
   bool _frostedGlassEnabled = true;
   final ValueNotifier<int> _pageNotifier = ValueNotifier<int>(0);
-  final Map<String, Uint8List> _iconCache = {};
-  int _iconCacheBytes = 0;
   final Set<String> _prefetchedPageKeys = {};
   String _iconPack = '';
   int _iconGeneration = 0;
   int _currentPage = 0;
+  int _pageSwipeStartPage = 0;
   DateTime? _lastLightweightAppRefresh;
 
   // Grid scroll key
@@ -85,8 +124,6 @@ class AppDrawerState extends State<AppDrawer> {
   // Approximate row height in the grid
   static const double _cellSize = 90.0; // approx icon cell height
   static const int _gridColumns = 4;
-  int get _maxDrawerIconCacheBytes =>
-      LightweightMode.isEnabled ? 2 << 20 : 8 << 20;
 
   @override
   void initState() {
@@ -115,11 +152,9 @@ class AppDrawerState extends State<AppDrawer> {
         final iconPack = prefs.getString('icon_pack') ?? '';
         if (iconPack != _iconPack) {
           _iconPack = iconPack;
-          clearIconCache();
           _prefetchedPageKeys.clear();
           _iconGeneration++;
         }
-        if (LightweightMode.isEnabled) clearIconCache();
         _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
         _savedWallpaperPath = prefs.getString('saved_wallpaper_path');
       });
@@ -127,21 +162,14 @@ class AppDrawerState extends State<AppDrawer> {
   }
 
   void clearIconCache() {
-    _iconCache.clear();
-    _iconCacheBytes = 0;
+    // Single source of truth is AppDatabaseService
   }
 
-  void _cacheDrawerIcon(String packageName, Uint8List icon) {
-    final previous = _iconCache.remove(packageName);
-    if (previous != null) _iconCacheBytes -= previous.lengthInBytes;
-    if (icon.lengthInBytes > _maxDrawerIconCacheBytes) return;
-
-    _iconCache[packageName] = icon;
-    _iconCacheBytes += icon.lengthInBytes;
-    while (_iconCacheBytes > _maxDrawerIconCacheBytes) {
-      final oldestPackage = _iconCache.keys.first;
-      _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
-    }
+  /// Synchronously prefetch page 0 icons before drawer navigation animation completes
+  void prefetchFirstPage() {
+    final apps = _filteredApps.isNotEmpty ? _filteredApps : _apps;
+    if (apps.isEmpty) return;
+    _prefetchPage(apps, 24, 0);
   }
 
   Future<void> _loadApps({bool refreshOnDemand = false}) async {
@@ -187,6 +215,9 @@ class AppDrawerState extends State<AppDrawer> {
         _filteredApps = _filterBySearch(availableApps);
         _isLoading = false;
       });
+      if (_filteredApps.isNotEmpty) {
+        _prefetchPage(_filteredApps, 24, 0);
+      }
     }
 
     // Refresh cache in the background; the drawer stays usable while SQLite
@@ -203,6 +234,9 @@ class AppDrawerState extends State<AppDrawer> {
               _filteredApps = _filterBySearch(apps);
               _isLoading = false;
             });
+            if (_filteredApps.isNotEmpty) {
+              _prefetchPage(_filteredApps, 24, 0);
+            }
           }
         }),
       );
@@ -436,76 +470,92 @@ class AppDrawerState extends State<AppDrawer> {
                     return Column(
                       children: [
                         Expanded(
-                          child: PageView.builder(
-                            physics: const _AppDrawerPageScrollPhysics(
-                              parent: ClampingScrollPhysics(),
-                            ),
-                            itemCount: pages,
-                            onPageChanged: (page) {
-                              _currentPage = page;
-                              _pageNotifier.value = page;
-                              _prefetchPage(gridApps, itemsPerPage, page + 1);
-                            },
-                            itemBuilder: (context, pageIndex) {
-                              if (pageIndex == 0) {
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  if (mounted) {
-                                    _prefetchPage(gridApps, itemsPerPage, 0);
-                                    if (pages > 1) {
-                                      _prefetchPage(gridApps, itemsPerPage, 1);
-                                    }
-                                  }
-                                });
+                          child: NotificationListener<ScrollStartNotification>(
+                            onNotification: (notification) {
+                              if (notification.dragDetails != null &&
+                                  notification.metrics.viewportDimension > 0) {
+                                _pageSwipeStartPage =
+                                    (notification.metrics.pixels /
+                                            notification
+                                                .metrics
+                                                .viewportDimension)
+                                        .round();
                               }
-                              final start = pageIndex * itemsPerPage;
-                              final end = (start + itemsPerPage).clamp(
-                                0,
-                                gridApps.length,
-                              );
-                              final pageApps = gridApps.sublist(start, end);
-
-                              return GridView.builder(
-                                physics: const NeverScrollableScrollPhysics(),
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  0,
-                                  16,
-                                  16,
-                                ),
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 4,
-                                      mainAxisSpacing: 12,
-                                      crossAxisSpacing: 8,
-                                      childAspectRatio: 0.82,
-                                    ),
-                                itemCount: pageApps.length,
-                                itemBuilder: (context, index) {
-                                  final app = pageApps[index];
-                                  final notificationCount =
-                                      _notificationDotsEnabled
-                                      ? (widget.notifications[app
-                                                .packageName] ??
-                                            0)
-                                      : 0;
-                                  return _AppDrawerItem(
-                                    key: ValueKey(app.packageName),
-                                    app: app,
-                                    notificationCount: notificationCount,
-                                    onCloseDrawer: widget.onClose,
-                                    iconShape: _iconShape,
-                                    onDragStarted: widget.onDragStarted,
-                                    onDragEnded: widget.onDragEnded,
-                                    cachedIcon: _iconCache[app.packageName],
-                                    iconGeneration: _iconGeneration,
-                                    onIconLoaded: (icon) =>
-                                        _cacheDrawerIcon(app.packageName, icon),
-                                  );
-                                },
-                              );
+                              return false;
                             },
+                            child: PageView.builder(
+                              physics: _AppDrawerPageScrollPhysics(
+                                startPage: () => _pageSwipeStartPage,
+                                parent: const ClampingScrollPhysics(),
+                              ),
+                              itemCount: pages,
+                              onPageChanged: (page) {
+                                _currentPage = page;
+                                _pageNotifier.value = page;
+                                _prefetchPage(gridApps, itemsPerPage, page + 1);
+                              },
+                              itemBuilder: (context, pageIndex) {
+                                if (pageIndex == 0) {
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    if (mounted) {
+                                      _prefetchPage(gridApps, itemsPerPage, 0);
+                                      if (pages > 1) {
+                                        _prefetchPage(
+                                          gridApps,
+                                          itemsPerPage,
+                                          1,
+                                        );
+                                      }
+                                    }
+                                  });
+                                }
+                                final start = pageIndex * itemsPerPage;
+                                final end = (start + itemsPerPage).clamp(
+                                  0,
+                                  gridApps.length,
+                                );
+                                final pageApps = gridApps.sublist(start, end);
+
+                                return GridView.builder(
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    0,
+                                    16,
+                                    16,
+                                  ),
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 4,
+                                        mainAxisSpacing: 12,
+                                        crossAxisSpacing: 8,
+                                        childAspectRatio: 0.82,
+                                      ),
+                                  itemCount: pageApps.length,
+                                  itemBuilder: (context, index) {
+                                    final app = pageApps[index];
+                                    final notificationCount =
+                                        _notificationDotsEnabled
+                                        ? (widget.notifications[app
+                                                  .packageName] ??
+                                              0)
+                                        : 0;
+                                    return _AppDrawerItem(
+                                      key: ValueKey(app.packageName),
+                                      app: app,
+                                      notificationCount: notificationCount,
+                                      onCloseDrawer: widget.onClose,
+                                      iconShape: _iconShape,
+                                      onDragStarted: widget.onDragStarted,
+                                      onDragEnded: widget.onDragEnded,
+                                      iconGeneration: _iconGeneration,
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ),
                         ),
                         if (pages > 1)
@@ -604,9 +654,7 @@ class _AppDrawerItem extends StatefulWidget {
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
   final void Function(Map<String, dynamic>)? onAddToHomeScreen;
-  final Uint8List? cachedIcon;
   final int iconGeneration;
-  final ValueChanged<Uint8List>? onIconLoaded;
 
   const _AppDrawerItem({
     super.key,
@@ -617,9 +665,7 @@ class _AppDrawerItem extends StatefulWidget {
     this.onDragStarted,
     this.onDragEnded,
     this.onAddToHomeScreen,
-    this.cachedIcon,
     required this.iconGeneration,
-    this.onIconLoaded,
   });
 
   @override
@@ -634,9 +680,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
   @override
   void initState() {
     super.initState();
-    _icon =
-        widget.app.icon ??
-        widget.cachedIcon ??
+    _icon = widget.app.icon ??
         AppDatabaseService.getCachedIcon(widget.app.packageName);
     if (_icon == null) _loadIcon();
   }
@@ -647,9 +691,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
     if (oldWidget.app.packageName != widget.app.packageName ||
         oldWidget.iconGeneration != widget.iconGeneration) {
       _iconLoadGeneration++;
-      _icon =
-          widget.app.icon ??
-          widget.cachedIcon ??
+      _icon = widget.app.icon ??
           AppDatabaseService.getCachedIcon(widget.app.packageName);
       if (_icon == null) {
         _loadIcon();
@@ -668,14 +710,12 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
 
     final cached = AppDatabaseService.getCachedIcon(widget.app.packageName);
     if (cached != null) {
-      widget.onIconLoaded?.call(cached);
       if (mounted) setState(() => _icon = cached);
       return;
     }
 
     final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
     if (!mounted || generation != _iconLoadGeneration) return;
-    if (icon != null) widget.onIconLoaded?.call(icon);
     setState(() => _icon = icon);
   }
 
@@ -708,26 +748,21 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    if (_icon != null ||
-                        AppDatabaseService.getCachedIcon(
-                              widget.app.packageName,
-                            ) !=
-                            null)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.memory(
-                          _icon ??
-                              AppDatabaseService.getCachedIcon(
-                                widget.app.packageName,
-                              )!,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          cacheWidth: 120,
-                        ),
-                      )
-                    else
-                      Icon(Icons.android, size: 40, color: cs.primary),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: _icon != null
+                          ? Image.memory(
+                              _icon!,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              cacheWidth: 120,
+                            )
+                          : _AppPlaceholder(
+                              name: app.name,
+                              size: 40,
+                            ),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -823,7 +858,10 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
                         cacheWidth: 168,
                         gaplessPlayback: true,
                       )
-                    : const Icon(Icons.android, size: 56),
+                    : _AppPlaceholder(
+                        name: app.name,
+                        size: 56,
+                      ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -843,9 +881,21 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
         opacity: 0.25,
         child: Column(
           children: [
-            icon != null
-                ? Image.memory(icon, width: 48, height: 48, cacheWidth: 144)
-                : const Icon(Icons.android, size: 48),
+            IconShapeClipper(
+              shape: widget.iconShape,
+              size: 48,
+              child: icon != null
+                  ? Image.memory(
+                      icon,
+                      width: 48,
+                      height: 48,
+                      cacheWidth: 144,
+                    )
+                  : _AppPlaceholder(
+                      name: app.name,
+                      size: 48,
+                    ),
+            ),
             const SizedBox(height: 4),
             Text(
               app.name,
@@ -859,7 +909,6 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
       child: GestureDetector(
         onTap: () => AppLockService.launchApp(context, app.packageName),
         onLongPress: () {
-          // If drag didn't activate, show context menu
           if (!_dragStarted) {
             _showContextMenu(context);
           }
@@ -871,16 +920,26 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
                 IconShapeClipper(
                   shape: widget.iconShape,
                   size: 48,
-                  child: icon != null
-                      ? Image.memory(
-                          icon,
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                          cacheWidth: 144,
-                          gaplessPlayback: true,
-                        )
-                      : const Icon(Icons.android, size: 48),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 150),
+                    switchInCurve: Curves.easeIn,
+                    switchOutCurve: Curves.easeOut,
+                    child: icon != null
+                        ? Image.memory(
+                            icon,
+                            key: ValueKey('icon_${app.packageName}'),
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            cacheWidth: 144,
+                            gaplessPlayback: true,
+                          )
+                        : _AppPlaceholder(
+                            key: ValueKey('placeholder_${app.packageName}'),
+                            name: app.name,
+                            size: 48,
+                          ),
+                  ),
                 ),
                 if (widget.notificationCount > 0)
                   Positioned(
@@ -918,6 +977,58 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
               style: const TextStyle(fontSize: 11),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AppPlaceholder extends StatelessWidget {
+  final String name;
+  final double size;
+
+  const _AppPlaceholder({
+    super.key,
+    required this.name,
+    required this.size,
+  });
+
+  static const List<Color> _palette = [
+    Color(0xFFE57373),
+    Color(0xFFF06292),
+    Color(0xFFBA68C8),
+    Color(0xFF9575CD),
+    Color(0xFF7986CB),
+    Color(0xFF64B5F6),
+    Color(0xFF4FC3F7),
+    Color(0xFF4DD0E1),
+    Color(0xFF4DB6AC),
+    Color(0xFF81C784),
+    Color(0xFFAED581),
+    Color(0xFFFFB74D),
+    Color(0xFFFF8A65),
+    Color(0xFFA1887F),
+    Color(0xFF90A4AE),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final letter = trimmed.isNotEmpty ? trimmed.substring(0, 1).toUpperCase() : '?';
+    final color = _palette[trimmed.hashCode.abs() % _palette.length];
+
+    return Container(
+      width: size,
+      height: size,
+      color: color.withValues(alpha: 0.85),
+      alignment: Alignment.center,
+      child: Text(
+        letter,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * 0.42,
+          fontWeight: FontWeight.bold,
+          decoration: TextDecoration.none,
         ),
       ),
     );
