@@ -44,11 +44,13 @@ class _BrowserSelectionScreenState extends State<BrowserSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
     return Scaffold(
+      backgroundColor: surface,
       appBar: AppBar(
         title: const Text('Default Browser'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())

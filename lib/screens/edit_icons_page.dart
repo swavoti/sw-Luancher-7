@@ -199,7 +199,12 @@ class _EditIconsPageState extends State<EditIconsPage> {
     final packLabel = selectedPack?['label'] as String? ?? 'System Default';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit App Icons')),
+      backgroundColor: colors.surface,
+      appBar: AppBar(
+        title: const Text('Edit App Icons'),
+        backgroundColor: colors.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: Stack(
         children: [
           if (widget.homeScreenScreenshot != null)

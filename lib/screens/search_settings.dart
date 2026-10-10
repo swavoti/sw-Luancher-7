@@ -74,11 +74,13 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
     return Scaffold(
+      backgroundColor: surface,
       appBar: AppBar(
         title: const Text('Search Bar Settings'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),

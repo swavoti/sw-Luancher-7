@@ -47,6 +47,21 @@ class _WorkspaceItemData {
   };
 }
 
+class _AppDrawerPageScrollPhysics extends PageScrollPhysics {
+  const _AppDrawerPageScrollPhysics({super.parent});
+
+  static final SpringDescription _pageSpring =
+      SpringDescription.withDampingRatio(mass: 1, stiffness: 1600, ratio: 1);
+
+  @override
+  SpringDescription get spring => _pageSpring;
+
+  @override
+  _AppDrawerPageScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return _AppDrawerPageScrollPhysics(parent: buildParent(ancestor));
+  }
+}
+
 class AppDrawerState extends State<AppDrawer> {
   List<AppInfo> _apps = [];
   List<AppInfo> _filteredApps = [];
@@ -422,6 +437,9 @@ class AppDrawerState extends State<AppDrawer> {
                       children: [
                         Expanded(
                           child: PageView.builder(
+                            physics: const _AppDrawerPageScrollPhysics(
+                              parent: ClampingScrollPhysics(),
+                            ),
                             itemCount: pages,
                             onPageChanged: (page) {
                               _currentPage = page;

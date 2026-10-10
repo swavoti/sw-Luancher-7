@@ -413,7 +413,12 @@ class _HomeSettingsState extends State<HomeSettings> {
         context,
         MaterialPageRoute<void>(
           builder: (_) => Scaffold(
-            appBar: AppBar(title: Text(title)),
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            appBar: AppBar(
+              title: Text(title),
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              surfaceTintColor: Colors.transparent,
+            ),
             body: ListView(children: settings),
           ),
         ),
@@ -431,8 +436,14 @@ class FeedProviderScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
     return Scaffold(
-      appBar: AppBar(title: const Text('Feed Provider')),
+      backgroundColor: surface,
+      appBar: AppBar(
+        title: const Text('Feed Provider'),
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: ListView(
         children: FeedProvider.all.map((provider) {
           return ListTile(
@@ -459,8 +470,14 @@ class GridSizeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final surface = Theme.of(context).colorScheme.surface;
     return Scaffold(
-      appBar: AppBar(title: const Text('Workspace Grid Size')),
+      backgroundColor: surface,
+      appBar: AppBar(
+        title: const Text('Workspace Grid Size'),
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: ListView(
         children: [3, 4, 5, 6].map((cols) {
           return ListTile(
