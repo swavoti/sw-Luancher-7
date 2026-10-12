@@ -579,9 +579,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
   // ─── Home Screen Mockup Overlay ──────────────────────────────────────────
 
   Widget _buildHomeScreenOverlay() {
-    final page0Apps = _homeItems
-        .where((i) => i.page == 0 && (i.type == 'app' || i.type == 'folder'))
-        .toList();
+    final page0Items = _homeItems.where((i) => i.page == 0).toList();
     final dockApps = _homeItems
         .where((i) => i.page == -1 && (i.type == 'app' || i.type == 'folder'))
         .toList();
@@ -592,15 +590,31 @@ class _WallpaperPageState extends State<WallpaperPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildMiniStatusBar(),
-          const SizedBox(height: 6),
-          _buildMiniTimeWeatherWidget(),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Expanded(
-            child: _buildMiniWorkspaceGrid(page0Apps),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final cellWidth = constraints.maxWidth / 4;
+                final cellHeight = constraints.maxHeight / 6;
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final item in page0Items)
+                      Positioned(
+                        left: item.x * cellWidth,
+                        top: item.y * cellHeight,
+                        width: item.spanX * cellWidth,
+                        height: item.spanY * cellHeight,
+                        child: _buildMiniWorkspaceItem(item),
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
+          const SizedBox(height: 4),
           _buildMiniPageDots(),
-          const SizedBox(height: 6),
-          _buildMiniSearchBar(),
           const SizedBox(height: 6),
           _buildMiniDock(dockApps),
           const SizedBox(height: 4),
@@ -608,6 +622,38 @@ class _WallpaperPageState extends State<WallpaperPage> {
         ],
       ),
     );
+  }
+
+  Widget _buildMiniWorkspaceItem(LauncherItem item) {
+    if (item.type == 'time_weather_widget') {
+      return Center(child: _buildMiniTimeWeatherWidget());
+    } else if (item.type == 'search_widget') {
+      return Center(child: _buildMiniSearchBar());
+    } else if (item.type == 'app' || item.type == 'folder') {
+      return Center(child: _buildMiniAppItem(item));
+    } else if (item.type == 'widget') {
+      return Container(
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white24, width: 0.5),
+        ),
+        child: Center(
+          child: Text(
+            item.label.isNotEmpty ? item.label : 'Widget',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 6,
+              color: Colors.white70,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   Widget _buildMiniStatusBar() {
@@ -646,7 +692,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
           '${_currentTime.hour}:${_currentTime.minute.toString().padLeft(2, '0')}',
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 22,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
             letterSpacing: -1,
             height: 1.0,
@@ -667,23 +713,23 @@ class _WallpaperPageState extends State<WallpaperPage> {
               _formatDateShort(_currentTime),
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.9),
-                fontSize: 7.5,
+                fontSize: 6.5,
                 fontWeight: FontWeight.w600,
                 shadows: const [Shadow(blurRadius: 2, color: Colors.black54)],
               ),
             ),
             if (_weatherData != null) ...[
-              const SizedBox(width: 4),
+              const SizedBox(width: 3),
               WeatherIcon(
                 weatherCode: _weatherData!.weatherCode,
-                size: 9,
+                size: 8,
               ),
               const SizedBox(width: 2),
               Text(
                 '${_weatherData!.temperature.round()}°',
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 7.5,
+                  fontSize: 6.5,
                   fontWeight: FontWeight.w600,
                   shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
                 ),
@@ -692,68 +738,6 @@ class _WallpaperPageState extends State<WallpaperPage> {
           ],
         ),
       ],
-    );
-  }
-
-  Widget _buildMiniWorkspaceGrid(List<LauncherItem> page0Apps) {
-    if (page0Apps.isNotEmpty) {
-      final displayApps = page0Apps.take(8).toList();
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              for (int i = 0; i < 4; i++)
-                if (i < displayApps.length)
-                  _buildMiniAppItem(displayApps[i])
-                else
-                  const SizedBox(width: 28, height: 32),
-            ],
-          ),
-          if (displayApps.length > 4) ...[
-            const SizedBox(height: 6),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                for (int i = 4; i < 8; i++)
-                  if (i < displayApps.length)
-                    _buildMiniAppItem(displayApps[i])
-                  else
-                    const SizedBox(width: 28, height: 32),
-              ],
-            ),
-          ],
-        ],
-      );
-    }
-
-    return Center(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildMiniAppIconWithLabel(
-            packageName: 'com.android.camera',
-            label: 'Camera',
-            size: 20,
-          ),
-          _buildMiniAppIconWithLabel(
-            packageName: 'com.google.android.apps.photos',
-            label: 'Photos',
-            size: 20,
-          ),
-          _buildMiniAppIconWithLabel(
-            packageName: 'com.android.vending',
-            label: 'Store',
-            size: 20,
-          ),
-          _buildMiniAppIconWithLabel(
-            packageName: 'com.android.settings',
-            label: 'Settings',
-            size: 20,
-          ),
-        ],
-      ),
     );
   }
 
@@ -774,39 +758,6 @@ class _WallpaperPageState extends State<WallpaperPage> {
           const SizedBox(height: 2),
           Text(
             item.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 6,
-              fontWeight: FontWeight.w500,
-              color: Colors.white,
-              shadows: [Shadow(blurRadius: 2, color: Colors.black87)],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMiniAppIconWithLabel({
-    required String? packageName,
-    required String label,
-    required double size,
-  }) {
-    return SizedBox(
-      width: 28,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildMiniAppIcon(
-            packageName: packageName,
-            label: label,
-            size: size,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -1039,8 +990,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
               child: _buildAndroidDynamicClock(),
             ),
           ),
-          _buildLockBottomControls(),
-          const SizedBox(height: 3),
+          const SizedBox(height: 6),
           _buildMiniHomeIndicator(),
         ],
       ),
@@ -1049,17 +999,9 @@ class _WallpaperPageState extends State<WallpaperPage> {
 
   Widget _buildLockStatusBar() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Icon(Icons.lock_outline_rounded, size: 9, color: Colors.white70),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.wifi, size: 7.5, color: Colors.white),
-            SizedBox(width: 2),
-            Icon(Icons.battery_full, size: 8, color: Colors.white),
-          ],
-        ),
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: const [
+        Icon(Icons.battery_full, size: 8.5, color: Colors.white),
       ],
     );
   }
@@ -1075,7 +1017,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
         Text(
           hour,
           style: const TextStyle(
-            fontSize: 48,
+            fontSize: 52,
             fontWeight: FontWeight.w900,
             height: 0.85,
             letterSpacing: -2,
@@ -1092,7 +1034,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
         Text(
           minute,
           style: const TextStyle(
-            fontSize: 48,
+            fontSize: 52,
             fontWeight: FontWeight.w900,
             height: 0.85,
             letterSpacing: -2,
@@ -1104,114 +1046,6 @@ class _WallpaperPageState extends State<WallpaperPage> {
                 offset: Offset(0, 2),
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.22),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 0.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _formatDateShort(_currentTime),
-                style: const TextStyle(
-                  fontSize: 7.5,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
-                ),
-              ),
-              if (_weatherData != null) ...[
-                const Text(
-                  '  •  ',
-                  style: TextStyle(fontSize: 7, color: Colors.white70),
-                ),
-                WeatherIcon(
-                  weatherCode: _weatherData!.weatherCode,
-                  size: 9,
-                ),
-                const SizedBox(width: 2),
-                Text(
-                  '${_weatherData!.temperature.round()}°',
-                  style: const TextStyle(
-                    fontSize: 7.5,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLockBottomControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withValues(alpha: 0.3),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.25),
-              width: 0.6,
-            ),
-          ),
-          child: const Icon(
-            Icons.flashlight_on_rounded,
-            size: 10,
-            color: Colors.white,
-          ),
-        ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.fingerprint_rounded,
-              size: 19,
-              color: Colors.white.withValues(alpha: 0.8),
-            ),
-            const SizedBox(height: 1),
-            Text(
-              'Swipe to unlock',
-              style: TextStyle(
-                fontSize: 5.5,
-                color: Colors.white.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        Container(
-          width: 20,
-          height: 20,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.black.withValues(alpha: 0.3),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.25),
-              width: 0.6,
-            ),
-          ),
-          child: const Icon(
-            Icons.camera_alt_rounded,
-            size: 10,
-            color: Colors.white,
           ),
         ),
       ],

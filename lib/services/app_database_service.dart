@@ -16,6 +16,7 @@ class AppDatabaseService {
 
   static final Map<String, Uint8List> _iconCache = {};
   static final Map<String, MemoryImage> _memoryImageCache = {};
+  static final Map<String, Uint8List?> _monochromeCache = {};
   static bool _lightweightMode = false;
   static int get _maxIconCacheBytes => _lightweightMode ? 32 << 20 : 128 << 20;
   static int _iconCacheBytes = 0;
@@ -41,7 +42,26 @@ class AppDatabaseService {
   static void clearMemoryIconCache() {
     _iconCache.clear();
     _memoryImageCache.clear();
+    _monochromeCache.clear();
     _iconCacheBytes = 0;
+  }
+
+  static Uint8List? getCachedMonochromeIcon(String packageName) {
+    return _monochromeCache[packageName];
+  }
+
+  static Future<Uint8List?> getMonochromeIcon(String packageName) async {
+    if (_monochromeCache.containsKey(packageName)) {
+      return _monochromeCache[packageName];
+    }
+    try {
+      final bytes = await LauncherService.getMonochromeIcon(packageName);
+      _monochromeCache[packageName] = bytes;
+      return bytes;
+    } catch (_) {
+      _monochromeCache[packageName] = null;
+      return null;
+    }
   }
 
   static Future<T> _enqueue<T>(Future<T> Function() task) {

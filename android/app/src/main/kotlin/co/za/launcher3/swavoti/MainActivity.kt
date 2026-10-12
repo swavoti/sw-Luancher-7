@@ -366,6 +366,42 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "getMonochromeIcon" -> {
+                    val packageName = call.argument<String>("packageName") ?: ""
+                    iconExecutor.execute {
+                        try {
+                            var monoDrawable: Drawable? = null
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                val activityComponent = launchIntent?.component
+                                val rawDrawable = if (activityComponent != null) {
+                                    try {
+                                        packageManager.getActivityIcon(activityComponent)
+                                    } catch (e: Throwable) {
+                                        val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                                        packageManager.getApplicationIcon(appInfo)
+                                    }
+                                } else {
+                                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                                    packageManager.getApplicationIcon(appInfo)
+                                }
+
+                                if (rawDrawable is android.graphics.drawable.AdaptiveIconDrawable) {
+                                    monoDrawable = rawDrawable.monochrome
+                                }
+                            }
+
+                            if (monoDrawable != null) {
+                                val bytes = drawableToByteArray(monoDrawable)
+                                Handler(Looper.getMainLooper()).post { result.success(bytes) }
+                            } else {
+                                Handler(Looper.getMainLooper()).post { result.success(null) }
+                            }
+                        } catch (e: Throwable) {
+                            Handler(Looper.getMainLooper()).post { result.success(null) }
+                        }
+                    }
+                }
                 "uninstallApp" -> {
                     val packageName = call.argument<String>("packageName")
                     if (packageName != null) {

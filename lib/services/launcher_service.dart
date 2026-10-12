@@ -158,6 +158,17 @@ class LauncherService {
     }
   }
 
+  static Future<Uint8List?> getMonochromeIcon(String packageName) async {
+    try {
+      return await _systemChannel.invokeMethod('getMonochromeIcon', {
+        'packageName': packageName,
+      });
+    } catch (e) {
+      print('Error fetching monochrome icon: $e');
+      return null;
+    }
+  }
+
   static Future<void> uninstallApp(String packageName) async {
     try {
       await _systemChannel.invokeMethod('uninstallApp', {

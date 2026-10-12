@@ -299,15 +299,27 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: BouncingScrollPhysics(),
                             ),
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                            padding: const EdgeInsets.only(bottom: 32),
+                            cacheExtent: 1500,
+                            addAutomaticKeepAlives: true,
                             itemCount: _articles.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              thickness: 0.5,
+                              color: cs.outlineVariant.withValues(alpha: 0.35),
+                            ),
                             itemBuilder: (context, index) {
                               final article = _articles[index];
                               final timeAgo = _formatTimeAgo(article.publishedAt);
 
-                              return InkWell(
-                                borderRadius: BorderRadius.circular(16),
+                              return _NewsPostItem(
+                                key: ValueKey(
+                                  article.url.isNotEmpty
+                                      ? article.url
+                                      : 'news_$index',
+                                ),
+                                article: article,
+                                timeAgo: timeAgo,
                                 onTap: () {
                                   Navigator.push(
                                     context,
@@ -318,119 +330,6 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
                                     ),
                                   );
                                 },
-                                child: Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      // Small rounded image
-                                      if (article.urlToImage != null &&
-                                          article.urlToImage!.isNotEmpty)
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: Image.network(
-                                            article.urlToImage!,
-                                            width: 80,
-                                            height: 80,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => Container(
-                                              width: 80,
-                                              height: 80,
-                                              decoration: BoxDecoration(
-                                                color: cs.surfaceContainerHigh,
-                                                borderRadius: BorderRadius.circular(12),
-                                              ),
-                                              child: Icon(
-                                                Icons.image_outlined,
-                                                color: cs.onSurfaceVariant,
-                                                size: 28,
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        Container(
-                                          width: 80,
-                                          height: 80,
-                                          decoration: BoxDecoration(
-                                            color: cs.surfaceContainerHigh,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Icon(
-                                            Icons.newspaper_outlined,
-                                            color: cs.onSurfaceVariant,
-                                            size: 28,
-                                          ),
-                                        ),
-                                      const SizedBox(width: 12),
-
-                                      // Headline & Meta details
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              article.title,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: cs.onSurface,
-                                                height: 1.25,
-                                              ),
-                                            ),
-                                            if (article.description != null &&
-                                                article.description!.isNotEmpty) ...[
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                article.description!,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: cs.onSurfaceVariant,
-                                                  height: 1.2,
-                                                ),
-                                              ),
-                                            ],
-                                            const SizedBox(height: 6),
-                                            Row(
-                                              children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    article.sourceName,
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: cs.primary,
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (timeAgo.isNotEmpty) ...[
-                                                  const SizedBox(width: 6),
-                                                  Text(
-                                                    '• $timeAgo',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      color: cs.onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
                               );
                             },
                           ),
@@ -438,6 +337,159 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _NewsPostItem extends StatefulWidget {
+  final NewsArticle article;
+  final String timeAgo;
+  final VoidCallback onTap;
+
+  const _NewsPostItem({
+    super.key,
+    required this.article,
+    required this.timeAgo,
+    required this.onTap,
+  });
+
+  @override
+  State<_NewsPostItem> createState() => _NewsPostItemState();
+}
+
+class _NewsPostItemState extends State<_NewsPostItem>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final cs = Theme.of(context).colorScheme;
+    final article = widget.article;
+    final timeAgo = widget.timeAgo;
+    final hasImage =
+        article.urlToImage != null && article.urlToImage!.trim().isNotEmpty;
+
+    return InkWell(
+      onTap: widget.onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Social media post image on top (full width)
+          if (hasImage)
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Container(
+                width: double.infinity,
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                child: Image.network(
+                  article.urlToImage!,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  cacheWidth: 800,
+                  gaplessPlayback: true,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: cs.surfaceContainerHigh,
+                    child: Center(
+                      child: Icon(
+                        Icons.image_outlined,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                        size: 36,
+                      ),
+                    ),
+                  ),
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                      child: Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                    loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+          // Post details under image
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Publisher / source and time row
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        article.sourceName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: cs.primary,
+                        ),
+                      ),
+                    ),
+                    if (timeAgo.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '• $timeAgo',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // Headline title
+                Text(
+                  article.title,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: cs.onSurface,
+                    height: 1.3,
+                  ),
+                ),
+
+                // Description snippet
+                if (article.description != null &&
+                    article.description!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    article.description!.trim(),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: cs.onSurfaceVariant,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

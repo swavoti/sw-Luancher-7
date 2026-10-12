@@ -39,6 +39,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
   List<String> _previewPackages = [];
   List<Uint8List?> _systemPreviewIcons = [];
   List<Uint8List?> _previewIcons = [];
+  final Map<String, Uint8List?> _monochromeIcons = {};
   bool _isLoadingPreview = true;
   bool _isApplying = false;
 
@@ -61,6 +62,22 @@ class _EditIconsPageState extends State<EditIconsPage> {
     });
     if (_previewPackages.isNotEmpty) {
       await _loadPreviewForPack(_selectedIconPack);
+      if (_themedIconsEnabled) {
+        await _loadMonochromeIcons();
+      }
+    }
+  }
+
+  Future<void> _loadMonochromeIcons() async {
+    for (final pkg in _previewPackages) {
+      if (!_monochromeIcons.containsKey(pkg)) {
+        final mono = await LauncherService.getMonochromeIcon(pkg);
+        if (mounted) {
+          setState(() {
+            _monochromeIcons[pkg] = mono;
+          });
+        }
+      }
     }
   }
 
@@ -93,6 +110,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
       if (_selectedIconPack.isNotEmpty) {
         await _loadPreviewForPack(_selectedIconPack);
       }
+      _loadMonochromeIcons();
     } catch (e) {
       debugPrint('EditIconsPage: failed to load preview icons: $e');
       if (mounted) setState(() => _isLoadingPreview = false);
@@ -202,85 +220,49 @@ class _EditIconsPageState extends State<EditIconsPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: colors.primaryContainer,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        Icons.auto_awesome_rounded,
-                        color: colors.primary,
-                        size: 26,
-                      ),
+                    Icon(
+                      Icons.palette_outlined,
+                      color: colors.primary,
+                      size: 26,
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                'Themed Icons',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: colors.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'BETA',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: colors.onSecondaryContainer,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Material You dynamic color theming',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(width: 12),
+                    Text(
+                      'Themed Icons',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colors.secondaryContainer,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'BETA',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: colors.onSecondaryContainer,
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: colors.outlineVariant.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    'Supported app icons adopt colors from your wallpaper and Android dynamic theme. The launcher applies adaptive monochrome tints calculated by your device.',
-                    style: TextStyle(
-                      fontSize: 13,
-                      height: 1.4,
-                      color: colors.onSurfaceVariant,
-                    ),
+                const SizedBox(height: 12),
+                Text(
+                  'Supported app icons adopt colors from your wallpaper and Android dynamic theme. Apps with monochrome icons tint to match your system palette.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    height: 1.4,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -305,9 +287,12 @@ class _EditIconsPageState extends State<EditIconsPage> {
                     setState(() => _themedIconsEnabled = val);
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setBool('themed_icons_enabled', val);
+                    if (val) {
+                      _loadMonochromeIcons();
+                    }
                   },
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -325,6 +310,8 @@ class _EditIconsPageState extends State<EditIconsPage> {
 
   Widget _buildPreviewIcon(int index) {
     final icon = index < _previewIcons.length ? _previewIcons[index] : null;
+    final pkg = index < _previewPackages.length ? _previewPackages[index] : null;
+    final monoBytes = pkg != null ? _monochromeIcons[pkg] : null;
     final colors = Theme.of(context).colorScheme;
 
     Widget rawIcon = icon == null
@@ -338,14 +325,14 @@ class _EditIconsPageState extends State<EditIconsPage> {
             gaplessPlayback: true,
           );
 
-    if (_themedIconsEnabled) {
+    if (_themedIconsEnabled && monoBytes != null) {
       return IconShapeClipper(
         shape: _selectedShape,
         size: 56,
         child: Container(
           width: 56,
           height: 56,
-          color: colors.primaryContainer,
+          color: colors.surfaceContainerHighest,
           alignment: Alignment.center,
           child: ColorFiltered(
             colorFilter: ColorFilter.mode(
@@ -355,7 +342,14 @@ class _EditIconsPageState extends State<EditIconsPage> {
             child: SizedBox(
               width: 32,
               height: 32,
-              child: rawIcon,
+              child: Image.memory(
+                monoBytes,
+                width: 32,
+                height: 32,
+                fit: BoxFit.contain,
+                cacheWidth: 64,
+                gaplessPlayback: true,
+              ),
             ),
           ),
         ),
@@ -385,36 +379,6 @@ class _EditIconsPageState extends State<EditIconsPage> {
         title: const Text('Edit App Icons'),
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: ActionChip(
-              avatar: Icon(
-                Icons.auto_awesome,
-                size: 15,
-                color: _themedIconsEnabled ? colors.primary : colors.onSurfaceVariant,
-              ),
-              label: Text(
-                'Themed icons (Beta)',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: _themedIconsEnabled ? colors.primary : colors.onSurfaceVariant,
-                ),
-              ),
-              backgroundColor: _themedIconsEnabled
-                  ? colors.primaryContainer.withValues(alpha: 0.7)
-                  : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-              side: BorderSide(
-                color: _themedIconsEnabled
-                    ? colors.primary.withValues(alpha: 0.4)
-                    : colors.outlineVariant.withValues(alpha: 0.3),
-              ),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              onPressed: _showThemedIconsSheet,
-            ),
-          ),
-        ],
       ),
       body: Stack(
         children: [
@@ -436,58 +400,9 @@ class _EditIconsPageState extends State<EditIconsPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Preview',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: _showThemedIconsSheet,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _themedIconsEnabled
-                              ? colors.primaryContainer
-                              : colors.surfaceContainerHighest.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: _themedIconsEnabled
-                                ? colors.primary.withValues(alpha: 0.5)
-                                : colors.outlineVariant.withValues(alpha: 0.4),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome_rounded,
-                              size: 13,
-                              color: _themedIconsEnabled
-                                  ? colors.primary
-                                  : colors.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Themed icons (Beta)',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: _themedIconsEnabled
-                                    ? colors.onPrimaryContainer
-                                    : colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  'Preview',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 20),
                 Center(
@@ -555,6 +470,52 @@ class _EditIconsPageState extends State<EditIconsPage> {
                   ),
                   trailing: const Icon(Icons.arrow_drop_down),
                   onTap: _selectIconPack,
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.palette_outlined,
+                    color: colors.primary,
+                  ),
+                  title: Row(
+                    children: [
+                      const Text(
+                        'Themed icons',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.secondaryContainer,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'BETA',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: colors.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  subtitle: Text(
+                    _themedIconsEnabled ? 'Enabled' : 'Disabled',
+                    style: TextStyle(
+                      color: _themedIconsEnabled
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showThemedIconsSheet,
                 ),
                 const SizedBox(height: 24),
                 FilledButton(

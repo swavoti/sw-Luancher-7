@@ -545,26 +545,76 @@ class HomeScreenState extends State<HomeScreen> {
           : Icon(Icons.android, size: size);
 
       if (isThemed) {
-        return IconShapeClipper(
-          shape: _iconShape,
-          size: size,
-          child: Container(
-            width: size,
-            height: size,
-            color: colors.primaryContainer,
-            alignment: Alignment.center,
-            child: ColorFiltered(
-              colorFilter: ColorFilter.mode(
-                colors.primary,
-                BlendMode.srcIn,
-              ),
-              child: SizedBox(
-                width: size * 0.58,
-                height: size * 0.58,
-                child: iconWidget,
+        final monoCached = AppDatabaseService.getCachedMonochromeIcon(app.packageName);
+        if (monoCached != null) {
+          return IconShapeClipper(
+            shape: _iconShape,
+            size: size,
+            child: Container(
+              width: size,
+              height: size,
+              color: colors.surfaceContainerHighest,
+              alignment: Alignment.center,
+              child: ColorFiltered(
+                colorFilter: ColorFilter.mode(
+                  colors.primary,
+                  BlendMode.srcIn,
+                ),
+                child: SizedBox(
+                  width: size * 0.58,
+                  height: size * 0.58,
+                  child: Image.memory(
+                    monoCached,
+                    width: size * 0.58,
+                    height: size * 0.58,
+                    fit: BoxFit.contain,
+                    cacheWidth: (size * 2).round(),
+                  ),
+                ),
               ),
             ),
-          ),
+          );
+        }
+
+        return FutureBuilder<Uint8List?>(
+          future: AppDatabaseService.getMonochromeIcon(app.packageName),
+          builder: (context, snapshot) {
+            final mono = snapshot.data;
+            if (mono != null) {
+              return IconShapeClipper(
+                shape: _iconShape,
+                size: size,
+                child: Container(
+                  width: size,
+                  height: size,
+                  color: colors.surfaceContainerHighest,
+                  alignment: Alignment.center,
+                  child: ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      colors.primary,
+                      BlendMode.srcIn,
+                    ),
+                    child: SizedBox(
+                      width: size * 0.58,
+                      height: size * 0.58,
+                      child: Image.memory(
+                        mono,
+                        width: size * 0.58,
+                        height: size * 0.58,
+                        fit: BoxFit.contain,
+                        cacheWidth: (size * 2).round(),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+            return IconShapeClipper(
+              shape: _iconShape,
+              size: size,
+              child: iconWidget,
+            );
+          },
         );
       }
 
@@ -680,7 +730,11 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   bool _canAcceptDockDrop(Map<String, dynamic> data, int x) {
-    if (data['type'] == 'widget') return false;
+    final isWidgetType = data['type'] == 'widget' ||
+        data['type'] == 'widget_preview' ||
+        data['type'] == 'time_weather_widget' ||
+        data['type'] == 'search_widget';
+    if (isWidgetType) return false;
 
     LauncherItem? source;
     if (data['id'] is String) {
@@ -690,7 +744,10 @@ class HomeScreenState extends State<HomeScreen> {
           break;
         }
       }
-      if (source == null || source.type == 'widget') return false;
+      if (source == null ||
+          source.type == 'widget' ||
+          source.type == 'time_weather_widget' ||
+          source.type == 'search_widget') return false;
     }
     if (source == null && data['type'] != 'app') return false;
 
@@ -821,8 +878,10 @@ class HomeScreenState extends State<HomeScreen> {
     int? targetY,
     int? targetPage,
   }) {
-    final spanX = 4;
-    final spanY = 2;
+    final spanX =
+        (widgetData['spanX'] as int? ?? 4).clamp(1, _columns);
+    final spanY =
+        (widgetData['spanY'] as int? ?? 2).clamp(1, _rows);
     final page = targetPage ?? _currentWorkspacePage;
     final positions = <(int, int)>[];
     if (targetX != null && targetY != null) {
@@ -946,19 +1005,34 @@ class HomeScreenState extends State<HomeScreen> {
                                                   (details) {
                                                 final data = details.data;
                                                 final spanX =
-                                                    data['spanX'] as int? ?? 1;
+                                                    (data['spanX'] as int? ?? 1)
+                                                        .clamp(1, _columns);
                                                 final spanY =
-                                                    data['spanY'] as int? ?? 1;
+                                                    (data['spanY'] as int? ?? 1)
+                                                        .clamp(1, _rows);
                                                 final itemId =
                                                     data['id'] as String?;
                                                 final type =
                                                     data['type'] as String?;
 
-                                                if (type == 'widget' ||
-                                                    type == 'widget_preview') {
+                                                final isWidget =
+                                                    type == 'widget' ||
+                                                    type == 'widget_preview' ||
+                                                    type == 'time_weather_widget' ||
+                                                    type == 'search_widget';
+
+                                                if (isWidget) {
+                                                  final targetX = x.clamp(
+                                                    0,
+                                                    _columns - spanX,
+                                                  );
+                                                  final targetY = y.clamp(
+                                                    0,
+                                                    _rows - spanY,
+                                                  );
                                                   return _canPlaceSpanAt(
-                                                    x,
-                                                    y,
+                                                    targetX,
+                                                    targetY,
                                                     spanX,
                                                     spanY,
                                                     pageIndex,
@@ -981,7 +1055,9 @@ class HomeScreenState extends State<HomeScreen> {
                                                     )
                                                     .firstOrNull;
                                                 if (itemAtCell != null &&
-                                                    itemAtCell.type == 'widget') {
+                                                    (itemAtCell.type == 'widget' ||
+                                                     itemAtCell.type == 'time_weather_widget' ||
+                                                     itemAtCell.type == 'search_widget')) {
                                                   return false;
                                                 }
                                                 return true;
@@ -989,9 +1065,11 @@ class HomeScreenState extends State<HomeScreen> {
                                             onAcceptWithDetails: (details) {
                                               final data = details.data;
                                               final spanX =
-                                                  data['spanX'] as int? ?? 1;
+                                                  (data['spanX'] as int? ?? 1)
+                                                      .clamp(1, _columns);
                                               final spanY =
-                                                  data['spanY'] as int? ?? 1;
+                                                  (data['spanY'] as int? ?? 1)
+                                                      .clamp(1, _rows);
                                               final targetX = x.clamp(
                                                 0,
                                                 _columns - spanX,
@@ -1007,7 +1085,9 @@ class HomeScreenState extends State<HomeScreen> {
                                                 final item = _items.firstWhere(
                                                   (i) => i.id == itemId,
                                                 );
-                                                if (item.type == 'widget') {
+                                                if (item.type == 'widget' ||
+                                                    item.type == 'time_weather_widget' ||
+                                                    item.type == 'search_widget') {
                                                   if (_canMoveWidgetTo(
                                                     item,
                                                     targetX,
@@ -1219,44 +1299,63 @@ class HomeScreenState extends State<HomeScreen> {
                                                         (data?['spanY'] as int? ??
                                                                 1)
                                                             .clamp(1, _rows);
-                                                    return OverflowBox(
-                                                      alignment:
-                                                          Alignment.topLeft,
-                                                      minWidth: 0,
-                                                      minHeight: 0,
-                                                      maxWidth:
-                                                          spanX * cellWidth,
-                                                      maxHeight:
-                                                          spanY * cellHeight,
-                                                      child: Container(
-                                                        width:
+                                                    final targetX = x.clamp(
+                                                      0,
+                                                      _columns - spanX,
+                                                    );
+                                                    final targetY = y.clamp(
+                                                      0,
+                                                      _rows - spanY,
+                                                    );
+                                                    final offsetX =
+                                                        (targetX - x) * cellWidth;
+                                                    final offsetY =
+                                                        (targetY - y) * cellHeight;
+
+                                                    return Transform.translate(
+                                                      offset: Offset(
+                                                        offsetX,
+                                                        offsetY,
+                                                      ),
+                                                      child: OverflowBox(
+                                                        alignment:
+                                                            Alignment.topLeft,
+                                                        minWidth: 0,
+                                                        minHeight: 0,
+                                                        maxWidth:
                                                             spanX * cellWidth,
-                                                        height:
+                                                        maxHeight:
                                                             spanY * cellHeight,
-                                                        margin:
-                                                            const EdgeInsets.all(
-                                                              4,
-                                                            ),
-                                                        decoration:
-                                                            BoxDecoration(
-                                                              color: Theme.of(
-                                                                context,
-                                                              ).colorScheme.primary.withValues(
-                                                                alpha: 0.18,
+                                                        child: Container(
+                                                          width:
+                                                              spanX * cellWidth,
+                                                          height:
+                                                              spanY * cellHeight,
+                                                          margin:
+                                                              const EdgeInsets.all(
+                                                                4,
                                                               ),
-                                                              border: Border.all(
+                                                          decoration:
+                                                              BoxDecoration(
                                                                 color: Theme.of(
                                                                   context,
                                                                 ).colorScheme.primary.withValues(
-                                                                  alpha: 0.8,
+                                                                  alpha: 0.22,
                                                                 ),
-                                                                width: 2,
-                                                              ),
-                                                              borderRadius:
-                                                                  BorderRadius.circular(
-                                                                    16,
+                                                                border: Border.all(
+                                                                  color: Theme.of(
+                                                                    context,
+                                                                  ).colorScheme.primary.withValues(
+                                                                    alpha: 0.85,
                                                                   ),
-                                                            ),
+                                                                  width: 2,
+                                                                ),
+                                                                borderRadius:
+                                                                    BorderRadius.circular(
+                                                                      16,
+                                                                    ),
+                                                              ),
+                                                        ),
                                                       ),
                                                     );
                                                   }
@@ -1273,7 +1372,9 @@ class HomeScreenState extends State<HomeScreen> {
                                         top: item.y * cellHeight,
                                         width: item.spanX * cellWidth,
                                         height: item.spanY * cellHeight,
-                                        child: item.type == 'widget'
+                                        child: (item.type == 'widget' ||
+                                                item.type == 'time_weather_widget' ||
+                                                item.type == 'search_widget')
                                             ? LongPressDraggable<
                                                 Map<String, dynamic>
                                               >(
