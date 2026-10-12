@@ -1,6 +1,7 @@
 package co.za.launcher3.swavoti
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.content.Context
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
@@ -378,16 +379,56 @@ class MainActivity : FlutterActivity() {
                 "startApp" -> {
                     val packageName = call.argument<String>("packageName")
                     val splitScreen = call.argument<Boolean>("splitScreen") ?: false
+                    val sourceX = call.argument<Int>("sourceX")
+                    val sourceY = call.argument<Int>("sourceY")
+                    val sourceWidth = call.argument<Int>("sourceWidth")
+                    val sourceHeight = call.argument<Int>("sourceHeight")
                     if (packageName != null) {
                         try {
                             val intent = packageManager.getLaunchIntentForPackage(packageName)
                             if (intent != null) {
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                                 if (splitScreen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                                     intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
                                     intent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                                 }
-                                startActivity(intent)
+
+                                val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                                    sourceX != null && sourceY != null && sourceWidth != null && sourceHeight != null &&
+                                    sourceWidth > 0 && sourceHeight > 0
+                                ) {
+                                    intent.sourceBounds = android.graphics.Rect(
+                                        sourceX,
+                                        sourceY,
+                                        sourceX + sourceWidth,
+                                        sourceY + sourceHeight
+                                    )
+                                    ActivityOptions.makeClipRevealAnimation(
+                                        window.decorView,
+                                        sourceX,
+                                        sourceY,
+                                        sourceWidth,
+                                        sourceHeight
+                                    )
+                                } else {
+                                    ActivityOptions.makeBasic()
+                                }
+
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    try {
+                                        options.setSplashScreenStyle(android.window.SplashScreen.SPLASH_SCREEN_STYLE_ICON)
+                                    } catch (_: Throwable) {
+                                        try {
+                                            val method = options.javaClass.getMethod(
+                                                "setSplashScreenStyle",
+                                                Int::class.javaPrimitiveType
+                                            )
+                                            method.invoke(options, 1)
+                                        } catch (_: Throwable) {}
+                                    }
+                                }
+
+                                startActivity(intent, options.toBundle())
                                 result.success(true)
                             } else {
                                 result.success(false)

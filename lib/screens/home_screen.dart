@@ -111,10 +111,10 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   List<LauncherItem> _items = [];
-  bool _showTimeWeather = true;
   bool _isDragging = false;
   bool _isNavigatingToDiscover = false;
   bool _isWorkspaceOverviewMode = false;
+  LauncherItem? _openedFolderItem;
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
 
@@ -339,8 +339,8 @@ class HomeScreenState extends State<HomeScreen> {
           .push(
             PageRouteBuilder(
               opaque: true,
-              pageBuilder: (_, __, ___) => const DiscoverNewsPage(),
-              transitionsBuilder: (_, animation, __, child) {
+              pageBuilder: (_, _, _) => const DiscoverNewsPage(),
+              transitionsBuilder: (_, animation, _, child) {
                 final curve = CurvedAnimation(
                   parent: animation,
                   curve: Curves.easeOutCubic,
@@ -366,7 +366,6 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   void _loadSettingsSync() {
-    _showTimeWeather = widget.prefs.getBool('show_time_weather') ?? true;
     _iconShape = widget.prefs.getString('icon_shape') ?? 'Circle';
   }
 
@@ -385,7 +384,6 @@ class HomeScreenState extends State<HomeScreen> {
     }
     if (!mounted) return;
     setState(() {
-      _showTimeWeather = prefs.getBool('show_time_weather') ?? true;
       _iconShape = prefs.getString('icon_shape') ?? 'Circle';
       _loadItemsFromPrefs(prefs);
     });
@@ -1087,6 +1085,10 @@ class HomeScreenState extends State<HomeScreen> {
                                                 });
                                               } else if (data['type'] ==
                                                   'widget_preview') {
+                                                final messenger =
+                                                    ScaffoldMessenger.maybeOf(
+                                                      context,
+                                                    );
                                                 LauncherService.allocateWidgetId().then((
                                                   id,
                                                 ) {
@@ -1108,23 +1110,17 @@ class HomeScreenState extends State<HomeScreen> {
                                                         LauncherService.deleteWidgetId(
                                                           id,
                                                         );
-                                                        if (mounted) {
-                                                          ScaffoldMessenger.of(
-                                                            context,
-                                                          ).showSnackBar(
-                                                            const SnackBar(
-                                                              content: Text(
-                                                                'Widget permission was not granted.',
-                                                              ),
+                                                        messenger?.showSnackBar(
+                                                          const SnackBar(
+                                                            content: Text(
+                                                              'Widget permission was not granted.',
                                                             ),
-                                                          );
-                                                        }
+                                                          ),
+                                                        );
                                                       }
                                                     });
-                                                  } else if (mounted) {
-                                                    ScaffoldMessenger.of(
-                                                      context,
-                                                    ).showSnackBar(
+                                                  } else {
+                                                    messenger?.showSnackBar(
                                                       const SnackBar(
                                                         content: Text(
                                                           'Unable to allocate widget.',
@@ -1148,8 +1144,8 @@ class HomeScreenState extends State<HomeScreen> {
                                                             ? Theme.of(context)
                                                                   .colorScheme
                                                                   .primary
-                                                                  .withOpacity(
-                                                                    0.5,
+                                                                  .withValues(
+                                                                    alpha: 0.5,
                                                                   )
                                                             : Colors
                                                                   .transparent,
@@ -1192,7 +1188,7 @@ class HomeScreenState extends State<HomeScreen> {
                                                   );
                                                   widget.onDragEnded?.call();
                                                 },
-                                                onDraggableCanceled: (_, __) {
+                                                onDraggableCanceled: (_, _) {
                                                   setState(
                                                     () => _isDragging = false,
                                                   );
@@ -1213,8 +1209,8 @@ class HomeScreenState extends State<HomeScreen> {
                                                       boxShadow: [
                                                         BoxShadow(
                                                           color: Colors.black
-                                                              .withOpacity(
-                                                                0.24,
+                                                              .withValues(
+                                                                alpha: 0.24,
                                                               ),
                                                           blurRadius: 16,
                                                         ),
@@ -1272,7 +1268,7 @@ class HomeScreenState extends State<HomeScreen> {
                                                   );
                                                   widget.onDragEnded?.call();
                                                 },
-                                                onDraggableCanceled: (_, __) {
+                                                onDraggableCanceled: (_, _) {
                                                   setState(
                                                     () => _isDragging = false,
                                                   );
@@ -1298,9 +1294,14 @@ class HomeScreenState extends State<HomeScreen> {
                                                 child: GestureDetector(
                                                   onTap: () {
                                                     if (item.type == 'app') {
+                                                      final renderBox = context.findRenderObject() as RenderBox?;
+                                                      final bounds = (renderBox != null && renderBox.hasSize)
+                                                          ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
+                                                          : null;
                                                       AppLockService.launchApp(
                                                         context,
                                                         item.packageName,
+                                                        sourceBounds: bounds,
                                                       );
                                                     }
                                                   },
@@ -1338,8 +1339,8 @@ class HomeScreenState extends State<HomeScreen> {
                                           builder: (context, candidateData, _) {
                                             return Container(
                                               color: candidateData.isNotEmpty
-                                                  ? Colors.white.withOpacity(
-                                                      0.2,
+                                                  ? Colors.white.withValues(
+                                                      alpha: 0.2,
                                                     )
                                                   : Colors.transparent,
                                             );
@@ -1368,8 +1369,8 @@ class HomeScreenState extends State<HomeScreen> {
                                           builder: (context, candidateData, _) {
                                             return Container(
                                               color: candidateData.isNotEmpty
-                                                  ? Colors.white.withOpacity(
-                                                      0.2,
+                                                  ? Colors.white.withValues(
+                                                      alpha: 0.2,
                                                     )
                                                   : Colors.transparent,
                                             );
@@ -1399,13 +1400,13 @@ class HomeScreenState extends State<HomeScreen> {
                                   .push(
                                     PageRouteBuilder(
                                       opaque: true,
-                                      pageBuilder: (_, __, ___) =>
+                                      pageBuilder: (_, _, _) =>
                                           const DiscoverNewsPage(),
                                       transitionsBuilder:
                                           (
                                             _,
                                             animation,
-                                            __,
+                                            _,
                                             child,
                                           ) => SlideTransition(
                                             position:
@@ -1486,8 +1487,8 @@ class HomeScreenState extends State<HomeScreen> {
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: isHovered
-                                  ? Colors.red.withOpacity(0.85)
-                                  : Colors.black.withOpacity(0.5),
+                                  ? Colors.red.withValues(alpha: 0.85)
+                                  : Colors.black.withValues(alpha: 0.5),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -1540,7 +1541,9 @@ class HomeScreenState extends State<HomeScreen> {
                                                     ? Theme.of(context)
                                                           .colorScheme
                                                           .primary
-                                                          .withOpacity(0.5)
+                                                          .withValues(
+                                                            alpha: 0.5,
+                                                          )
                                                     : Colors.transparent,
                                                 width: 2,
                                               ),
@@ -1584,7 +1587,7 @@ class HomeScreenState extends State<HomeScreen> {
                                             setState(() => _isDragging = false);
                                             widget.onDragEnded?.call();
                                           },
-                                          onDraggableCanceled: (_, __) {
+                                          onDraggableCanceled: (_, _) {
                                             setState(() => _isDragging = false);
                                             widget.onDragEnded?.call();
                                           },
@@ -1602,11 +1605,17 @@ class HomeScreenState extends State<HomeScreen> {
                                           childWhenDragging:
                                               const SizedBox.shrink(),
                                           child: GestureDetector(
-                                            onTap: () =>
-                                                AppLockService.launchApp(
-                                                  context,
-                                                  item.packageName,
-                                                ),
+                                            onTap: () {
+                                              final renderBox = context.findRenderObject() as RenderBox?;
+                                              final bounds = (renderBox != null && renderBox.hasSize)
+                                                  ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
+                                                  : null;
+                                              AppLockService.launchApp(
+                                                context,
+                                                item.packageName,
+                                                sourceBounds: bounds,
+                                              );
+                                            },
                                             onLongPress: () =>
                                                 _showItemContextMenu(item),
                                             child: _buildItemContent(
@@ -1689,6 +1698,9 @@ class HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+
+        // In-page Folder Overlay (supports dragging apps directly onto home screen)
+        _buildFolderOverlay(),
       ],
     );
   }
@@ -1737,144 +1749,9 @@ class HomeScreenState extends State<HomeScreen> {
     } else if (item.type == 'folder') {
       return GestureDetector(
         onTap: () {
-          showDialog(
-            context: context,
-            builder: (context) {
-              return Dialog(
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: 0.85),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      StatefulBuilder(
-                        builder: (context, setStateDialog) {
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                item.label,
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.edit, size: 20),
-                                onPressed: () {
-                                  final controller = TextEditingController(
-                                    text: item.label,
-                                  );
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      title: const Text('Edit Folder Name'),
-                                      content: TextField(
-                                        controller: controller,
-                                        autofocus: true,
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context),
-                                          child: const Text('Cancel'),
-                                        ),
-                                        TextButton(
-                                          onPressed: () {
-                                            setStateDialog(() {
-                                              item.label = controller.text;
-                                            });
-                                            setState(() {});
-                                            _saveItems();
-                                            Navigator.pop(context);
-                                          },
-                                          child: const Text('Save'),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
-                        alignment: WrapAlignment.center,
-                        children: (item.folderApps ?? []).map((pkg) {
-                          final cachedApp = widget.appCache[pkg];
-                          Widget buildApp(AppInfo app) {
-                            final appWidget = Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _buildHomeAppIcon(app, 56),
-                                const SizedBox(height: 4),
-                                SizedBox(
-                                  width: 64,
-                                  child: Text(
-                                    app.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                ),
-                              ],
-                            );
-
-                            return LongPressDraggable<Map<String, dynamic>>(
-                              data: {
-                                'type': 'app',
-                                'packageName': pkg,
-                                'source_folder_id': item.id,
-                                'label': app.name,
-                              },
-                              onDragStarted: () {
-                                Navigator.pop(context);
-                              },
-                              feedback: Material(
-                                color: Colors.transparent,
-                                child: appWidget,
-                              ),
-                              child: GestureDetector(
-                                onTap: () async {
-                                  final launch = AppLockService.launchApp(
-                                    context,
-                                    pkg,
-                                  );
-                                  Navigator.pop(context);
-                                  await launch;
-                                },
-                                child: appWidget,
-                              ),
-                            );
-                          }
-
-                          if (cachedApp != null) return buildApp(cachedApp);
-
-                          return FutureBuilder<AppInfo?>(
-                            future: _getAppInfo(pkg),
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData || snapshot.data == null)
-                                return const SizedBox.shrink();
-                              return buildApp(snapshot.data!);
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-              );
-            },
-          );
+          setState(() {
+            _openedFolderItem = item;
+          });
         },
         child: Container(
           padding: const EdgeInsets.all(8),
@@ -1891,6 +1768,7 @@ class HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 padding: const EdgeInsets.all(8),
+                alignment: Alignment.center,
                 child: Builder(
                   builder: (context) {
                     final apps = (item.folderApps ?? []).take(4).toList();
@@ -1900,33 +1778,53 @@ class HomeScreenState extends State<HomeScreen> {
                         color: Theme.of(context).colorScheme.primary,
                       );
                     }
-                    return GridView.builder(
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 4,
-                            crossAxisSpacing: 4,
-                          ),
-                      itemCount: apps.length,
-                      itemBuilder: (context, index) {
-                        final pkg = apps[index];
-                        final cachedApp = widget.appCache[pkg];
+                    if (apps.length == 1) {
+                      final pkg = apps[0];
+                      final cachedApp = widget.appCache[pkg];
+                      Widget buildIcon(AppInfo app) =>
+                          _buildHomeAppIcon(app, 32);
+                      if (cachedApp != null) return buildIcon(cachedApp);
+                      return FutureBuilder<AppInfo?>(
+                        future: _getAppInfo(pkg),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData || snapshot.data == null) {
+                            return const SizedBox.shrink();
+                          }
+                          return buildIcon(snapshot.data!);
+                        },
+                      );
+                    }
+                    return Center(
+                      child: GridView.builder(
+                        physics: const NeverScrollableScrollPhysics(),
+                        shrinkWrap: true,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              mainAxisSpacing: 4,
+                              crossAxisSpacing: 4,
+                            ),
+                        itemCount: apps.length,
+                        itemBuilder: (context, index) {
+                          final pkg = apps[index];
+                          final cachedApp = widget.appCache[pkg];
 
-                        Widget buildIcon(AppInfo app) =>
-                            _buildHomeAppIcon(app, 18);
+                          Widget buildIcon(AppInfo app) =>
+                              _buildHomeAppIcon(app, 18);
 
-                        if (cachedApp != null) return buildIcon(cachedApp);
+                          if (cachedApp != null) return buildIcon(cachedApp);
 
-                        return FutureBuilder<AppInfo?>(
-                          future: _getAppInfo(pkg),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData || snapshot.data == null)
-                              return const SizedBox.shrink();
-                            return buildIcon(snapshot.data!);
-                          },
-                        );
-                      },
+                          return FutureBuilder<AppInfo?>(
+                            future: _getAppInfo(pkg),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData || snapshot.data == null) {
+                                return const SizedBox.shrink();
+                              }
+                              return buildIcon(snapshot.data!);
+                            },
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
@@ -2036,6 +1934,348 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Widget _buildFolderOverlay() {
+    if (_openedFolderItem == null) return const SizedBox.shrink();
+
+    final folder = _items.firstWhere(
+      (i) => i.id == _openedFolderItem!.id,
+      orElse: () => _openedFolderItem!,
+    );
+    final folderApps = folder.folderApps ?? <String>[];
+
+    if (folderApps.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _openedFolderItem != null) {
+          setState(() => _openedFolderItem = null);
+        }
+      });
+      return const SizedBox.shrink();
+    }
+
+    return IgnorePointer(
+      ignoring: _isDragging,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 150),
+        opacity: _isDragging ? 0.0 : 1.0,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _openedFolderItem = null;
+                  });
+                },
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.55),
+                ),
+              ),
+            ),
+            Center(
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                  constraints: BoxConstraints(
+                    maxWidth: 340,
+                    maxHeight: MediaQuery.of(context).size.height * 0.65,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHigh
+                        .withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  folder.label.isNotEmpty
+                                      ? folder.label
+                                      : 'Folder',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                tooltip: 'Rename Folder',
+                                onPressed: () => _renameFolder(folder),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 20),
+                                tooltip: 'Close',
+                                onPressed: () {
+                                  setState(() {
+                                    _openedFolderItem = null;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 20,
+                            ),
+                            physics: const BouncingScrollPhysics(),
+                            child: Center(
+                              child: Wrap(
+                                alignment: WrapAlignment.center,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 16,
+                                runSpacing: 16,
+                                children: folderApps.map((pkg) {
+                                  return _buildFolderAppItem(folder, pkg);
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFolderAppItem(LauncherItem folder, String pkg) {
+    final cachedApp = widget.appCache[pkg];
+
+    Widget contentForApp(AppInfo? app) {
+      final appName = app?.name ?? pkg;
+      final showNotificationDots =
+          widget.prefs.getBool('notification_dots_enabled') ?? false;
+      final notificationCount = widget.notifications[pkg] ?? 0;
+
+      final appIconWidget = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          app != null
+              ? _buildHomeAppIcon(app, 56)
+              : FutureBuilder<AppInfo?>(
+                  future: _getAppInfo(pkg),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasData && snapshot.data != null) {
+                      return _buildHomeAppIcon(snapshot.data!, 56);
+                    }
+                    return IconShapeClipper(
+                      shape: _iconShape,
+                      size: 56,
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        child: const Icon(Icons.android, size: 32),
+                      ),
+                    );
+                  },
+                ),
+          if (showNotificationDots && notificationCount > 0)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error,
+                  shape: BoxShape.circle,
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 16,
+                  minHeight: 16,
+                ),
+                child: Text(
+                  '$notificationCount',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onError,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      );
+
+      final tileContent = SizedBox(
+        width: 72,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            appIconWidget,
+            const SizedBox(height: 6),
+            Text(
+              appName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                  ),
+            ),
+          ],
+        ),
+      );
+
+      return LongPressDraggable<Map<String, dynamic>>(
+        data: {
+          'type': 'app',
+          'packageName': pkg,
+          'label': appName,
+          'source_folder_id': folder.id,
+        },
+        delay: const Duration(milliseconds: 150),
+        onDragStarted: () {
+          setState(() {
+            _isDragging = true;
+          });
+          widget.onDragStarted?.call(pkg);
+        },
+        onDragEnd: (_) {
+          setState(() {
+            _isDragging = false;
+            _openedFolderItem = null;
+          });
+          widget.onDragEnded?.call();
+        },
+        onDraggableCanceled: (_, _) {
+          setState(() {
+            _isDragging = false;
+            _openedFolderItem = null;
+          });
+          widget.onDragEnded?.call();
+        },
+        feedback: Material(
+          color: Colors.transparent,
+          child: SizedBox(
+            width: 72,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Opacity(opacity: 0.85, child: appIconWidget),
+                const SizedBox(height: 6),
+                Text(
+                  appName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 4.0,
+                        color: Colors.black87,
+                        offset: Offset(1.0, 1.0),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        childWhenDragging: const SizedBox(width: 72, height: 80),
+        child: Builder(
+          builder: (itemCtx) => GestureDetector(
+            onTap: () {
+              final renderBox = itemCtx.findRenderObject() as RenderBox?;
+              final bounds = (renderBox != null && renderBox.hasSize)
+                  ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
+                  : null;
+              setState(() {
+                _openedFolderItem = null;
+              });
+              AppLockService.launchApp(context, pkg, sourceBounds: bounds);
+            },
+            child: tileContent,
+          ),
+        ),
+      );
+    }
+
+    if (cachedApp != null) {
+      return contentForApp(cachedApp);
+    }
+
+    return FutureBuilder<AppInfo?>(
+      future: _getAppInfo(pkg),
+      builder: (context, snapshot) {
+        return contentForApp(snapshot.data);
+      },
+    );
+  }
+
+  void _renameFolder(LauncherItem folder) {
+    final controller = TextEditingController(text: folder.label);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Folder name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                setState(() {
+                  folder.label = newName;
+                });
+                _saveItems();
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showItemContextMenu(LauncherItem item) {
     showDialog(
       context: context,
@@ -2073,6 +2313,16 @@ class HomeScreenState extends State<HomeScreen> {
                     _removeItem(item);
                   },
                 ),
+                if (item.type == 'folder') ...[
+                  ListTile(
+                    leading: const Icon(Icons.edit_outlined),
+                    title: const Text('Rename Folder'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _renameFolder(item);
+                    },
+                  ),
+                ],
                 if (item.type == 'app') ...[
                   ListTile(
                     leading: const Icon(Icons.share_outlined),
@@ -2336,7 +2586,7 @@ class HomeScreenState extends State<HomeScreen> {
 
 class _WidgetWrapper extends StatefulWidget {
   final int appWidgetId;
-  const _WidgetWrapper({Key? key, required this.appWidgetId}) : super(key: key);
+  const _WidgetWrapper({super.key, required this.appWidgetId});
 
   @override
   State<_WidgetWrapper> createState() => _WidgetWrapperState();

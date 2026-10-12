@@ -102,13 +102,18 @@ class AppLockService {
     BuildContext context,
     String packageName, {
     bool splitScreen = false,
+    Rect? sourceBounds,
   }) async {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final packages = await lockedPackages();
       if (!packages.contains(packageName) || isSessionUnlocked(packageName)) {
-        await LauncherService.startApp(packageName, splitScreen: splitScreen);
+        await LauncherService.startApp(
+          packageName,
+          splitScreen: splitScreen,
+          sourceBounds: sourceBounds,
+        );
         return;
       }
 
@@ -129,7 +134,11 @@ class AppLockService {
             mode: AppLockPinMode.verify,
             onVerified: () async {
               unlockSession(packageName);
-              await LauncherService.startApp(packageName, splitScreen: splitScreen);
+              await LauncherService.startApp(
+                packageName,
+                splitScreen: splitScreen,
+                sourceBounds: sourceBounds,
+              );
             },
           ),
         ),

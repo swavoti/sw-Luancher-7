@@ -1,12 +1,8 @@
-import 'dart:async';
-import 'dart:isolate';
-
-import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:swavoti/services/feed_provider.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:swavoti/screens/news_detail_from_disc.dart';
 
 class DiscoverNewsPage extends StatefulWidget {
   const DiscoverNewsPage({super.key});
@@ -16,141 +12,133 @@ class DiscoverNewsPage extends StatefulWidget {
 }
 
 class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
-  // Target RAM budget for WebView content (58 MiB)
-  static const int _maxRamBudgetBytes = 58 * 1024 * 1024;
+  static const String _baseUrl = 'https://saurav.tech/NewsAPI/top-headlines/category';
+  static const List<String> _categories = [
+    'general',
+    'technology',
+    'business',
+    'entertainment',
+    'sports',
+    'health',
+    'science',
+  ];
 
-  WebViewController? _webViewController;
+  String _selectedCategory = 'general';
+  List<NewsArticle> _articles = [];
   bool _isLoading = true;
-  bool _hasError = false;
   String? _errorMessage;
-  String _currentUrl = '';
 
   @override
   void initState() {
     super.initState();
-    _bootstrapIsolatedWebView();
+    _loadCachedNewsAndFetch();
   }
 
-  /// Resolves feed URL inside a background Dart Isolate to ensure zero main-thread hitching.
-  Future<void> _bootstrapIsolatedWebView() async {
+  Future<void> _loadCachedNewsAndFetch() async {
+    // 1. Instant load from local cache if available
     try {
       final prefs = await SharedPreferences.getInstance();
-      final providerId = prefs.getString('feed_provider') ?? 'msn';
+      final cachedJson = prefs.getString('cached_news_$_selectedCategory');
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        final decoded = jsonDecode(cachedJson) as List<dynamic>;
+        final cachedArticles = decoded
+            .map((item) => NewsArticle.fromJson(item as Map<String, dynamic>))
+            .where((a) => a.title.isNotEmpty && a.title != '[Removed]')
+            .toList();
+        if (cachedArticles.isNotEmpty && mounted) {
+          setState(() {
+            _articles = cachedArticles;
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (_) {}
 
-      // Resolve URL in background isolate
-      final targetUrl = await Isolate.run(() {
-        return FeedProvider.fromId(providerId).url;
+    // 2. Fetch fresh articles from SauravKanchan NewsAPI
+    await _fetchNews();
+  }
+
+  Future<void> _fetchNews() async {
+    if (!mounted) return;
+    if (_articles.isEmpty) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
       });
+    }
 
-      if (!mounted) return;
-      _currentUrl = targetUrl;
-      await _initializeController(targetUrl);
+    final url = Uri.parse('$_baseUrl/$_selectedCategory/us.json');
+
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final rawArticles = data['articles'] as List<dynamic>? ?? [];
+        final parsed = rawArticles
+            .map((item) => NewsArticle.fromJson(item as Map<String, dynamic>))
+            .where((a) => a.title.isNotEmpty && a.title != '[Removed]')
+            .toList();
+
+        if (mounted) {
+          setState(() {
+            _articles = parsed;
+            _isLoading = false;
+            _errorMessage = null;
+          });
+        }
+
+        // Cache in background
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(
+            'cached_news_$_selectedCategory',
+            jsonEncode(rawArticles),
+          );
+        } catch (_) {}
+      } else {
+        if (_articles.isEmpty && mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = 'Could not load news feed (${response.statusCode})';
+          });
+        }
+      }
     } catch (e) {
-      // Silent error isolation
-      debugPrint('DiscoverNewsPage isolate bootstrap caught: $e');
-      _triggerGarbageCollection();
-      if (mounted) {
+      if (_articles.isEmpty && mounted) {
         setState(() {
-          _hasError = true;
           _isLoading = false;
-          _errorMessage = 'Could not load feed';
+          _errorMessage = 'Network error. Please check your connection.';
         });
       }
     }
   }
 
-  Future<void> _initializeController(String url) async {
+  void _onCategorySelected(String category) {
+    if (_selectedCategory == category) return;
+    setState(() {
+      _selectedCategory = category;
+      _articles = [];
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    _loadCachedNewsAndFetch();
+  }
+
+  String _formatTimeAgo(String? rawDate) {
+    if (rawDate == null || rawDate.isEmpty) return '';
     try {
-      final controller = WebViewController();
-      
-      // Enforce lightweight execution & memory bounds
-      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-      await controller.setBackgroundColor(Colors.transparent);
-
-      await controller.setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (progress) {
-            if (mounted) {
-              setState(() => _isLoading = progress < 100);
-            }
-          },
-          onPageStarted: (_) {
-            if (mounted) {
-              setState(() {
-                _isLoading = true;
-                _hasError = false;
-              });
-            }
-          },
-          onPageFinished: (_) {
-            // Trim cache once loaded to adhere to 58MB budget
-            _enforceMemoryLimit();
-            if (mounted) setState(() => _isLoading = false);
-          },
-          onWebResourceError: (WebResourceError error) {
-            // Silent crash isolation: catch without rethrowing to main thread
-            debugPrint('DiscoverNewsPage silent resource error: ${error.description}');
-            if (error.isForMainFrame == true) {
-              _triggerGarbageCollection();
-              if (mounted) {
-                setState(() {
-                  _hasError = true;
-                  _isLoading = false;
-                  _errorMessage = error.description;
-                });
-              }
-            }
-          },
-        ),
-      );
-
-      // Load request safely
-      await controller.loadRequest(Uri.parse(url));
-
-      if (mounted) {
-        setState(() {
-          _webViewController = controller;
-        });
+      final dt = DateTime.parse(rawDate).toLocal();
+      final diff = DateTime.now().difference(dt);
+      if (diff.inMinutes < 60) {
+        return '${diff.inMinutes.clamp(1, 59)}m ago';
+      } else if (diff.inHours < 24) {
+        return '${diff.inHours}h ago';
+      } else {
+        return '${diff.inDays}d ago';
       }
-    } catch (e) {
-      debugPrint('DiscoverNewsPage controller init caught: $e');
-      _triggerGarbageCollection();
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _isLoading = false;
-        });
-      }
+    } catch (_) {
+      return '';
     }
-  }
-
-  /// Drops caches and triggers engine GC to enforce the 58MB RAM cap.
-  Future<void> _enforceMemoryLimit() async {
-    try {
-      await _webViewController?.clearCache();
-      _triggerGarbageCollection();
-    } catch (_) {}
-  }
-
-  /// Triggers engine garbage collection to reclaim memory.
-  void _triggerGarbageCollection() {
-    try {
-      PaintingBinding.instance.imageCache.clear();
-      PaintingBinding.instance.imageCache.clearLiveImages();
-    } catch (_) {}
-  }
-
-  @override
-  void dispose() {
-    // Release WebView immediately so Chromium does not stay resident in background RAM
-    try {
-      _webViewController?.loadRequest(Uri.parse('about:blank'));
-      _webViewController?.clearCache();
-      _webViewController?.clearLocalStorage();
-    } catch (_) {}
-    _webViewController = null;
-    _triggerGarbageCollection();
-    super.dispose();
   }
 
   @override
@@ -161,7 +149,6 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
       behavior: HitTestBehavior.translucent,
       onHorizontalDragEnd: (details) {
         final velocity = details.primaryVelocity ?? 0;
-        // Swipe to pop back to home
         if (velocity < -200 || velocity > 200) {
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop();
@@ -179,7 +166,7 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
             onPressed: () => Navigator.of(context).pop(),
           ),
           title: Text(
-            'Discover',
+            'Discover News',
             style: TextStyle(
               color: cs.onSurface,
               fontSize: 18,
@@ -189,93 +176,236 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
           actions: [
             IconButton(
               icon: const Icon(Icons.refresh_rounded),
-              onPressed: () {
-                setState(() {
-                  _hasError = false;
-                  _isLoading = true;
-                });
-                if (_webViewController != null && _currentUrl.isNotEmpty) {
-                  _webViewController!.loadRequest(Uri.parse(_currentUrl));
-                } else {
-                  _bootstrapIsolatedWebView();
-                }
-              },
+              tooltip: 'Refresh Feed',
+              onPressed: _fetchNews,
             ),
           ],
         ),
-        body: SafeArea(
-          child: Stack(
-            children: [
-              if (_hasError)
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.feed_outlined,
-                          size: 64,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Feed Offline',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: cs.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Unable to load news feed. Check your connection or try again.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        FilledButton.tonalIcon(
-                          onPressed: () {
-                            setState(() {
-                              _hasError = false;
-                              _isLoading = true;
-                            });
-                            _bootstrapIsolatedWebView();
-                          },
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text('Try Again'),
-                        ),
-                      ],
+        body: Column(
+          children: [
+            // Category selector tabs
+            SizedBox(
+              height: 48,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                itemCount: _categories.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final cat = _categories[index];
+                  final isSelected = cat == _selectedCategory;
+                  return FilterChip(
+                    label: Text(
+                      cat[0].toUpperCase() + cat.substring(1),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected ? cs.onPrimary : cs.onSurface,
+                      ),
                     ),
-                  ),
-                )
-              else if (_webViewController != null)
-                WebViewWidget(
-                  controller: _webViewController!,
-                  gestureRecognizers: {
-                    Factory<VerticalDragGestureRecognizer>(
-                      () => VerticalDragGestureRecognizer(),
-                    ),
-                  },
-                )
-              else
-                const SizedBox.shrink(),
-              if (_isLoading && !_hasError)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: LinearProgressIndicator(
-                    minHeight: 2,
-                    color: cs.primary,
+                    selected: isSelected,
+                    showCheckmark: false,
                     backgroundColor: cs.surfaceContainerHighest,
-                  ),
-                ),
-            ],
-          ),
+                    selectedColor: cs.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    onSelected: (_) => _onCategorySelected(cat),
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 1),
+
+            // News feed content
+            Expanded(
+              child: _isLoading && _articles.isEmpty
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null && _articles.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.newspaper_outlined,
+                                  size: 56,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Feed Offline',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: cs.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _errorMessage!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                FilledButton.tonalIcon(
+                                  onPressed: _fetchNews,
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label: const Text('Try Again'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _fetchNews,
+                          child: ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                            itemCount: _articles.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            itemBuilder: (context, index) {
+                              final article = _articles[index];
+                              final timeAgo = _formatTimeAgo(article.publishedAt);
+
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => NewsDetailFromDiscPage(
+                                        article: article,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Small rounded image
+                                      if (article.urlToImage != null &&
+                                          article.urlToImage!.isNotEmpty)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Image.network(
+                                            article.urlToImage!,
+                                            width: 80,
+                                            height: 80,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Container(
+                                              width: 80,
+                                              height: 80,
+                                              decoration: BoxDecoration(
+                                                color: cs.surfaceContainerHigh,
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Icon(
+                                                Icons.image_outlined,
+                                                color: cs.onSurfaceVariant,
+                                                size: 28,
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Container(
+                                          width: 80,
+                                          height: 80,
+                                          decoration: BoxDecoration(
+                                            color: cs.surfaceContainerHigh,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            Icons.newspaper_outlined,
+                                            color: cs.onSurfaceVariant,
+                                            size: 28,
+                                          ),
+                                        ),
+                                      const SizedBox(width: 12),
+
+                                      // Headline & Meta details
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              article.title,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: cs.onSurface,
+                                                height: 1.25,
+                                              ),
+                                            ),
+                                            if (article.description != null &&
+                                                article.description!.isNotEmpty) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                article.description!,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: cs.onSurfaceVariant,
+                                                  height: 1.2,
+                                                ),
+                                              ),
+                                            ],
+                                            const SizedBox(height: 6),
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    article.sourceName,
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: cs.primary,
+                                                    ),
+                                                  ),
+                                                ),
+                                                if (timeAgo.isNotEmpty) ...[
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    '• $timeAgo',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: cs.onSurfaceVariant,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+            ),
+          ],
         ),
       ),
     );

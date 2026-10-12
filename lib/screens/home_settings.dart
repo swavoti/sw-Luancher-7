@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
-import 'package:swavoti/services/feed_provider.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
 import 'package:swavoti/screens/search_settings.dart';
 import 'package:swavoti/screens/app_lock_screen.dart';
@@ -18,7 +17,6 @@ class HomeSettings extends StatefulWidget {
 class _HomeSettingsState extends State<HomeSettings> {
   bool _notificationDotsEnabled = false;
   bool _isLoading = true;
-  String _feedProvider = 'msn';
   bool _showTimeWeather = true;
   int _gridColumns = 4;
   bool _showHiddenApps = false;
@@ -42,7 +40,6 @@ class _HomeSettingsState extends State<HomeSettings> {
       setState(() {
         _notificationDotsEnabled =
             prefs.getBool('notification_dots_enabled') ?? false;
-        _feedProvider = prefs.getString('feed_provider') ?? 'msn';
         _showTimeWeather = prefs.getBool('show_time_weather') ?? true;
         _gridColumns = prefs.getInt('grid_columns') ?? 4;
         _showHiddenApps = prefs.getBool('show_hidden_apps') ?? false;
@@ -326,8 +323,8 @@ class _HomeSettingsState extends State<HomeSettings> {
                 _categoryTile(
                   context,
                   icon: Icons.search_rounded,
-                  title: 'Search & Discover',
-                  subtitle: 'Search bar and news feed providers',
+                  title: 'Search Settings',
+                  subtitle: 'Search bar appearance and browser choices',
                   settings: [
                     ListTile(
                       leading: const Icon(Icons.search_rounded),
@@ -342,23 +339,6 @@ class _HomeSettingsState extends State<HomeSettings> {
                           builder: (_) => const SearchSettingsScreen(),
                         ),
                       ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.article_outlined),
-                      title: const Text('Feed Provider'),
-                      subtitle: Text(FeedProvider.fromId(_feedProvider).name),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                      onTap: () async {
-                        await Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => FeedProviderScreen(
-                              currentProvider: _feedProvider,
-                            ),
-                          ),
-                        );
-                        _loadSettings();
-                      },
                     ),
                   ],
                 ),
@@ -428,40 +408,6 @@ class _HomeSettingsState extends State<HomeSettings> {
 }
 
 // ─── Sub-screens ─────────────────────────────────────────────────────────────
-
-class FeedProviderScreen extends StatelessWidget {
-  final String currentProvider;
-
-  const FeedProviderScreen({super.key, required this.currentProvider});
-
-  @override
-  Widget build(BuildContext context) {
-    final surface = Theme.of(context).colorScheme.surface;
-    return Scaffold(
-      backgroundColor: surface,
-      appBar: AppBar(
-        title: const Text('Feed Provider'),
-        backgroundColor: surface,
-        surfaceTintColor: Colors.transparent,
-      ),
-      body: ListView(
-        children: FeedProvider.all.map((provider) {
-          return ListTile(
-            title: Text(provider.name),
-            trailing: currentProvider == provider.id
-                ? const Icon(Icons.check)
-                : null,
-            onTap: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('feed_provider', provider.id);
-              if (context.mounted) Navigator.pop(context);
-            },
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
 
 class GridSizeScreen extends StatelessWidget {
   final int currentColumns;

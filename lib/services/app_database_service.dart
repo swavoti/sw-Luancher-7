@@ -17,7 +17,7 @@ class AppDatabaseService {
   static final Map<String, Uint8List> _iconCache = {};
   static final Map<String, MemoryImage> _memoryImageCache = {};
   static bool _lightweightMode = false;
-  static int get _maxIconCacheBytes => _lightweightMode ? 8 << 20 : 32 << 20;
+  static int get _maxIconCacheBytes => _lightweightMode ? 32 << 20 : 128 << 20;
   static int _iconCacheBytes = 0;
   static int _iconCacheGeneration = 0;
   static String currentIconPack = "";
@@ -29,9 +29,10 @@ class AppDatabaseService {
 
   static void setLightweightMode(bool enabled) {
     _lightweightMode = enabled;
-    while (_iconCacheBytes > _maxIconCacheBytes && _iconCache.isNotEmpty) {
+    while (_iconCacheBytes > _maxIconCacheBytes && _iconCache.length > 100) {
       final oldestPackage = _iconCache.keys.first;
-      _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
+      final removed = _iconCache.remove(oldestPackage);
+      if (removed != null) _iconCacheBytes -= removed.lengthInBytes;
       _memoryImageCache.remove(oldestPackage);
     }
     _pumpQueue();
@@ -196,33 +197,28 @@ class AppDatabaseService {
   }
 
   static Uint8List? getCachedIcon(String packageName) {
-    final icon = _iconCache.remove(packageName);
-    if (icon != null) {
-      _iconCache[packageName] = icon;
-      final img = _memoryImageCache.remove(packageName);
-      if (img != null) _memoryImageCache[packageName] = img;
-    }
-    return icon;
+    return _iconCache[packageName];
   }
 
   static MemoryImage? getCachedImage(String packageName) {
-    final icon = getCachedIcon(packageName);
+    final icon = _iconCache[packageName];
     if (icon == null) return null;
     return _memoryImageCache.putIfAbsent(packageName, () => MemoryImage(icon));
   }
 
   static void _cacheIcon(String packageName, Uint8List icon) {
-    final previous = _iconCache.remove(packageName);
-    if (previous != null) _iconCacheBytes -= previous.lengthInBytes;
-    _memoryImageCache.remove(packageName);
-    if (icon.lengthInBytes > _maxIconCacheBytes) return;
-
-    _iconCache[packageName] = icon;
-    _memoryImageCache[packageName] = MemoryImage(icon);
-    _iconCacheBytes += icon.lengthInBytes;
-    while (_iconCacheBytes > _maxIconCacheBytes) {
+    final previous = _iconCache.putIfAbsent(packageName, () => icon);
+    if (!identical(previous, icon)) {
+      _iconCache[packageName] = icon;
+      _memoryImageCache[packageName] = MemoryImage(icon);
+    } else {
+      _iconCacheBytes += icon.lengthInBytes;
+      _memoryImageCache[packageName] = MemoryImage(icon);
+    }
+    while (_iconCacheBytes > _maxIconCacheBytes && _iconCache.length > 200) {
       final oldestPackage = _iconCache.keys.first;
-      _iconCacheBytes -= _iconCache.remove(oldestPackage)!.lengthInBytes;
+      final removed = _iconCache.remove(oldestPackage);
+      if (removed != null) _iconCacheBytes -= removed.lengthInBytes;
       _memoryImageCache.remove(oldestPackage);
     }
   }

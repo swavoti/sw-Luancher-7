@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'dart:typed_data';
+import 'dart:ui';
 
 class MediaPlaybackInfo {
   final String packageName;
@@ -170,11 +171,18 @@ class LauncherService {
   static Future<void> startApp(
     String packageName, {
     bool splitScreen = false,
+    Rect? sourceBounds,
   }) async {
     try {
       await _systemChannel.invokeMethod('startApp', {
         'packageName': packageName,
         'splitScreen': splitScreen,
+        if (sourceBounds != null) ...{
+          'sourceX': sourceBounds.left.round(),
+          'sourceY': sourceBounds.top.round(),
+          'sourceWidth': sourceBounds.width.round(),
+          'sourceHeight': sourceBounds.height.round(),
+        },
       });
     } catch (e) {
       print('Error starting app: $e');

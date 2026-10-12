@@ -388,6 +388,35 @@ class AppDrawerState extends State<AppDrawer> {
               ? const SizedBox.shrink()
               : _filteredApps.isEmpty
               ? const Center(child: Text('No apps found.'))
+              : _searchController.text.trim().isNotEmpty
+              ? GridView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 0.82,
+                      ),
+                  itemCount: _filteredApps.length,
+                  itemBuilder: (context, index) {
+                    final app = _filteredApps[index];
+                    final notificationCount = _notificationDotsEnabled
+                        ? (widget.notifications[app.packageName] ?? 0)
+                        : 0;
+                    return _AppDrawerItem(
+                      key: ValueKey('search_${app.packageName}'),
+                      app: app,
+                      notificationCount: notificationCount,
+                      onCloseDrawer: widget.onClose,
+                      iconShape: _iconShape,
+                      onDragStarted: widget.onDragStarted,
+                      onDragEnded: widget.onDragEnded,
+                      iconGeneration: _iconGeneration,
+                    );
+                  },
+                )
               : LayoutBuilder(
                   builder: (context, constraints) {
                     final gridWidth = constraints.maxWidth - 32; // padding
@@ -395,9 +424,9 @@ class AppDrawerState extends State<AppDrawer> {
                         (gridWidth - (3 * 8)) / 4; // 3 crossAxisSpacing
                     final cellHeight = cellWidth / 0.82;
                     final rowHeight = cellHeight + 12; // mainAxisSpacing
-                    final rows = (constraints.maxHeight / rowHeight)
-                        .floor()
-                        .clamp(1, 10);
+                    final totalHeight =
+                        MediaQuery.sizeOf(context).height - 160;
+                    final rows = (totalHeight / rowHeight).floor().clamp(1, 10);
                     final itemsPerPage = rows * 4;
 
                     final gridApps = _filteredApps;
@@ -877,7 +906,17 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
         ),
       ),
       child: GestureDetector(
-        onTap: () => AppLockService.launchApp(context, app.packageName),
+        onTap: () {
+          final renderBox = context.findRenderObject() as RenderBox?;
+          final bounds = (renderBox != null && renderBox.hasSize)
+              ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
+              : null;
+          AppLockService.launchApp(
+            context,
+            app.packageName,
+            sourceBounds: bounds,
+          );
+        },
         onLongPress: () {
           if (!_dragStarted) {
             _showContextMenu(context);
@@ -979,23 +1018,12 @@ class _AppPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmed = name.trim();
-    final letter = trimmed.isNotEmpty ? trimmed.substring(0, 1).toUpperCase() : '?';
     final color = _palette[trimmed.hashCode.abs() % _palette.length];
 
     return Container(
       width: size,
       height: size,
       color: color.withValues(alpha: 0.85),
-      alignment: Alignment.center,
-      child: Text(
-        letter,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: size * 0.42,
-          fontWeight: FontWeight.bold,
-          decoration: TextDecoration.none,
-        ),
-      ),
     );
   }
 }
