@@ -34,6 +34,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
 
   String _selectedShape = 'Circle';
   String _selectedIconPack = '';
+  bool _themedIconsEnabled = false;
   List<Map<String, dynamic>> _availableIconPacks = [];
   List<String> _previewPackages = [];
   List<Uint8List?> _systemPreviewIcons = [];
@@ -55,6 +56,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
     setState(() {
       _selectedShape = prefs.getString('icon_shape') ?? 'Circle';
       _selectedIconPack = prefs.getString('icon_pack') ?? '';
+      _themedIconsEnabled = prefs.getBool('themed_icons_enabled') ?? false;
       _availableIconPacks = packs;
     });
     if (_previewPackages.isNotEmpty) {
@@ -155,6 +157,7 @@ class _EditIconsPageState extends State<EditIconsPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('icon_shape', _selectedShape);
       await prefs.setString('icon_pack', _selectedIconPack);
+      await prefs.setBool('themed_icons_enabled', _themedIconsEnabled);
       AppDatabaseService.currentIconPack = _selectedIconPack;
       await AppDatabaseService.clearIconCache();
       await widget.onSettingsApplied?.call();
@@ -170,21 +173,199 @@ class _EditIconsPageState extends State<EditIconsPage> {
     }
   }
 
+  void _showThemedIconsSheet() {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final colors = Theme.of(context).colorScheme;
+          return Container(
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colors.onSurfaceVariant.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: colors.primaryContainer,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        color: colors.primary,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                'Themed Icons',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'BETA',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: colors.onSecondaryContainer,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Material You dynamic color theming',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: colors.outlineVariant.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    'Supported app icons adopt colors from your wallpaper and Android dynamic theme. The launcher applies adaptive monochrome tints calculated by your device.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Enable themed icons',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    _themedIconsEnabled ? 'Enabled' : 'Disabled',
+                    style: TextStyle(
+                      color: _themedIconsEnabled
+                          ? colors.primary
+                          : colors.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                  value: _themedIconsEnabled,
+                  onChanged: (val) async {
+                    setSheetState(() => _themedIconsEnabled = val);
+                    setState(() => _themedIconsEnabled = val);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('themed_icons_enabled', val);
+                  },
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Done'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildPreviewIcon(int index) {
     final icon = index < _previewIcons.length ? _previewIcons[index] : null;
+    final colors = Theme.of(context).colorScheme;
+
+    Widget rawIcon = icon == null
+        ? const Icon(Icons.android, size: 40)
+        : Image.memory(
+            icon,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            cacheWidth: 112,
+            gaplessPlayback: true,
+          );
+
+    if (_themedIconsEnabled) {
+      return IconShapeClipper(
+        shape: _selectedShape,
+        size: 56,
+        child: Container(
+          width: 56,
+          height: 56,
+          color: colors.primaryContainer,
+          alignment: Alignment.center,
+          child: ColorFiltered(
+            colorFilter: ColorFilter.mode(
+              colors.primary,
+              BlendMode.srcIn,
+            ),
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: rawIcon,
+            ),
+          ),
+        ),
+      );
+    }
+
     return IconShapeClipper(
       shape: _selectedShape,
       size: 56,
-      child: icon == null
-          ? const Icon(Icons.android, size: 40)
-          : Image.memory(
-              icon,
-              width: 56,
-              height: 56,
-              fit: BoxFit.cover,
-              cacheWidth: 112,
-              gaplessPlayback: true,
-            ),
+      child: rawIcon,
     );
   }
 
@@ -204,6 +385,36 @@ class _EditIconsPageState extends State<EditIconsPage> {
         title: const Text('Edit App Icons'),
         backgroundColor: colors.surface,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: ActionChip(
+              avatar: Icon(
+                Icons.auto_awesome,
+                size: 15,
+                color: _themedIconsEnabled ? colors.primary : colors.onSurfaceVariant,
+              ),
+              label: Text(
+                'Themed icons (Beta)',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: _themedIconsEnabled ? colors.primary : colors.onSurfaceVariant,
+                ),
+              ),
+              backgroundColor: _themedIconsEnabled
+                  ? colors.primaryContainer.withValues(alpha: 0.7)
+                  : colors.surfaceContainerHighest.withValues(alpha: 0.5),
+              side: BorderSide(
+                color: _themedIconsEnabled
+                    ? colors.primary.withValues(alpha: 0.4)
+                    : colors.outlineVariant.withValues(alpha: 0.3),
+              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              onPressed: _showThemedIconsSheet,
+            ),
+          ),
+        ],
       ),
       body: Stack(
         children: [
@@ -225,9 +436,58 @@ class _EditIconsPageState extends State<EditIconsPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               children: [
-                Text(
-                  'Preview',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Preview',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: _showThemedIconsSheet,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _themedIconsEnabled
+                              ? colors.primaryContainer
+                              : colors.surfaceContainerHighest.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: _themedIconsEnabled
+                                ? colors.primary.withValues(alpha: 0.5)
+                                : colors.outlineVariant.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome_rounded,
+                              size: 13,
+                              color: _themedIconsEnabled
+                                  ? colors.primary
+                                  : colors.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Themed icons (Beta)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _themedIconsEnabled
+                                    ? colors.onPrimaryContainer
+                                    : colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
                 Center(

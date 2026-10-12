@@ -12,7 +12,11 @@ class DiscoverNewsPage extends StatefulWidget {
 }
 
 class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
-  static const String _baseUrl = 'https://saurav.tech/NewsAPI/top-headlines/category';
+  static const List<String> _baseEndpoints = [
+    'https://raw.githubusercontent.com/SauravKanchan/NewsAPI/master/top-headlines/category',
+    'https://cdn.jsdelivr.net/gh/SauravKanchan/NewsAPI@master/top-headlines/category',
+    'https://saurav.tech/NewsAPI/top-headlines/category',
+  ];
   static const List<String> _categories = [
     'general',
     'technology',
@@ -67,49 +71,83 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
       });
     }
 
-    final url = Uri.parse('$_baseUrl/$_selectedCategory/us.json');
+    bool success = false;
 
-    try {
-      final response = await http.get(url).timeout(const Duration(seconds: 8));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final rawArticles = data['articles'] as List<dynamic>? ?? [];
-        final parsed = rawArticles
-            .map((item) => NewsArticle.fromJson(item as Map<String, dynamic>))
-            .where((a) => a.title.isNotEmpty && a.title != '[Removed]')
-            .toList();
+    for (final base in _baseEndpoints) {
+      final url = Uri.parse('$base/$_selectedCategory/us.json');
+      try {
+        final response = await http
+            .get(url)
+            .timeout(const Duration(seconds: 5));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final rawArticles = data['articles'] as List<dynamic>? ?? [];
+          final parsed = rawArticles
+              .map((item) => NewsArticle.fromJson(item as Map<String, dynamic>))
+              .where((a) => a.title.isNotEmpty && a.title != '[Removed]')
+              .toList();
 
-        if (mounted) {
-          setState(() {
-            _articles = parsed;
-            _isLoading = false;
-            _errorMessage = null;
-          });
+          if (parsed.isNotEmpty) {
+            if (mounted) {
+              setState(() {
+                _articles = parsed;
+                _isLoading = false;
+                _errorMessage = null;
+              });
+            }
+
+            // Cache in background
+            try {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString(
+                'cached_news_$_selectedCategory',
+                jsonEncode(rawArticles),
+              );
+            } catch (_) {}
+
+            success = true;
+            break;
+          }
         }
+      } catch (e) {
+        debugPrint('NewsAPI endpoint ($base) failed: $e');
+      }
+    }
 
-        // Cache in background
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(
-            'cached_news_$_selectedCategory',
-            jsonEncode(rawArticles),
-          );
-        } catch (_) {}
-      } else {
-        if (_articles.isEmpty && mounted) {
-          setState(() {
-            _isLoading = false;
-            _errorMessage = 'Could not load news feed (${response.statusCode})';
-          });
+    // Fallback: If category endpoints fail, try global everything feed (BBC News)
+    if (!success && _articles.isEmpty) {
+      try {
+        final fallbackUrl = Uri.parse(
+          'https://raw.githubusercontent.com/SauravKanchan/NewsAPI/master/everything/bbc-news.json',
+        );
+        final response = await http
+            .get(fallbackUrl)
+            .timeout(const Duration(seconds: 5));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final rawArticles = data['articles'] as List<dynamic>? ?? [];
+          final parsed = rawArticles
+              .map((item) => NewsArticle.fromJson(item as Map<String, dynamic>))
+              .where((a) => a.title.isNotEmpty && a.title != '[Removed]')
+              .toList();
+
+          if (parsed.isNotEmpty && mounted) {
+            setState(() {
+              _articles = parsed;
+              _isLoading = false;
+              _errorMessage = null;
+            });
+            success = true;
+          }
         }
-      }
-    } catch (e) {
-      if (_articles.isEmpty && mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = 'Network error. Please check your connection.';
-        });
-      }
+      } catch (_) {}
+    }
+
+    if (!success && _articles.isEmpty && mounted) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Could not load news feed. Tap to retry.';
+      });
     }
   }
 
@@ -173,13 +211,6 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
               fontWeight: FontWeight.bold,
             ),
           ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded),
-              tooltip: 'Refresh Feed',
-              onPressed: _fetchNews,
-            ),
-          ],
         ),
         body: Column(
           children: [

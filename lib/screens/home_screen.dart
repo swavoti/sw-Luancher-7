@@ -530,19 +530,48 @@ class HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHomeAppIcon(AppInfo app, double size) {
     Widget buildIcon(Uint8List? bytes) {
+      final isThemed = widget.prefs.getBool('themed_icons_enabled') ?? false;
+      final colors = Theme.of(context).colorScheme;
+
+      Widget iconWidget = bytes != null && bytes.isNotEmpty
+          ? Image.memory(
+              bytes,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              cacheWidth: (size * 3).round(),
+              gaplessPlayback: true,
+            )
+          : Icon(Icons.android, size: size);
+
+      if (isThemed) {
+        return IconShapeClipper(
+          shape: _iconShape,
+          size: size,
+          child: Container(
+            width: size,
+            height: size,
+            color: colors.primaryContainer,
+            alignment: Alignment.center,
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                colors.primary,
+                BlendMode.srcIn,
+              ),
+              child: SizedBox(
+                width: size * 0.58,
+                height: size * 0.58,
+                child: iconWidget,
+              ),
+            ),
+          ),
+        );
+      }
+
       return IconShapeClipper(
         shape: _iconShape,
         size: size,
-        child: bytes != null && bytes.isNotEmpty
-            ? Image.memory(
-                bytes,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                cacheWidth: (size * 3).round(),
-                gaplessPlayback: true,
-              )
-            : Icon(Icons.android, size: size),
+        child: iconWidget,
       );
     }
 
@@ -898,19 +927,65 @@ class HomeScreenState extends State<HomeScreen> {
                                     .where((i) => i.page == pageIndex)
                                     .toList();
 
-                                return Stack(
-                                  children: [
-                                    // Drop targets
-                                    for (int y = 0; y < _rows; y++)
-                                      for (int x = 0; x < _columns; x++)
-                                        Positioned(
-                                          left: x * cellWidth,
-                                          top: y * cellHeight,
-                                          width: cellWidth,
-                                          height: cellHeight,
-                                          child: DragTarget<Map<String, dynamic>>(
-                                            onWillAcceptWithDetails:
-                                                (details) => true,
+                                return _WorkspaceGridPage(
+                                  key: ValueKey('workspace_page_$pageIndex'),
+                                  child: Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      // Drop targets
+                                      for (int y = 0; y < _rows; y++)
+                                        for (int x = 0; x < _columns; x++)
+                                          Positioned(
+                                            key: ValueKey('cell_${pageIndex}_${x}_$y'),
+                                            left: x * cellWidth,
+                                            top: y * cellHeight,
+                                            width: cellWidth,
+                                            height: cellHeight,
+                                            child: DragTarget<Map<String, dynamic>>(
+                                              onWillAcceptWithDetails:
+                                                  (details) {
+                                                final data = details.data;
+                                                final spanX =
+                                                    data['spanX'] as int? ?? 1;
+                                                final spanY =
+                                                    data['spanY'] as int? ?? 1;
+                                                final itemId =
+                                                    data['id'] as String?;
+                                                final type =
+                                                    data['type'] as String?;
+
+                                                if (type == 'widget' ||
+                                                    type == 'widget_preview') {
+                                                  return _canPlaceSpanAt(
+                                                    x,
+                                                    y,
+                                                    spanX,
+                                                    spanY,
+                                                    pageIndex,
+                                                    ignoreItemId: itemId,
+                                                  );
+                                                }
+
+                                                if (x >= _columns || y >= _rows) {
+                                                  return false;
+                                                }
+                                                final itemAtCell = _items
+                                                    .where(
+                                                      (i) =>
+                                                          i.page == pageIndex &&
+                                                          i.x <= x &&
+                                                          x < i.x + i.spanX &&
+                                                          i.y <= y &&
+                                                          y < i.y + i.spanY &&
+                                                          i.id != itemId,
+                                                    )
+                                                    .firstOrNull;
+                                                if (itemAtCell != null &&
+                                                    itemAtCell.type == 'widget') {
+                                                  return false;
+                                                }
+                                                return true;
+                                              },
                                             onAcceptWithDetails: (details) {
                                               final data = details.data;
                                               final spanX =
@@ -1133,30 +1208,59 @@ class HomeScreenState extends State<HomeScreen> {
                                             },
                                             builder:
                                                 (context, candidateData, _) {
-                                                  return Container(
-                                                    margin:
-                                                        const EdgeInsets.all(4),
-                                                    decoration: BoxDecoration(
-                                                      border: Border.all(
-                                                        color:
-                                                            candidateData
-                                                                .isNotEmpty
-                                                            ? Theme.of(context)
-                                                                  .colorScheme
-                                                                  .primary
-                                                                  .withValues(
-                                                                    alpha: 0.5,
-                                                                  )
-                                                            : Colors
-                                                                  .transparent,
-                                                        width: 2,
+                                                  if (candidateData.isNotEmpty) {
+                                                    final data =
+                                                        candidateData.first;
+                                                    final spanX =
+                                                        (data?['spanX'] as int? ??
+                                                                1)
+                                                            .clamp(1, _columns);
+                                                    final spanY =
+                                                        (data?['spanY'] as int? ??
+                                                                1)
+                                                            .clamp(1, _rows);
+                                                    return OverflowBox(
+                                                      alignment:
+                                                          Alignment.topLeft,
+                                                      minWidth: 0,
+                                                      minHeight: 0,
+                                                      maxWidth:
+                                                          spanX * cellWidth,
+                                                      maxHeight:
+                                                          spanY * cellHeight,
+                                                      child: Container(
+                                                        width:
+                                                            spanX * cellWidth,
+                                                        height:
+                                                            spanY * cellHeight,
+                                                        margin:
+                                                            const EdgeInsets.all(
+                                                              4,
+                                                            ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                              color: Theme.of(
+                                                                context,
+                                                              ).colorScheme.primary.withValues(
+                                                                alpha: 0.18,
+                                                              ),
+                                                              border: Border.all(
+                                                                color: Theme.of(
+                                                                  context,
+                                                                ).colorScheme.primary.withValues(
+                                                                  alpha: 0.8,
+                                                                ),
+                                                                width: 2,
+                                                              ),
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    16,
+                                                                  ),
+                                                            ),
                                                       ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
-                                                          ),
-                                                    ),
-                                                  );
+                                                    );
+                                                  }
+                                                  return const SizedBox.shrink();
                                                 },
                                           ),
                                         ),
@@ -1164,6 +1268,7 @@ class HomeScreenState extends State<HomeScreen> {
                                     // Placed Items
                                     ...pageItems.map((item) {
                                       return Positioned(
+                                        key: ValueKey('grid_item_${item.id}'),
                                         left: item.x * cellWidth,
                                         top: item.y * cellHeight,
                                         width: item.spanX * cellWidth,
@@ -1378,8 +1483,9 @@ class HomeScreenState extends State<HomeScreen> {
                                         ),
                                       ),
                                   ],
-                                );
-                              },
+                                ),
+                              );
+                            },
                             );
                           },
                         ),
@@ -1555,6 +1661,7 @@ class HomeScreenState extends State<HomeScreen> {
 
                               ...dockItems.map((item) {
                                 return Positioned(
+                                  key: ValueKey('dock_item_${item.id}'),
                                   left: item.x * cellWidth,
                                   top: 0,
                                   width: cellWidth,
@@ -1718,7 +1825,10 @@ class HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
-          child: _WidgetWrapper(appWidgetId: item.appWidgetId!),
+          child: _WidgetWrapper(
+            key: ValueKey('widget_view_${item.appWidgetId}'),
+            appWidgetId: item.appWidgetId!,
+          ),
         ),
       );
       if (!isFeedback && _editingWidgetId == item.id) {
@@ -1729,6 +1839,7 @@ class HomeScreenState extends State<HomeScreen> {
       return Padding(
         padding: const EdgeInsets.all(8.0),
         child: SearchWidget(
+          key: ValueKey('search_widget_${item.id}'),
           onRemove: () {
             setState(() {
               _items.removeWhere((i) => i.id == item.id);
@@ -1739,6 +1850,7 @@ class HomeScreenState extends State<HomeScreen> {
       );
     } else if (item.type == 'time_weather_widget') {
       return TimeWeatherWidget(
+        key: ValueKey('time_weather_widget_${item.id}'),
         onRemove: () {
           setState(() {
             _items.removeWhere((i) => i.id == item.id);
@@ -2422,18 +2534,36 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  bool _canMoveWidgetTo(LauncherItem item, int x, int y, int page) {
-    if (x < 0 || y < 0 || x + item.spanX > _columns || y + item.spanY > _rows) {
+  bool _canPlaceSpanAt(
+    int x,
+    int y,
+    int spanX,
+    int spanY,
+    int page, {
+    String? ignoreItemId,
+  }) {
+    if (x < 0 || y < 0 || x + spanX > _columns || y + spanY > _rows) {
       return false;
     }
     return !_items.any(
       (other) =>
-          other.id != item.id &&
+          other.id != ignoreItemId &&
           other.page == page &&
           x < other.x + other.spanX &&
-          x + item.spanX > other.x &&
+          x + spanX > other.x &&
           y < other.y + other.spanY &&
-          y + item.spanY > other.y,
+          y + spanY > other.y,
+    );
+  }
+
+  bool _canMoveWidgetTo(LauncherItem item, int x, int y, int page) {
+    return _canPlaceSpanAt(
+      x,
+      y,
+      item.spanX,
+      item.spanY,
+      page,
+      ignoreItemId: item.id,
     );
   }
 
@@ -2581,6 +2711,26 @@ class HomeScreenState extends State<HomeScreen> {
           ),
       ],
     );
+  }
+}
+
+class _WorkspaceGridPage extends StatefulWidget {
+  final Widget child;
+  const _WorkspaceGridPage({super.key, required this.child});
+
+  @override
+  State<_WorkspaceGridPage> createState() => _WorkspaceGridPageState();
+}
+
+class _WorkspaceGridPageState extends State<_WorkspaceGridPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 

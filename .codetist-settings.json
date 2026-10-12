@@ -42,5 +42,6 @@
   ],
   "appearance-tabSize": "8",
   "appearance-fontSize": "13",
-  "appearance-fontFamily": "monospace"
+  "appearance-fontFamily": "monospace",
+  "appearance-wordWrap": false
 }
