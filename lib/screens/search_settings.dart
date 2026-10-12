@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/screens/browser_selection.dart';
-import 'package:swavoti/services/launcher_service.dart';
+
 
 class SearchSettingsScreen extends StatefulWidget {
   const SearchSettingsScreen({super.key});
@@ -14,7 +14,6 @@ class SearchSettingsScreen extends StatefulWidget {
 class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   bool _showSearchWidget = true;
   String _searchBarStyle = 'normal';
-  String? _browserPackage;
 
   @override
   void initState() {
@@ -38,7 +37,6 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
       setState(() {
         _showSearchWidget = hasSearchWidget;
         _searchBarStyle = prefs.getString('search_bar_style') ?? 'normal';
-        _browserPackage = prefs.getString('search_browser_package');
       });
     }
   }

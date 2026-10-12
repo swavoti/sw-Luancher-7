@@ -78,6 +78,26 @@ class AppLockService {
     await preferences.setStringList(_lockedPackagesKey, packages);
   }
 
+  static final Map<String, DateTime> _unlockedSessions = {};
+
+  static bool isSessionUnlocked(String packageName) {
+    final expiry = _unlockedSessions[packageName];
+    if (expiry == null) return false;
+    if (DateTime.now().isAfter(expiry)) {
+      _unlockedSessions.remove(packageName);
+      return false;
+    }
+    return true;
+  }
+
+  static void unlockSession(String packageName, {Duration duration = const Duration(seconds: 30)}) {
+    _unlockedSessions[packageName] = DateTime.now().add(duration);
+  }
+
+  static void clearUnlockedSessions() {
+    _unlockedSessions.clear();
+  }
+
   static Future<void> launchApp(
     BuildContext context,
     String packageName, {
@@ -87,7 +107,7 @@ class AppLockService {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final packages = await lockedPackages();
-      if (!packages.contains(packageName)) {
+      if (!packages.contains(packageName) || isSessionUnlocked(packageName)) {
         await LauncherService.startApp(packageName, splitScreen: splitScreen);
         return;
       }
@@ -107,8 +127,10 @@ class AppLockService {
         MaterialPageRoute(
           builder: (_) => AppLockPinScreen(
             mode: AppLockPinMode.verify,
-            onVerified: () =>
-                LauncherService.startApp(packageName, splitScreen: splitScreen),
+            onVerified: () async {
+              unlockSession(packageName);
+              await LauncherService.startApp(packageName, splitScreen: splitScreen);
+            },
           ),
         ),
       );

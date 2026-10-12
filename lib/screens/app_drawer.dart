@@ -47,60 +47,7 @@ class _WorkspaceItemData {
   };
 }
 
-class _AppDrawerPageScrollPhysics extends PageScrollPhysics {
-  const _AppDrawerPageScrollPhysics({required this.startPage, super.parent});
 
-  final int Function() startPage;
-  static final SpringDescription _pageSpring =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 1600, ratio: 1);
-
-  @override
-  Simulation? createBallisticSimulation(
-    ScrollMetrics position,
-    double velocity,
-  ) {
-    if (position.outOfRange || position.viewportDimension <= 0) {
-      return super.createBallisticSimulation(position, velocity);
-    }
-
-    final viewport = position.viewportDimension;
-    final firstPage = (position.minScrollExtent / viewport).ceil();
-    final lastPage = (position.maxScrollExtent / viewport).floor();
-    final originPage = startPage().clamp(firstPage, lastPage).toInt();
-    final currentPage = position.pixels / viewport;
-    final progress = currentPage - originPage;
-
-    var targetPage = originPage;
-    if (velocity.abs() >= 300) {
-      targetPage += velocity.sign.toInt();
-    } else if (progress.abs() >= 0.12) {
-      targetPage += progress.sign.toInt();
-    }
-    targetPage = targetPage.clamp(firstPage, lastPage).toInt();
-
-    final targetPixels = targetPage.toDouble() * viewport;
-    final tolerance = toleranceFor(position);
-    if ((targetPixels - position.pixels).abs() < tolerance.distance) {
-      return null;
-    }
-
-    return ScrollSpringSimulation(
-      _pageSpring,
-      position.pixels,
-      targetPixels,
-      velocity,
-      tolerance: tolerance,
-    );
-  }
-
-  @override
-  _AppDrawerPageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _AppDrawerPageScrollPhysics(
-      startPage: startPage,
-      parent: buildParent(ancestor),
-    );
-  }
-}
 
 class AppDrawerState extends State<AppDrawer> {
   List<AppInfo> _apps = [];
@@ -115,15 +62,7 @@ class AppDrawerState extends State<AppDrawer> {
   String _iconPack = '';
   int _iconGeneration = 0;
   int _currentPage = 0;
-  int _pageSwipeStartPage = 0;
   DateTime? _lastLightweightAppRefresh;
-
-  // Grid scroll key
-  final GlobalKey _gridKey = GlobalKey();
-
-  // Approximate row height in the grid
-  static const double _cellSize = 90.0; // approx icon cell height
-  static const int _gridColumns = 4;
 
   @override
   void initState() {
@@ -470,24 +409,10 @@ class AppDrawerState extends State<AppDrawer> {
                     return Column(
                       children: [
                         Expanded(
-                          child: NotificationListener<ScrollStartNotification>(
-                            onNotification: (notification) {
-                              if (notification.dragDetails != null &&
-                                  notification.metrics.viewportDimension > 0) {
-                                _pageSwipeStartPage =
-                                    (notification.metrics.pixels /
-                                            notification
-                                                .metrics
-                                                .viewportDimension)
-                                        .round();
-                              }
-                              return false;
-                            },
-                            child: PageView.builder(
-                              physics: _AppDrawerPageScrollPhysics(
-                                startPage: () => _pageSwipeStartPage,
-                                parent: const ClampingScrollPhysics(),
-                              ),
+                          child: PageView.builder(
+                            physics: const BouncingScrollPhysics(
+                              parent: PageScrollPhysics(),
+                            ),
                               itemCount: pages,
                               onPageChanged: (page) {
                                 _currentPage = page;
@@ -518,46 +443,21 @@ class AppDrawerState extends State<AppDrawer> {
                                 );
                                 final pageApps = gridApps.sublist(start, end);
 
-                                return GridView.builder(
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    0,
-                                    16,
-                                    16,
-                                  ),
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 4,
-                                        mainAxisSpacing: 12,
-                                        crossAxisSpacing: 8,
-                                        childAspectRatio: 0.82,
-                                      ),
-                                  itemCount: pageApps.length,
-                                  itemBuilder: (context, index) {
-                                    final app = pageApps[index];
-                                    final notificationCount =
-                                        _notificationDotsEnabled
-                                        ? (widget.notifications[app
-                                                  .packageName] ??
-                                              0)
-                                        : 0;
-                                    return _AppDrawerItem(
-                                      key: ValueKey(app.packageName),
-                                      app: app,
-                                      notificationCount: notificationCount,
-                                      onCloseDrawer: widget.onClose,
-                                      iconShape: _iconShape,
-                                      onDragStarted: widget.onDragStarted,
-                                      onDragEnded: widget.onDragEnded,
-                                      iconGeneration: _iconGeneration,
-                                    );
-                                  },
+                                return _AppDrawerGridPage(
+                                  key: ValueKey('drawer_page_$pageIndex'),
+                                  apps: pageApps,
+                                  iconShape: _iconShape,
+                                  notificationDotsEnabled:
+                                      _notificationDotsEnabled,
+                                  notifications: widget.notifications,
+                                  onCloseDrawer: widget.onClose,
+                                  onDragStarted: widget.onDragStarted,
+                                  onDragEnded: widget.onDragEnded,
+                                  iconGeneration: _iconGeneration,
                                 );
                               },
                             ),
                           ),
-                        ),
                         if (pages > 1)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
@@ -644,6 +544,72 @@ class AppDrawerState extends State<AppDrawer> {
   }
 }
 
+// ─── App Drawer Grid Page (Preserved in Memory) ─────────────────────────────
+
+class _AppDrawerGridPage extends StatefulWidget {
+  final List<AppInfo> apps;
+  final String iconShape;
+  final bool notificationDotsEnabled;
+  final Map<String, int> notifications;
+  final VoidCallback onCloseDrawer;
+  final void Function(String packageName)? onDragStarted;
+  final VoidCallback? onDragEnded;
+  final int iconGeneration;
+
+  const _AppDrawerGridPage({
+    super.key,
+    required this.apps,
+    required this.iconShape,
+    required this.notificationDotsEnabled,
+    required this.notifications,
+    required this.onCloseDrawer,
+    this.onDragStarted,
+    this.onDragEnded,
+    required this.iconGeneration,
+  });
+
+  @override
+  State<_AppDrawerGridPage> createState() => _AppDrawerGridPageState();
+}
+
+class _AppDrawerGridPageState extends State<_AppDrawerGridPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return GridView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.82,
+      ),
+      itemCount: widget.apps.length,
+      itemBuilder: (context, index) {
+        final app = widget.apps[index];
+        final notificationCount = widget.notificationDotsEnabled
+            ? (widget.notifications[app.packageName] ?? 0)
+            : 0;
+        return _AppDrawerItem(
+          key: ValueKey(app.packageName),
+          app: app,
+          notificationCount: notificationCount,
+          onCloseDrawer: widget.onCloseDrawer,
+          iconShape: widget.iconShape,
+          onDragStarted: widget.onDragStarted,
+          onDragEnded: widget.onDragEnded,
+          iconGeneration: widget.iconGeneration,
+        );
+      },
+    );
+  }
+}
+
 // ─── App Drawer Item ─────────────────────────────────────────────────────────
 
 class _AppDrawerItem extends StatefulWidget {
@@ -653,7 +619,6 @@ class _AppDrawerItem extends StatefulWidget {
   final String iconShape;
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
-  final void Function(Map<String, dynamic>)? onAddToHomeScreen;
   final int iconGeneration;
 
   const _AppDrawerItem({
@@ -664,7 +629,6 @@ class _AppDrawerItem extends StatefulWidget {
     required this.iconShape,
     this.onDragStarted,
     this.onDragEnded,
-    this.onAddToHomeScreen,
     required this.iconGeneration,
   });
 
@@ -672,7 +636,11 @@ class _AppDrawerItem extends StatefulWidget {
   State<_AppDrawerItem> createState() => _AppDrawerItemState();
 }
 
-class _AppDrawerItemState extends State<_AppDrawerItem> {
+class _AppDrawerItemState extends State<_AppDrawerItem>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   bool _dragStarted = false;
   Uint8List? _icon;
   int _iconLoadGeneration = 0;
@@ -815,6 +783,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final cs = Theme.of(context).colorScheme;
     final app = widget.app;
     final icon = _icon ?? AppDatabaseService.getCachedIcon(app.packageName);
@@ -835,7 +804,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
         _dragStarted = false;
         widget.onDragEnded?.call();
       },
-      onDraggableCanceled: (_, __) {
+      onDraggableCanceled: (velocity, offset) {
         _dragStarted = false;
         widget.onDragEnded?.call();
       },
@@ -890,6 +859,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
                       width: 48,
                       height: 48,
                       cacheWidth: 144,
+                      gaplessPlayback: true,
                     )
                   : _AppPlaceholder(
                       name: app.name,
@@ -920,26 +890,21 @@ class _AppDrawerItemState extends State<_AppDrawerItem> {
                 IconShapeClipper(
                   shape: widget.iconShape,
                   size: 48,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 150),
-                    switchInCurve: Curves.easeIn,
-                    switchOutCurve: Curves.easeOut,
-                    child: icon != null
-                        ? Image.memory(
-                            icon,
-                            key: ValueKey('icon_${app.packageName}'),
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            cacheWidth: 144,
-                            gaplessPlayback: true,
-                          )
-                        : _AppPlaceholder(
-                            key: ValueKey('placeholder_${app.packageName}'),
-                            name: app.name,
-                            size: 48,
-                          ),
-                  ),
+                  child: icon != null
+                      ? Image.memory(
+                          icon,
+                          key: ValueKey('icon_${app.packageName}'),
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          cacheWidth: 144,
+                          gaplessPlayback: true,
+                        )
+                      : _AppPlaceholder(
+                          key: ValueKey('placeholder_${app.packageName}'),
+                          name: app.name,
+                          size: 48,
+                        ),
                 ),
                 if (widget.notificationCount > 0)
                   Positioned(

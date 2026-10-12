@@ -123,8 +123,8 @@ class WorkspaceState extends State<Workspace>
     }
     _drawerController.animateTo(
       1.0,
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutQuart,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = true);
   }
@@ -132,8 +132,8 @@ class WorkspaceState extends State<Workspace>
   void _closeDrawer() {
     _drawerController.animateTo(
       0.0,
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeInQuart,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = false);
     // Reset the inner scroll to top so it's fresh on next open
@@ -186,11 +186,11 @@ class WorkspaceState extends State<Workspace>
     final velocity = -(details.primaryVelocity ?? 0); // positive = swiping up
     final extent = _drawerController.value;
 
-    if (velocity > 300) {
+    if (velocity > 180) {
       _openDrawer();
-    } else if (velocity < -300) {
+    } else if (velocity < -180) {
       _closeDrawer();
-    } else if (extent >= 0.3) {
+    } else if (extent >= 0.25) {
       _openDrawer();
     } else {
       _closeDrawer();
@@ -226,14 +226,14 @@ class WorkspaceState extends State<Workspace>
     final velocity = details.primaryVelocity ?? 0; // positive = swiping down
     final extent = _drawerController.value;
 
-    if (velocity > 400) {
+    if (velocity > 180) {
       _closeDrawer();
-    } else if (velocity < -400) {
+    } else if (velocity < -180) {
       _openDrawer();
-    } else if (extent >= 0.5) {
-      _openDrawer();
+    } else if (extent <= 0.75) {
+      _closeDrawer();
     } else {
-      _closeDrawer();
+      _openDrawer();
     }
   }
 

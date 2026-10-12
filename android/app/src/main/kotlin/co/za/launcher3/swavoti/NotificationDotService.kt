@@ -61,14 +61,6 @@ class NotificationDotService : NotificationListenerService() {
         }
     }
 
-    private val mediaHandler = Handler(Looper.getMainLooper())
-    private val mediaRefreshTask = object : Runnable {
-        override fun run() {
-            refreshMedia()
-            mediaHandler.postDelayed(this, 1000)
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         activeService = this
@@ -78,8 +70,7 @@ class NotificationDotService : NotificationListenerService() {
         try {
             super.onListenerConnected()
             updateNotifications()
-            mediaHandler.removeCallbacks(mediaRefreshTask)
-            mediaHandler.post(mediaRefreshTask)
+            refreshMedia()
         } catch (e: Exception) {
             android.util.Log.w("NotificationDotService", "Listener connection failed", e)
         }
@@ -96,14 +87,12 @@ class NotificationDotService : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
-        mediaHandler.removeCallbacks(mediaRefreshTask)
         mediaSnapshot = null
         emitMediaSnapshot()
         super.onListenerDisconnected()
     }
 
     override fun onDestroy() {
-        mediaHandler.removeCallbacks(mediaRefreshTask)
         mediaSnapshot = null
         emitMediaSnapshot()
         if (activeService === this) activeService = null

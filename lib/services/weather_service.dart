@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WeatherData {
   final double temperature;
@@ -138,24 +140,12 @@ class WeatherService {
         cityName = location['name'] as String? ?? trimmedCity;
         country = location['country'] as String? ?? '';
       } else {
-        final locationRes = await http.get(Uri.parse(_ipApiUrl));
-        if (locationRes.statusCode != 200) return null;
-
-        final locationData =
-            jsonDecode(locationRes.body) as Map<String, dynamic>;
-        final loc = locationData['loc'] as String?;
-        if (loc == null) return null;
-
-        final parts = loc.split(',');
-        if (parts.length != 2) return null;
-
-        final lat = double.tryParse(parts[0]);
-        final lon = double.tryParse(parts[1]);
-        if (lat == null || lon == null) return null;
-        latitude = lat;
-        longitude = lon;
-        cityName = locationData['city'] as String? ?? '';
-        country = locationData['country'] as String? ?? '';
+        final details = await _resolveLocationDetails();
+        if (details == null) return null;
+        latitude = details.$1;
+        longitude = details.$2;
+        cityName = details.$3;
+        country = details.$4;
       }
 
       final weatherUrl = Uri.parse(
@@ -258,22 +248,79 @@ class WeatherService {
     }
   }
 
+  static Future<void> _cacheLocation(double lat, double lon, String city, String country) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('cached_weather_lat', lat);
+      await prefs.setDouble('cached_weather_lon', lon);
+      await prefs.setString('cached_weather_city', city);
+      await prefs.setString('cached_weather_country', country);
+    } catch (_) {}
+  }
+
+  static Future<(double, double, String, String)?> _getCachedLocation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lat = prefs.getDouble('cached_weather_lat');
+      final lon = prefs.getDouble('cached_weather_lon');
+      final city = prefs.getString('cached_weather_city') ?? '';
+      final country = prefs.getString('cached_weather_country') ?? '';
+      if (lat != null && lon != null) {
+        return (lat, lon, city, country);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<(double, double, String, String)?> _resolveLocationDetails() async {
+    // 1. Try ipinfo.io
+    try {
+      final res = await http.get(Uri.parse(_ipApiUrl)).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final loc = data['loc'] as String?;
+        if (loc != null && loc.contains(',')) {
+          final parts = loc.split(',');
+          final lat = double.tryParse(parts[0]);
+          final lon = double.tryParse(parts[1]);
+          if (lat != null && lon != null) {
+            final city = data['city'] as String? ?? '';
+            final country = data['country'] as String? ?? '';
+            unawaited(_cacheLocation(lat, lon, city, country));
+            return (lat, lon, city, country);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try freeipapi.com fallback
+    try {
+      final res = await http.get(Uri.parse('https://freeipapi.com/api/json')).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final lat = (data['latitude'] as num?)?.toDouble();
+        final lon = (data['longitude'] as num?)?.toDouble();
+        if (lat != null && lon != null) {
+          final city = data['cityName'] as String? ?? '';
+          final country = data['countryName'] as String? ?? '';
+          unawaited(_cacheLocation(lat, lon, city, country));
+          return (lat, lon, city, country);
+        }
+      }
+    } catch (_) {}
+
+    // 3. Try cached location from SharedPreferences
+    final cached = await _getCachedLocation();
+    if (cached != null) return cached;
+
+    // 4. Fallback defaults to South Africa (Johannesburg: -26.2041, 28.0473)
+    return (-26.2041, 28.0473, 'Johannesburg', 'South Africa');
+  }
+
   /// Cached coords helper.
   static Future<(double, double)?> _getLocation() async {
-    try {
-      final res = await http.get(Uri.parse(_ipApiUrl));
-      if (res.statusCode != 200) return null;
-      final data = jsonDecode(res.body);
-      final String? loc = data['loc'];
-      if (loc == null) return null;
-      final parts = loc.split(',');
-      if (parts.length != 2) return null;
-      final lat = double.tryParse(parts[0]);
-      final lon = double.tryParse(parts[1]);
-      if (lat == null || lon == null) return null;
-      return (lat, lon);
-    } catch (_) {
-      return null;
-    }
+    final details = await _resolveLocationDetails();
+    if (details == null) return null;
+    return (details.$1, details.$2);
   }
 }

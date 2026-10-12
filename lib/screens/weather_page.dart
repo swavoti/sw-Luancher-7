@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
+import 'package:swavoti/services/weather_alerts.dart';
 import 'package:swavoti/services/weather_service.dart';
 import 'package:swavoti/widgets/weather_icon.dart';
 
@@ -229,6 +230,7 @@ class _WeatherContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final alerts = WeatherAlerts.evaluate(data);
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(
         parent: BouncingScrollPhysics(),
@@ -334,6 +336,9 @@ class _WeatherContent extends StatelessWidget {
             ),
           ),
         ),
+
+        // ── Weather warnings / alerts ───────────────────────────
+        SliverToBoxAdapter(child: _WarningsSection(alerts: alerts)),
 
         // ── Hero current temperature ────────────────────────────
         SliverToBoxAdapter(
@@ -798,6 +803,193 @@ class _TempBar extends StatelessWidget {
         gradient: const LinearGradient(
           colors: [Color(0xFF7DD3FC), Color(0xFFFBBF24)],
         ),
+      ),
+    );
+  }
+}
+
+// ─── Weather warnings ───────────────────────────────────────────────────────
+
+class _WarningsSection extends StatelessWidget {
+  final List<WeatherAlert> alerts;
+
+  const _WarningsSection({required this.alerts});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    if (alerts.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+        child: Row(
+          children: [
+            Icon(Icons.verified_rounded, size: 16, color: cs.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'No active weather warnings',
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 16, color: cs.error),
+              const SizedBox(width: 8),
+              Text(
+                'WEATHER WARNINGS · ${alerts.length}',
+                style: TextStyle(
+                  color: cs.onSurfaceVariant,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (final alert in alerts)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: _AlertCard(alert: alert),
+          ),
+      ],
+    );
+  }
+}
+
+class _AlertCard extends StatelessWidget {
+  final WeatherAlert alert;
+
+  const _AlertCard({required this.alert});
+
+  IconData _iconFor(WeatherAlertType type) {
+    switch (type) {
+      case WeatherAlertType.thunderstorm:
+        return Icons.thunderstorm_rounded;
+      case WeatherAlertType.heavyRain:
+        return Icons.water_drop_rounded;
+      case WeatherAlertType.flooding:
+        return Icons.waves_rounded;
+      case WeatherAlertType.snow:
+        return Icons.ac_unit_rounded;
+      case WeatherAlertType.ice:
+        return Icons.severe_cold_rounded;
+      case WeatherAlertType.wind:
+        return Icons.air_rounded;
+      case WeatherAlertType.heat:
+        return Icons.local_fire_department_rounded;
+      case WeatherAlertType.cold:
+        return Icons.severe_cold_rounded;
+      case WeatherAlertType.fog:
+        return Icons.foggy;
+      case WeatherAlertType.lowVisibility:
+        return Icons.visibility_off_rounded;
+      case WeatherAlertType.uv:
+        return Icons.wb_sunny_rounded;
+      case WeatherAlertType.general:
+        return Icons.warning_amber_rounded;
+    }
+  }
+
+  (Color bg, Color fg, Color accent) _palette(ColorScheme cs) {
+    switch (alert.severity) {
+      case WeatherAlertSeverity.extreme:
+      case WeatherAlertSeverity.severe:
+        return (cs.errorContainer, cs.onErrorContainer, cs.error);
+      case WeatherAlertSeverity.moderate:
+        return (cs.tertiaryContainer, cs.onTertiaryContainer, cs.tertiary);
+      case WeatherAlertSeverity.minor:
+        return (cs.secondaryContainer, cs.onSecondaryContainer, cs.secondary);
+      case WeatherAlertSeverity.info:
+        return (cs.surfaceContainerHigh, cs.onSurface, cs.primary);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final (bg, fg, accent) = _palette(cs);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(_iconFor(alert.type), color: accent, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        alert.title,
+                        style: TextStyle(
+                          color: fg,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        alert.severity.label.toUpperCase(),
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  alert.description,
+                  style: TextStyle(
+                    color: fg.withValues(alpha: 0.85),
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
