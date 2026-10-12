@@ -911,6 +911,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
           final bounds = (renderBox != null && renderBox.hasSize)
               ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
               : null;
+          widget.onCloseDrawer();
           AppLockService.launchApp(
             context,
             app.packageName,

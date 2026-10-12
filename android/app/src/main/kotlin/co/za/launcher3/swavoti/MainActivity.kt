@@ -56,6 +56,7 @@ class MainActivity : FlutterActivity() {
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
     private var pendingWallpaperPickerResult: MethodChannel.Result? = null
+    private var lastLaunchedAppRect: RectF? = null
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val iconExecutor = Executors.newFixedThreadPool(
         Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
@@ -109,19 +110,17 @@ class MainActivity : FlutterActivity() {
             decor.getLocationOnScreen(location)
             val width = decor.width.takeIf { it > 0 } ?: metrics.widthPixels
             val height = decor.height.takeIf { it > 0 } ?: metrics.heightPixels
-            // A Flutter workspace can place icons dynamically, so use the launcher
-            // window as a safe transition target instead of returning no target.
+            // Use the launching icon bounds when available for fluid return animations,
+            // or safely fall back to the window decor bounds.
+            val iconPosition = lastLaunchedAppRect ?: RectF(
+                location[0].toFloat(),
+                location[1].toFloat(),
+                (location[0] + width).toFloat(),
+                (location[1] + height).toFloat()
+            )
             val result = Bundle().apply {
                 putParcelable("gesture_nav_contract_surface_control", null)
-                putParcelable(
-                    "gesture_nav_contract_icon_position",
-                    RectF(
-                        location[0].toFloat(),
-                        location[1].toFloat(),
-                        (location[0] + width).toFloat(),
-                        (location[1] + height).toFloat()
-                    )
-                )
+                putParcelable("gesture_nav_contract_icon_position", iconPosition)
             }
 
             when (callback) {
@@ -403,7 +402,13 @@ class MainActivity : FlutterActivity() {
                                         sourceX + sourceWidth,
                                         sourceY + sourceHeight
                                     )
-                                    ActivityOptions.makeClipRevealAnimation(
+                                    lastLaunchedAppRect = RectF(
+                                        sourceX.toFloat(),
+                                        sourceY.toFloat(),
+                                        (sourceX + sourceWidth).toFloat(),
+                                        (sourceY + sourceHeight).toFloat()
+                                    )
+                                    ActivityOptions.makeScaleUpAnimation(
                                         window.decorView,
                                         sourceX,
                                         sourceY,
@@ -411,6 +416,7 @@ class MainActivity : FlutterActivity() {
                                         sourceHeight
                                     )
                                 } else {
+                                    lastLaunchedAppRect = null
                                     ActivityOptions.makeBasic()
                                 }
 
