@@ -1,9 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:swavoti/screens/home_screen.dart';
+import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/services/weather_service.dart';
+import 'package:swavoti/widgets/icon_shape_clipper.dart';
+import 'package:swavoti/widgets/weather_icon.dart';
 
 class WallpaperPage extends StatefulWidget {
   final Uint8List? homeScreenScreenshot;
@@ -17,10 +24,28 @@ class _WallpaperPageState extends State<WallpaperPage> {
   List<String> _wallpapers = [];
   String _currentPreview = '';
   bool _isLoading = true;
+  DateTime _currentTime = DateTime.now();
+  Timer? _clockTimer;
+  WeatherData? _weatherData;
+  List<LauncherItem> _homeItems = [];
+  String _iconShape = 'Circle';
+  String _searchBarStyle = 'normal';
+  Map<String, Uint8List?> _appIcons = {};
+
   @override
   void initState() {
     super.initState();
     _loadWallpapers();
+    _loadHomePreviewData();
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _currentTime = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadWallpapers() async {
@@ -66,6 +91,102 @@ class _WallpaperPageState extends State<WallpaperPage> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _loadHomePreviewData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final shape = prefs.getString('icon_shape') ?? 'Circle';
+      final style = prefs.getString('search_bar_style') ?? 'normal';
+      final raw = prefs.getStringList('launcher_items') ?? [];
+
+      List<LauncherItem> items = raw
+          .map((s) => LauncherItem.fromJson(jsonDecode(s)))
+          .toList();
+
+      if (items.isEmpty) {
+        final defaultDock = [
+          'com.google.android.dialer',
+          'com.google.android.apps.messaging',
+          'com.android.chrome',
+          'com.google.android.youtube',
+        ];
+        items = [
+          for (int i = 0; i < defaultDock.length; i++)
+            LauncherItem(
+              id: 'dock_$i',
+              type: 'app',
+              packageName: defaultDock[i],
+              label: i == 0
+                  ? 'Phone'
+                  : i == 1
+                  ? 'Messages'
+                  : i == 2
+                  ? 'Chrome'
+                  : 'YouTube',
+              x: i,
+              y: 0,
+              page: -1,
+            ),
+          LauncherItem(
+            id: 'tw_default',
+            type: 'time_weather_widget',
+            packageName: '',
+            label: 'Time & Weather',
+            x: 0,
+            y: 0,
+            spanX: 4,
+            spanY: 1,
+            page: 0,
+          ),
+          LauncherItem(
+            id: 'search_default',
+            type: 'search_widget',
+            packageName: '',
+            label: 'Search',
+            x: 0,
+            y: 4,
+            spanX: 4,
+            spanY: 1,
+            page: 0,
+          ),
+        ];
+      }
+
+      final weather = await WeatherService.getCurrentWeather();
+
+      final packages = <String>{};
+      for (final item in items) {
+        if (item.type == 'app' && item.packageName.isNotEmpty) {
+          packages.add(item.packageName);
+        } else if (item.type == 'folder' && item.folderApps != null) {
+          packages.addAll(item.folderApps!.take(4));
+        }
+      }
+
+      final iconMap = <String, Uint8List?>{};
+      for (final pkg in packages) {
+        var icon = AppDatabaseService.getCachedIcon(pkg);
+        if (icon == null) {
+          try {
+            icon = await AppDatabaseService.loadIcon(pkg);
+          } catch (_) {}
+        }
+        iconMap[pkg] = icon;
+      }
+
+      if (mounted) {
+        setState(() {
+          _iconShape = shape;
+          _searchBarStyle = style;
+          _homeItems = items;
+          _weatherData = weather;
+          _appIcons = iconMap;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading home preview data: $e');
     }
   }
 
@@ -267,9 +388,9 @@ class _WallpaperPageState extends State<WallpaperPage> {
       appBar: AppBar(
         title: const Row(
           children: [
-            Icon(Icons.wallpaper),
+            Icon(Icons.palette_outlined),
             SizedBox(width: 8),
-            Text('Wallpapers'),
+            Text('Wallpapers & style'),
           ],
         ),
         backgroundColor: Colors.transparent,
@@ -293,7 +414,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
             )
           : Column(
               children: [
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
                 if (_currentPreview.isNotEmpty)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -310,30 +431,30 @@ class _WallpaperPageState extends State<WallpaperPage> {
                   ),
                 const Spacer(),
                 Padding(
-                  padding: const EdgeInsets.all(32.0),
+                  padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 28.0),
                   child: Column(
                     children: [
                       OutlinedButton.icon(
-                        icon: const Icon(Icons.edit),
+                        icon: const Icon(Icons.palette_outlined, size: 20),
                         label: const Text('Edit App Icons'),
                         style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 56),
+                          minimumSize: const Size(double.infinity, 44),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         onPressed: () {
                           Navigator.of(context).pushNamed('/edit_icons');
                         },
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       OutlinedButton.icon(
-                        icon: const Icon(Icons.photo_library),
+                        icon: const Icon(Icons.photo_library_outlined, size: 20),
                         label: const Text('Change Wallpaper'),
                         style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 56),
+                          minimumSize: const Size(double.infinity, 44),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                         ),
                         onPressed: _showWallpaperGrid,
@@ -346,44 +467,795 @@ class _WallpaperPageState extends State<WallpaperPage> {
     );
   }
 
+  String _formatDateShort(DateTime dt) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${weekdays[dt.weekday - 1]}, ${dt.day} ${months[dt.month - 1]}';
+  }
+
   Widget _buildPreviewScreen(String label, {required bool isLockScreen}) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(
       children: [
         Text(
           label,
           style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: colorScheme.onSurface.withOpacity(0.8),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface.withValues(alpha: 0.85),
           ),
         ),
-        const SizedBox(height: 16),
-        Container(
-          width: 150,
-          height: 300,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: colorScheme.outline, width: 4),
-            image: _currentPreview.isNotEmpty
-                ? DecorationImage(
-                    image: _currentPreview.startsWith('assets/')
-                        ? AssetImage(_currentPreview)
-                        : FileImage(File(_currentPreview)),
-                    fit: BoxFit.cover,
-                  )
-                : null,
+        const SizedBox(height: 12),
+        GestureDetector(
+          onTap: () {
+            if (_currentPreview.isNotEmpty) {
+              _showActionSheet(_currentPreview);
+            }
+          },
+          child: Container(
+            width: 154,
+            height: 312,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFF383838)
+                    : const Color(0xFFB0B0B0),
+                width: 3.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Wallpaper background
+                  if (_currentPreview.isNotEmpty)
+                    Image(
+                      image: _currentPreview.startsWith('assets/')
+                          ? AssetImage(_currentPreview) as ImageProvider
+                          : FileImage(File(_currentPreview)),
+                      fit: BoxFit.cover,
+                    )
+                  else
+                    Container(color: Colors.black87),
+
+                  // Vignette gradient for text contrast
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(
+                            alpha: isLockScreen ? 0.35 : 0.25,
+                          ),
+                          Colors.transparent,
+                          Colors.black.withValues(
+                            alpha: isLockScreen ? 0.45 : 0.35,
+                          ),
+                        ],
+                        stops: const [0.0, 0.4, 1.0],
+                      ),
+                    ),
+                  ),
+
+                  // Live Mockup Overlay
+                  if (isLockScreen)
+                    _buildLockScreenOverlay()
+                  else
+                    _buildHomeScreenOverlay(),
+                ],
+              ),
+            ),
           ),
-          child: Stack(
-            fit: StackFit.expand,
+        ),
+      ],
+    );
+  }
+
+  // ─── Home Screen Mockup Overlay ──────────────────────────────────────────
+
+  Widget _buildHomeScreenOverlay() {
+    final page0Apps = _homeItems
+        .where((i) => i.page == 0 && (i.type == 'app' || i.type == 'folder'))
+        .toList();
+    final dockApps = _homeItems
+        .where((i) => i.page == -1 && (i.type == 'app' || i.type == 'folder'))
+        .toList();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7.0, vertical: 6.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildMiniStatusBar(),
+          const SizedBox(height: 6),
+          _buildMiniTimeWeatherWidget(),
+          const SizedBox(height: 6),
+          Expanded(
+            child: _buildMiniWorkspaceGrid(page0Apps),
+          ),
+          _buildMiniPageDots(),
+          const SizedBox(height: 6),
+          _buildMiniSearchBar(),
+          const SizedBox(height: 6),
+          _buildMiniDock(dockApps),
+          const SizedBox(height: 4),
+          _buildMiniHomeIndicator(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniStatusBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          '${_currentTime.hour}:${_currentTime.minute.toString().padLeft(2, '0')}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 7.5,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.wifi, size: 7.5, color: Colors.white),
+            SizedBox(width: 2),
+            Icon(Icons.signal_cellular_alt, size: 7.5, color: Colors.white),
+            SizedBox(width: 2),
+            Icon(Icons.battery_full, size: 8, color: Colors.white),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniTimeWeatherWidget() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '${_currentTime.hour}:${_currentTime.minute.toString().padLeft(2, '0')}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -1,
+            height: 1.0,
+            shadows: [
+              Shadow(
+                blurRadius: 4,
+                color: Colors.black54,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _formatDateShort(_currentTime),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.9),
+                fontSize: 7.5,
+                fontWeight: FontWeight.w600,
+                shadows: const [Shadow(blurRadius: 2, color: Colors.black54)],
+              ),
+            ),
+            if (_weatherData != null) ...[
+              const SizedBox(width: 4),
+              WeatherIcon(
+                weatherCode: _weatherData!.weatherCode,
+                size: 9,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                '${_weatherData!.temperature.round()}°',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniWorkspaceGrid(List<LauncherItem> page0Apps) {
+    if (page0Apps.isNotEmpty) {
+      final displayApps = page0Apps.take(8).toList();
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              if (widget.homeScreenScreenshot != null)
-                Image.memory(widget.homeScreenScreenshot!, fit: BoxFit.cover),
+              for (int i = 0; i < 4; i++)
+                if (i < displayApps.length)
+                  _buildMiniAppItem(displayApps[i])
+                else
+                  const SizedBox(width: 28, height: 32),
+            ],
+          ),
+          if (displayApps.length > 4) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                for (int i = 4; i < 8; i++)
+                  if (i < displayApps.length)
+                    _buildMiniAppItem(displayApps[i])
+                  else
+                    const SizedBox(width: 28, height: 32),
+              ],
+            ),
+          ],
+        ],
+      );
+    }
+
+    return Center(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildMiniAppIconWithLabel(
+            packageName: 'com.android.camera',
+            label: 'Camera',
+            size: 20,
+          ),
+          _buildMiniAppIconWithLabel(
+            packageName: 'com.google.android.apps.photos',
+            label: 'Photos',
+            size: 20,
+          ),
+          _buildMiniAppIconWithLabel(
+            packageName: 'com.android.vending',
+            label: 'Store',
+            size: 20,
+          ),
+          _buildMiniAppIconWithLabel(
+            packageName: 'com.android.settings',
+            label: 'Settings',
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniAppItem(LauncherItem item) {
+    return SizedBox(
+      width: 28,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (item.type == 'folder')
+            _buildMiniFolderIcon(item, 20)
+          else
+            _buildMiniAppIcon(
+              packageName: item.packageName,
+              label: item.label,
+              size: 20,
+            ),
+          const SizedBox(height: 2),
+          Text(
+            item.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 6,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              shadows: [Shadow(blurRadius: 2, color: Colors.black87)],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniAppIconWithLabel({
+    required String? packageName,
+    required String label,
+    required double size,
+  }) {
+    return SizedBox(
+      width: 28,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildMiniAppIcon(
+            packageName: packageName,
+            label: label,
+            size: size,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 6,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
+              shadows: [Shadow(blurRadius: 2, color: Colors.black87)],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniAppIcon({
+    required String? packageName,
+    required String label,
+    required double size,
+  }) {
+    final icon = packageName != null ? _appIcons[packageName] : null;
+
+    Widget iconChild;
+    if (icon != null) {
+      iconChild = Image.memory(
+        icon,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+      );
+    } else {
+      final color = _colorForPackage(packageName ?? label);
+      final iconData = _fallbackIconForPackage(packageName);
+      iconChild = Container(
+        width: size,
+        height: size,
+        color: color,
+        child: Center(
+          child: iconData != null
+              ? Icon(iconData, size: size * 0.55, color: Colors.white)
+              : Text(
+                  label.isNotEmpty ? label[0].toUpperCase() : '?',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: size * 0.45,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+        ),
+      );
+    }
+
+    return IconShapeClipper(
+      shape: _iconShape,
+      size: size,
+      child: iconChild,
+    );
+  }
+
+  Widget _buildMiniFolderIcon(LauncherItem folder, double size) {
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(2.5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(size * 0.28),
+        border: Border.all(color: Colors.white24, width: 0.5),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 1.5,
+        runSpacing: 1.5,
+        children: [
+          for (int i = 0; i < 4; i++)
+            Container(
+              width: (size - 8) / 2,
+              height: (size - 8) / 2,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.8),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniPageDots() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 3.5,
+          height: 3.5,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.7),
+              width: 0.7,
+            ),
+          ),
+        ),
+        const SizedBox(width: 3),
+        Container(
+          width: 7,
+          height: 3,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(1.5),
+          ),
+        ),
+        const SizedBox(width: 3),
+        Container(
+          width: 3,
+          height: 3,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.4),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniSearchBar() {
+    return Container(
+      height: 17,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(
+          _searchBarStyle == 'pill' ? 9.0 : 4.0,
+        ),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.25),
+          width: 0.6,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, size: 8, color: Colors.white70),
+          const SizedBox(width: 4),
+          const Expanded(
+            child: Text(
+              'Search',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 6.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const Icon(Icons.mic_rounded, size: 8, color: Colors.white70),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniDock(List<LauncherItem> dockApps) {
+    if (dockApps.isNotEmpty) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          for (final item in dockApps.take(4))
+            if (item.type == 'folder')
+              _buildMiniFolderIcon(item, 20)
+            else
+              _buildMiniAppIcon(
+                packageName: item.packageName,
+                label: item.label,
+                size: 20,
+              ),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        _buildMiniAppIcon(
+          packageName: 'com.google.android.dialer',
+          label: 'Phone',
+          size: 20,
+        ),
+        _buildMiniAppIcon(
+          packageName: 'com.google.android.apps.messaging',
+          label: 'Messages',
+          size: 20,
+        ),
+        _buildMiniAppIcon(
+          packageName: 'com.android.chrome',
+          label: 'Chrome',
+          size: 20,
+        ),
+        _buildMiniAppIcon(
+          packageName: 'com.google.android.youtube',
+          label: 'YouTube',
+          size: 20,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniHomeIndicator() {
+    return Center(
+      child: Container(
+        width: 28,
+        height: 2,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(1),
+        ),
+      ),
+    );
+  }
+
+  // ─── Lock Screen Mockup Overlay ──────────────────────────────────────────
+
+  Widget _buildLockScreenOverlay() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildLockStatusBar(),
+          Expanded(
+            child: Center(
+              child: _buildAndroidDynamicClock(),
+            ),
+          ),
+          _buildLockBottomControls(),
+          const SizedBox(height: 3),
+          _buildMiniHomeIndicator(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLockStatusBar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Icon(Icons.lock_outline_rounded, size: 9, color: Colors.white70),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.wifi, size: 7.5, color: Colors.white),
+            SizedBox(width: 2),
+            Icon(Icons.battery_full, size: 8, color: Colors.white),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAndroidDynamicClock() {
+    final hour = _currentTime.hour.toString().padLeft(2, '0');
+    final minute = _currentTime.minute.toString().padLeft(2, '0');
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          hour,
+          style: const TextStyle(
+            fontSize: 48,
+            fontWeight: FontWeight.w900,
+            height: 0.85,
+            letterSpacing: -2,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                blurRadius: 16,
+                color: Colors.black45,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          minute,
+          style: const TextStyle(
+            fontSize: 48,
+            fontWeight: FontWeight.w900,
+            height: 0.85,
+            letterSpacing: -2,
+            color: Colors.white,
+            shadows: [
+              Shadow(
+                blurRadius: 16,
+                color: Colors.black45,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.15),
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _formatDateShort(_currentTime),
+                style: const TextStyle(
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
+                ),
+              ),
+              if (_weatherData != null) ...[
+                const Text(
+                  '  •  ',
+                  style: TextStyle(fontSize: 7, color: Colors.white70),
+                ),
+                WeatherIcon(
+                  weatherCode: _weatherData!.weatherCode,
+                  size: 9,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  '${_weatherData!.temperature.round()}°',
+                  style: const TextStyle(
+                    fontSize: 7.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildLockBottomControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black.withValues(alpha: 0.3),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.25),
+              width: 0.6,
+            ),
+          ),
+          child: const Icon(
+            Icons.flashlight_on_rounded,
+            size: 10,
+            color: Colors.white,
+          ),
+        ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.fingerprint_rounded,
+              size: 19,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              'Swipe to unlock',
+              style: TextStyle(
+                fontSize: 5.5,
+                color: Colors.white.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black.withValues(alpha: 0.3),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.25),
+              width: 0.6,
+            ),
+          ),
+          child: const Icon(
+            Icons.camera_alt_rounded,
+            size: 10,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _colorForPackage(String text) {
+    final hash = text.hashCode.abs();
+    const colors = [
+      Color(0xFF1E88E5),
+      Color(0xFF43A047),
+      Color(0xFFE53935),
+      Color(0xFFFB8C00),
+      Color(0xFF8E24AA),
+      Color(0xFF00ACC1),
+      Color(0xFF3949AB),
+      Color(0xFFD81B60),
+    ];
+    return colors[hash % colors.length];
+  }
+
+  IconData? _fallbackIconForPackage(String? pkg) {
+    if (pkg == null) return null;
+    final lower = pkg.toLowerCase();
+    if (lower.contains('dialer') || lower.contains('phone')) {
+      return Icons.phone_rounded;
+    }
+    if (lower.contains('message') || lower.contains('sms')) {
+      return Icons.chat_bubble_rounded;
+    }
+    if (lower.contains('chrome') || lower.contains('browser')) {
+      return Icons.language_rounded;
+    }
+    if (lower.contains('youtube') || lower.contains('video')) {
+      return Icons.play_arrow_rounded;
+    }
+    if (lower.contains('camera')) return Icons.camera_alt_rounded;
+    if (lower.contains('photo') || lower.contains('gallery')) {
+      return Icons.photo_library_rounded;
+    }
+    if (lower.contains('setting')) return Icons.settings_rounded;
+    if (lower.contains('vending') || lower.contains('store')) {
+      return Icons.shopping_bag_rounded;
+    }
+    return null;
   }
 }
