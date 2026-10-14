@@ -11,8 +11,8 @@ class LightweightMode {
     AppDatabaseService.setLightweightMode(enabled);
 
     final imageCache = PaintingBinding.instance.imageCache;
-    imageCache.maximumSize = enabled ? 100 : 400;
-    imageCache.maximumSizeBytes = enabled ? 24 << 20 : 80 << 20;
+    imageCache.maximumSize = enabled ? 350 : 800;
+    imageCache.maximumSizeBytes = enabled ? 64 << 20 : 180 << 20;
 
     if (enabled && changed) {
       imageCache.clear();

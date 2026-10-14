@@ -372,18 +372,24 @@ class MainActivity : FlutterActivity() {
                         try {
                             var monoDrawable: Drawable? = null
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                                val activityComponent = launchIntent?.component
-                                val rawDrawable = if (activityComponent != null) {
-                                    try {
-                                        packageManager.getActivityIcon(activityComponent)
-                                    } catch (e: Throwable) {
+                                val launcherApps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as? android.content.pm.LauncherApps
+                                val activities = launcherApps?.getActivityList(packageName, android.os.Process.myUserHandle())
+                                val rawDrawable = if (!activities.isNullOrEmpty()) {
+                                    activities[0].getIcon(resources.displayMetrics.densityDpi)
+                                } else {
+                                    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                                    val activityComponent = launchIntent?.component
+                                    if (activityComponent != null) {
+                                        try {
+                                            packageManager.getActivityIcon(activityComponent)
+                                        } catch (e: Throwable) {
+                                            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                                            packageManager.getApplicationIcon(appInfo)
+                                        }
+                                    } else {
                                         val appInfo = packageManager.getApplicationInfo(packageName, 0)
                                         packageManager.getApplicationIcon(appInfo)
                                     }
-                                } else {
-                                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
-                                    packageManager.getApplicationIcon(appInfo)
                                 }
 
                                 if (rawDrawable is android.graphics.drawable.AdaptiveIconDrawable) {

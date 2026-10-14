@@ -1,5 +1,6 @@
-import 'dart:typed_data';
 import 'dart:async';
+import 'dart:math';
+import 'dart:typed_data';
 
 import "package:swavoti/services/launcher_service.dart";
 import 'package:flutter/foundation.dart';
@@ -18,7 +19,7 @@ class AppDatabaseService {
   static final Map<String, MemoryImage> _memoryImageCache = {};
   static final Map<String, Uint8List?> _monochromeCache = {};
   static bool _lightweightMode = false;
-  static int get _maxIconCacheBytes => _lightweightMode ? 32 << 20 : 128 << 20;
+  static int get _maxIconCacheBytes => _lightweightMode ? 128 << 20 : 256 << 20;
   static int _iconCacheBytes = 0;
   static int _iconCacheGeneration = 0;
   static String currentIconPack = "";
@@ -26,7 +27,7 @@ class AppDatabaseService {
 
   static final List<void Function()> _taskQueue = [];
   static int _runningTasks = 0;
-  static int get _maxConcurrentTasks => _lightweightMode ? 1 : 4;
+  static int get _maxConcurrentTasks => _lightweightMode ? 6 : 12;
 
   static void setLightweightMode(bool enabled) {
     _lightweightMode = enabled;
@@ -417,26 +418,103 @@ class AppDatabaseService {
     }
   }
 
-  static Future<void> prefetchIcons(Iterable<String> packageNames) async {
-    final inflightSuffix = '\u0000$currentIconPack\u0000$_iconCacheGeneration';
-    final pending = packageNames
-        .where(
-          (p) =>
-              !_iconCache.containsKey(p) &&
-              !_inflight.containsKey('$p$inflightSuffix'),
-        )
-        .toList();
-    if (pending.isEmpty) return;
+  /// High-speed batch icon loader: retrieves multiple icons in 1 single SQLite query,
+  /// warms memory cache in parallel, and fetches missing icons concurrently.
+  static Future<Map<String, Uint8List>> loadIconsBatch(List<String> packageNames) async {
+    if (packageNames.isEmpty) return {};
+    final result = <String, Uint8List>{};
+    final missing = <String>[];
 
-    var cursor = 0;
-    Future<void> worker() async {
-      while (cursor < pending.length) {
-        final index = cursor++;
-        await loadIcon(pending[index]);
+    for (final pkg in packageNames) {
+      final cached = _iconCache[pkg];
+      if (cached != null && cached.isNotEmpty) {
+        result[pkg] = cached;
+      } else {
+        missing.add(pkg);
       }
     }
 
-    await Future.wait(List.generate(_lightweightMode ? 1 : 6, (_) => worker()));
+    if (missing.isEmpty) return result;
+
+    try {
+      final db = await database;
+      final iconPack = currentIconPack;
+      final needsNative = <String>[];
+      const chunkSize = 60;
+
+      for (var i = 0; i < missing.length; i += chunkSize) {
+        final chunk = missing.sublist(i, min(i + chunkSize, missing.length));
+        final placeholders = List.filled(chunk.length, '?').join(',');
+        final rows = await db.query(
+          'apps',
+          columns: ['packageName', 'os_icon', 'themed_icon', 'themed_pack'],
+          where: 'packageName IN ($placeholders)',
+          whereArgs: chunk,
+        );
+
+        final foundInDb = <String>{};
+        for (final row in rows) {
+          final pkg = row['packageName'] as String;
+          foundInDb.add(pkg);
+
+          final rowThemedPack = row['themed_pack'] as String?;
+          final rowThemedIcon = row['themed_icon'] as Uint8List?;
+          final rowOsIcon = row['os_icon'] as Uint8List?;
+
+          Uint8List? iconBlob;
+          if (iconPack.isNotEmpty) {
+            if (rowThemedPack == iconPack) {
+              iconBlob = (rowThemedIcon != null && rowThemedIcon.isNotEmpty)
+                  ? rowThemedIcon
+                  : rowOsIcon;
+            } else {
+              needsNative.add(pkg);
+              continue;
+            }
+          } else {
+            iconBlob = rowOsIcon;
+          }
+
+          if (iconBlob != null && iconBlob.isNotEmpty) {
+            _cacheIcon(pkg, iconBlob);
+            result[pkg] = iconBlob;
+          } else {
+            needsNative.add(pkg);
+          }
+        }
+
+        for (final pkg in chunk) {
+          if (!foundInDb.contains(pkg)) {
+            needsNative.add(pkg);
+          }
+        }
+      }
+
+      // If any icons were missing from DB, fetch them in parallel using concurrent workers
+      if (needsNative.isNotEmpty) {
+        await Future.wait(
+          needsNative.map((pkg) async {
+            final icon = await loadIcon(pkg);
+            if (icon != null && icon.isNotEmpty) {
+              result[pkg] = icon;
+            }
+          }),
+        );
+      }
+    } catch (e) {
+      debugPrint('AppDatabaseService.loadIconsBatch error: $e');
+    }
+
+    return result;
+  }
+
+  static Future<void> prefetchIcons(Iterable<String> packageNames) async {
+    final pending = packageNames
+        .where((p) => !_iconCache.containsKey(p))
+        .toList();
+    if (pending.isEmpty) return;
+
+    await loadIconsBatch(pending);
   }
 
   static Future<void> cacheApps(List<AppInfo> apps) async {

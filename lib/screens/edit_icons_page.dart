@@ -191,122 +191,6 @@ class _EditIconsPageState extends State<EditIconsPage> {
     }
   }
 
-  void _showThemedIconsSheet() {
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          final colors = Theme.of(context).colorScheme;
-          return Container(
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: colors.onSurfaceVariant.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.palette_outlined,
-                      color: colors.primary,
-                      size: 26,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Themed Icons',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.secondaryContainer,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'BETA',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: colors.onSecondaryContainer,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Supported app icons adopt colors from your wallpaper and Android dynamic theme. Apps with monochrome icons tint to match your system palette.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Enable themed icons',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    _themedIconsEnabled ? 'Enabled' : 'Disabled',
-                    style: TextStyle(
-                      color: _themedIconsEnabled
-                          ? colors.primary
-                          : colors.onSurfaceVariant,
-                      fontSize: 12,
-                    ),
-                  ),
-                  value: _themedIconsEnabled,
-                  onChanged: (val) async {
-                    setSheetState(() => _themedIconsEnabled = val);
-                    setState(() => _themedIconsEnabled = val);
-                    final prefs = await SharedPreferences.getInstance();
-                    await prefs.setBool('themed_icons_enabled', val);
-                    if (val) {
-                      _loadMonochromeIcons();
-                    }
-                  },
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Done'),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
 
   Widget _buildPreviewIcon(int index) {
     final icon = index < _previewIcons.length ? _previewIcons[index] : null;
@@ -471,51 +355,33 @@ class _EditIconsPageState extends State<EditIconsPage> {
                   trailing: const Icon(Icons.arrow_drop_down),
                   onTap: _selectIconPack,
                 ),
-                const SizedBox(height: 12),
-                ListTile(
+                const SizedBox(height: 16),
+                SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
+                  secondary: Icon(
                     Icons.palette_outlined,
                     color: colors.primary,
                   ),
-                  title: Row(
-                    children: [
-                      const Text(
-                        'Themed icons',
-                        style: TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.secondaryContainer,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'BETA',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: colors.onSecondaryContainer,
-                          ),
-                        ),
-                      ),
-                    ],
+                  title: const Text(
+                    'Themed icons',
+                    style: TextStyle(fontWeight: FontWeight.w500),
                   ),
                   subtitle: Text(
-                    _themedIconsEnabled ? 'Enabled' : 'Disabled',
+                    'Tint icons with wallpaper and dynamic theme',
                     style: TextStyle(
-                      color: _themedIconsEnabled
-                          ? colors.primary
-                          : colors.onSurfaceVariant,
+                      color: colors.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _showThemedIconsSheet,
+                  value: _themedIconsEnabled,
+                  onChanged: (val) async {
+                    setState(() => _themedIconsEnabled = val);
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setBool('themed_icons_enabled', val);
+                    if (val) {
+                      await _loadMonochromeIcons();
+                    }
+                  },
                 ),
                 const SizedBox(height: 24),
                 FilledButton(

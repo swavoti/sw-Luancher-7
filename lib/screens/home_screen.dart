@@ -182,21 +182,19 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   /// Number of icons warmed in lightweight mode (≈ first drawer page).
-  static const int _lightweightIconPrefetchCount = 24;
+  static const int _lightweightIconPrefetchCount = 48;
 
   /// Warm AppDatabaseService's shared icon cache while the user sits on the
   /// home screen, so the app drawer opens with icons already decoded in RAM.
-  /// Delayed slightly so it never competes with the first frame or a
-  /// gesture-nav hand-off.
   void _warmDrawerIcons(List<AppInfo> apps) {
     if (apps.isEmpty) return;
     final packages = apps.map((a) => a.packageName);
     final targets = LightweightMode.isEnabled
         ? packages.take(_lightweightIconPrefetchCount).toList()
         : packages.toList();
-    Future<void>.delayed(const Duration(milliseconds: 600), () {
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
       if (!mounted) return;
-      unawaited(AppDatabaseService.prefetchIcons(targets));
+      unawaited(AppDatabaseService.loadIconsBatch(targets));
     });
   }
 

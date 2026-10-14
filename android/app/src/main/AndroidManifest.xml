@@ -14,6 +14,7 @@
         android:name=".GoLauncherApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
         android:persistent="true">
         <activity
             android:name=".MainActivity"

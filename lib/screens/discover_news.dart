@@ -369,8 +369,11 @@ class _NewsPostItemState extends State<_NewsPostItem>
     final cs = Theme.of(context).colorScheme;
     final article = widget.article;
     final timeAgo = widget.timeAgo;
-    final hasImage =
-        article.urlToImage != null && article.urlToImage!.trim().isNotEmpty;
+    final rawImageUrl = article.urlToImage?.trim();
+    final hasImage = rawImageUrl != null && rawImageUrl.isNotEmpty;
+    final imageUrl = (hasImage && rawImageUrl.startsWith('http://'))
+        ? rawImageUrl.replaceFirst('http://', 'https://')
+        : rawImageUrl;
 
     return InkWell(
       onTap: widget.onTap,
@@ -378,14 +381,14 @@ class _NewsPostItemState extends State<_NewsPostItem>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Social media post image on top (full width)
-          if (hasImage)
+          if (hasImage && imageUrl != null)
             AspectRatio(
               aspectRatio: 16 / 9,
               child: Container(
                 width: double.infinity,
                 color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
                 child: Image.network(
-                  article.urlToImage!,
+                  imageUrl,
                   width: double.infinity,
                   fit: BoxFit.cover,
                   cacheWidth: 800,
