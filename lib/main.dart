@@ -246,7 +246,6 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
             pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
                 TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
               },
             ),
           ),
@@ -260,7 +259,6 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
             pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
                 TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
               },
             ),
           ),
