@@ -132,6 +132,29 @@ class LauncherService {
     return [];
   }
 
+  /// Batched OS icon lookup: one platform-channel crossing for many packages.
+  ///
+  /// Returns an empty map when the native handler is missing (older installs),
+  /// so callers can fall back to per-icon [getOsIcon].
+  static Future<Map<String, Uint8List?>> getOsIcons(
+    List<String> packageNames,
+  ) async {
+    if (packageNames.isEmpty) return const <String, Uint8List?>{};
+    try {
+      final Map<dynamic, dynamic>? result = await _systemChannel
+          .invokeMethod<Map<dynamic, dynamic>>('getOsIcons', {
+            'packages': packageNames,
+          });
+      if (result == null) return const <String, Uint8List?>{};
+      return result.map<String, Uint8List?>(
+        (key, value) => MapEntry(key as String, value as Uint8List?),
+      );
+    } catch (e) {
+      print('Error fetching OS icons batch: $e');
+      return const <String, Uint8List?>{};
+    }
+  }
+
   static Future<Uint8List?> getThemedIcon(
     String appPackage,
     String iconPackPackage,

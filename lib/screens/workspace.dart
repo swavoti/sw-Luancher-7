@@ -67,13 +67,13 @@ class WorkspaceState extends State<Workspace>
 
     _drawerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 340),
+      duration: const Duration(milliseconds: 100),
       value: 0.0,
     );
 
     _discoverController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 360),
+      duration: const Duration(milliseconds: 440),
     );
     _discoverAnimation = CurvedAnimation(
       parent: _discoverController,
@@ -95,9 +95,11 @@ class WorkspaceState extends State<Workspace>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkDefaultLauncher();
-    }
+    // Do NOT call setState() here — any rebuild at this level unmounts every
+    // HomeScreen icon and all AndroidView platform widgets, causing the blank
+    // flicker + full reload the user sees when swiping home.
+    // _checkDefaultLauncher only needs to run once (already called in initState)
+    // and is irrelevant during routine app-close gestures.
   }
 
   Future<void> _checkDefaultLauncher() async {
@@ -116,14 +118,13 @@ class WorkspaceState extends State<Workspace>
   }
 
   void _openDrawer() {
+    // DO NOT call loadSettings() or refreshApps() here — those trigger
+    // setState() mid-animation and cause jank/frame drops on every open.
+    // prefetchFirstPage() is fire-and-forget (unawaited) and safe.
     _appDrawerKey.currentState?.prefetchFirstPage();
-    _appDrawerKey.currentState?.loadSettings();
-    if (LightweightMode.isEnabled) {
-      _appDrawerKey.currentState?.refreshApps();
-    }
     _drawerController.animateTo(
       1.0,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 100),
       curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = true);
@@ -132,7 +133,7 @@ class WorkspaceState extends State<Workspace>
   void _closeDrawer() {
     _drawerController.animateTo(
       0.0,
-      duration: const Duration(milliseconds: 240),
+      duration: const Duration(milliseconds: 100),
       curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = false);
@@ -329,6 +330,7 @@ class WorkspaceState extends State<Workspace>
                     scrollController: _drawerScrollController,
                     onDragStarted: _onDragStarted,
                     onDragEnded: _onDragEnded,
+                    preloadedAppCache: widget.appCache,
                   ),
                 ),
               ),

@@ -352,8 +352,8 @@ class HomeScreenState extends State<HomeScreen> {
                   child: child,
                 );
               },
-              transitionDuration: const Duration(milliseconds: 320),
-              reverseTransitionDuration: const Duration(milliseconds: 280),
+              transitionDuration: const Duration(milliseconds: 400),
+              reverseTransitionDuration: const Duration(milliseconds: 360),
             ),
           )
           .then((_) {
@@ -947,7 +947,7 @@ class HomeScreenState extends State<HomeScreen> {
               : null,
           child: AnimatedScale(
             scale: _isWorkspaceOverviewMode ? 0.75 : 1.0,
-            duration: const Duration(milliseconds: 300),
+            duration: const Duration(milliseconds: 380),
             curve: Curves.easeOutCubic,
             alignment: const Alignment(0, -0.5),
             child: RepaintBoundary(
@@ -1534,7 +1534,7 @@ class HomeScreenState extends State<HomeScreen> {
                                           onWillAcceptWithDetails: (_) {
                                             _workspaceController.previousPage(
                                               duration: const Duration(
-                                                milliseconds: 300,
+                                                milliseconds: 380,
                                               ),
                                               curve: Curves.easeInOut,
                                             );
@@ -1564,7 +1564,7 @@ class HomeScreenState extends State<HomeScreen> {
                                           onWillAcceptWithDetails: (_) {
                                             _workspaceController.nextPage(
                                               duration: const Duration(
-                                                milliseconds: 300,
+                                                milliseconds: 380,
                                               ),
                                               curve: Curves.easeInOut,
                                             );
@@ -1627,10 +1627,10 @@ class HomeScreenState extends State<HomeScreen> {
                                             child: child,
                                           ),
                                       transitionDuration: const Duration(
-                                        milliseconds: 320,
+                                        milliseconds: 400,
                                       ),
                                       reverseTransitionDuration: const Duration(
-                                        milliseconds: 280,
+                                        milliseconds: 360,
                                       ),
                                     ),
                                   )

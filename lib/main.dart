@@ -91,12 +91,16 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       try {
         final palette = await DynamicColorPlugin.getCorePalette();
         if (mounted && palette != null) {
-          setState(() {
-            _lightDynamicColor = palette.toColorScheme().harmonized();
-            _darkDynamicColor = palette
-                .toColorScheme(brightness: Brightness.dark)
-                .harmonized();
-          });
+          final newLight = palette.toColorScheme().harmonized();
+          final newDark = palette
+              .toColorScheme(brightness: Brightness.dark)
+              .harmonized();
+          if (newLight != _lightDynamicColor || newDark != _darkDynamicColor) {
+            setState(() {
+              _lightDynamicColor = newLight;
+              _darkDynamicColor = newDark;
+            });
+          }
         }
       } on Exception catch (error) {
         debugPrint('Could not refresh dynamic colors: $error');
@@ -118,13 +122,11 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   @override
   void didHaveMemoryPressure() {
     super.didHaveMemoryPressure();
-    // Native OS OOM signal handler
-    debugPrint('OS Memory Pressure Received! Dropping caches...');
+    // Native OS memory pressure signal: trim unreferenced image decodes
+    // but preserve the primary home icon cache and DO NOT force root setState(),
+    // ensuring zero stutter or blank flicker when the user swipes home.
+    debugPrint('OS Memory Pressure Received! Trimming excess image decodes...');
     PaintingBinding.instance.imageCache.clear();
-    PaintingBinding.instance.imageCache.clearLiveImages();
-    AppDatabaseService.clearMemoryIconCache();
-    _workspaceKey.currentState?.clearTransientMemoryCaches();
-    if (mounted) setState(() {});
   }
 
   @override
@@ -182,8 +184,19 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           lightColorScheme = lightDynamic.harmonized();
           darkColorScheme = darkDynamic.harmonized();
         } else {
-          // Fallback to default colors
-          lightColorScheme = ColorScheme.fromSeed(seedColor: Colors.blue);
+          // Fallback to default colors using the official M3 light surface
+          // palette instead of a near-white surface.
+          lightColorScheme = ColorScheme.fromSeed(seedColor: Colors.blue).copyWith(
+            surface: const Color(0xFFFEF7FF),
+            onSurface: const Color(0xFF1D1B20),
+            surfaceDim: const Color(0xFFDED8E1),
+            surfaceBright: const Color(0xFFFEF7FF),
+            surfaceContainerLowest: const Color(0xFFFFFFFF),
+            surfaceContainerLow: const Color(0xFFF7F2FA),
+            surfaceContainer: const Color(0xFFF1ECF4),
+            surfaceContainerHigh: const Color(0xFFECE6EE),
+            surfaceContainerHighest: const Color(0xFFE6E0E9),
+          );
           darkColorScheme = ColorScheme.fromSeed(
             seedColor: Colors.blue,
             brightness: Brightness.dark,

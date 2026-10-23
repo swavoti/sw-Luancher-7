@@ -139,9 +139,33 @@ class NotificationDotService : NotificationListenerService() {
             .firstOrNull()
     }
 
+    private var registeredMediaController: MediaController? = null
+    private val mediaControllerCallback = object : MediaController.Callback() {
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            refreshMedia()
+        }
+
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            refreshMedia()
+        }
+    }
+
     fun refreshMedia() {
         val data = try {
             val controller = activeMediaController()
+            if (controller != null && registeredMediaController !== controller) {
+                registeredMediaController?.unregisterCallback(mediaControllerCallback)
+                registeredMediaController = controller
+                try {
+                    controller.registerCallback(mediaControllerCallback)
+                } catch (e: Exception) {
+                    android.util.Log.w(
+                        "NotificationDotService",
+                        "Could not register media callback",
+                        e
+                    )
+                }
+            }
             if (controller == null) {
                 null
             } else {

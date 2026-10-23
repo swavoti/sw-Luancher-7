@@ -19,6 +19,9 @@ class AppDrawer extends StatefulWidget {
   final ScrollController scrollController;
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
+  /// Pre-warmed app list from the home screen. When provided the drawer mounts
+  /// instantly without any SQLite cold wait.
+  final Map<String, AppInfo>? preloadedAppCache;
 
   const AppDrawer({
     super.key,
@@ -28,6 +31,7 @@ class AppDrawer extends StatefulWidget {
     required this.scrollController,
     this.onDragStarted,
     this.onDragEnded,
+    this.preloadedAppCache,
   });
 
   @override
@@ -67,9 +71,40 @@ class AppDrawerState extends State<AppDrawer> {
   @override
   void initState() {
     super.initState();
-    _loadApps();
+    // If Workspace passed the pre-warmed app cache, mount instantly —
+    // zero SQLite cold wait on the very first open.
+    final preloaded = widget.preloadedAppCache;
+    if (preloaded != null && preloaded.isNotEmpty) {
+      _apps = preloaded.values.toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      _filteredApps = List.of(_apps);
+      _isLoading = false;
+      // Sync in background to catch any newly installed / removed apps
+      unawaited(_syncAppsBackground());
+    } else {
+      _loadApps();
+    }
     loadSettings();
     _searchController.addListener(_filterApps);
+  }
+
+  Future<void> _syncAppsBackground() async {
+    final freshApps = await AppDatabaseService.syncAppsBackground();
+    if (!mounted || freshApps.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final hidden = prefs.getStringList('hidden_apps') ?? [];
+    final showHidden = prefs.getBool('show_hidden_apps') ?? false;
+    final apps = showHidden
+        ? freshApps
+        : freshApps.where((a) => !hidden.contains(a.packageName)).toList();
+    if (_sameApps(_apps, apps)) return;
+    if (mounted) {
+      setState(() {
+        _apps = apps;
+        _filteredApps = _filterBySearch(apps);
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -549,19 +584,26 @@ class AppDrawerState extends State<AppDrawer> {
               _frostedGlassEnabled &&
               _savedWallpaperPath != null)
             Positioned.fill(
+              // RepaintBoundary promotes the blurred wallpaper to its own GPU
+              // layer so it is rasterised once, cached, and never redrawn
+              // while the drawer slides — zero per-frame GPU blur cost.
               child: RepaintBoundary(
                 child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                  imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28, tileMode: TileMode.mirror),
                   child: _savedWallpaperPath!.startsWith('assets/')
                       ? Image.asset(
                           _savedWallpaperPath!,
                           fit: BoxFit.cover,
                           alignment: Alignment.center,
+                          // Decode at 1/4 resolution — visually identical under
+                          // a 28px blur, costs ~6% of the GPU memory.
+                          cacheWidth: 270,
                         )
                       : Image.file(
                           File(_savedWallpaperPath!),
                           fit: BoxFit.cover,
                           alignment: Alignment.center,
+                          cacheWidth: 270,
                         ),
                 ),
               ),
@@ -618,7 +660,9 @@ class _AppDrawerGridPage extends StatefulWidget {
 class _AppDrawerGridPageState extends State<_AppDrawerGridPage>
     with AutomaticKeepAliveClientMixin {
   @override
-  bool get wantKeepAlive => true;
+  // Tiles are recycled by the lazy grid/viewport; keeping them alive retained
+  // every decoded bitmap and made swiping progressively heavier.
+  bool get wantKeepAlive => false;
 
   @override
   Widget build(BuildContext context) {

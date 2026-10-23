@@ -103,6 +103,11 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     private fun performCustomGesture(action: Int) {
+        // Before firing GLOBAL_ACTION_HOME, make sure GoLauncherApplication
+        // still holds the icon rect we set at launch time.  We intentionally do
+        // NOT clear it here — the system will call MainActivity.onNewIntent()
+        // immediately after, which calls fulfillGestureNavContract() to send the
+        // rect to QuickStep so the window morphs back into the correct icon.
         val succeeded = performGlobalAction(action)
         if (succeeded) {
             suppressHandleUntilAppSwitch = true

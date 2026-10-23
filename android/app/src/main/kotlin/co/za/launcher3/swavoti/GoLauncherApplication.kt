@@ -3,6 +3,7 @@ package co.za.launcher3.swavoti
 import android.app.Application
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
+import android.graphics.RectF
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.embedding.engine.dart.DartExecutor
@@ -49,5 +50,15 @@ class GoLauncherApplication : Application() {
     companion object {
         const val ENGINE_ID = "go_launcher_engine"
         const val APPWIDGET_HOST_ID = 1024
+
+        /**
+         * The screen-pixel bounds of the last icon that launched an app.
+         * Written by MainActivity when startApp() is called with sourceBounds.
+         * Read by MainActivity.fulfillGestureNavContract() to tell QuickStep
+         * exactly where the closing window should shrink back to.
+         * Also accessible from MyAccessibilityService (same process).
+         */
+        @Volatile
+        var lastLaunchedAppRect: RectF? = null
     }
 }

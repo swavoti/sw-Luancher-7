@@ -228,14 +228,23 @@ class AppDatabaseService {
   }
 
   static void _cacheIcon(String packageName, Uint8List icon) {
-    final previous = _iconCache.putIfAbsent(packageName, () => icon);
-    if (!identical(previous, icon)) {
+    final previous = _iconCache[packageName];
+    if (identical(previous, icon)) {
+      // Re-insert to refresh LRU order without double-counting the byte size.
+      _iconCache.remove(packageName);
       _iconCache[packageName] = icon;
-      _memoryImageCache[packageName] = MemoryImage(icon);
-    } else {
-      _iconCacheBytes += icon.lengthInBytes;
-      _memoryImageCache[packageName] = MemoryImage(icon);
+      _memoryImageCache.putIfAbsent(packageName, () => MemoryImage(icon));
+      return;
     }
+    if (previous != null) {
+      // Overwriting a blob must release the previous budget it occupied,
+      // otherwise _iconCacheBytes inflates and eviction fires too early.
+      _iconCacheBytes -= previous.lengthInBytes;
+    }
+    _iconCache.remove(packageName);
+    _iconCache[packageName] = icon;
+    _iconCacheBytes += icon.lengthInBytes;
+    _memoryImageCache[packageName] = MemoryImage(icon);
     while (_iconCacheBytes > _maxIconCacheBytes && _iconCache.length > 200) {
       final oldestPackage = _iconCache.keys.first;
       final removed = _iconCache.remove(oldestPackage);

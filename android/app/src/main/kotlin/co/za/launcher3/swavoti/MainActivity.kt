@@ -56,11 +56,17 @@ class MainActivity : FlutterActivity() {
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
     private var pendingWallpaperPickerResult: MethodChannel.Result? = null
-    private var lastLaunchedAppRect: RectF? = null
+    // lastLaunchedAppRect lives in GoLauncherApplication.Companion so that
+    // MyAccessibilityService (same process, different class) can also read it.
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    // Icon work is a mix of PackageManager I/O (cold APK resource reads) and
+    // CPU (rasterise + WEBP encode). 2–4 workers throttled a 200-app batch to
+    // several seconds, so allow up to 8 and keep a decoded-bytes LRU so a
+    // re-request never re-rasterises an icon we already produced.
     private val iconExecutor = Executors.newFixedThreadPool(
-        Runtime.getRuntime().availableProcessors().coerceIn(2, 4)
+        Runtime.getRuntime().availableProcessors().coerceIn(4, 8)
     )
+    private val iconBytesCache = android.util.LruCache<String, ByteArray>(384)
     private lateinit var iconPackManager: IconPackManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,12 +117,12 @@ class MainActivity : FlutterActivity() {
             val width = decor.width.takeIf { it > 0 } ?: metrics.widthPixels
             val height = decor.height.takeIf { it > 0 } ?: metrics.heightPixels
             // Use the launching icon bounds when available for fluid return animations,
-            // or safely fall back to the window decor bounds.
-            val iconPosition = lastLaunchedAppRect ?: RectF(
-                location[0].toFloat(),
-                location[1].toFloat(),
-                (location[0] + width).toFloat(),
-                (location[1] + height).toFloat()
+            // or safely fall back to a central bounds.
+            val iconPosition = GoLauncherApplication.lastLaunchedAppRect ?: RectF(
+                location[0].toFloat() + width * 0.35f,
+                location[1].toFloat() + height * 0.45f,
+                location[0].toFloat() + width * 0.65f,
+                location[1].toFloat() + height * 0.55f
             )
             val result = Bundle().apply {
                 putParcelable("gesture_nav_contract_surface_control", null)
@@ -438,27 +444,33 @@ class MainActivity : FlutterActivity() {
                                     sourceX != null && sourceY != null && sourceWidth != null && sourceHeight != null &&
                                     sourceWidth > 0 && sourceHeight > 0
                                 ) {
+                                    val density = resources.displayMetrics.density
+                                    val pxX = kotlin.math.round(sourceX * density).toInt()
+                                    val pxY = kotlin.math.round(sourceY * density).toInt()
+                                    val pxW = kotlin.math.round(sourceWidth * density).toInt()
+                                    val pxH = kotlin.math.round(sourceHeight * density).toInt()
+
                                     intent.sourceBounds = android.graphics.Rect(
-                                        sourceX,
-                                        sourceY,
-                                        sourceX + sourceWidth,
-                                        sourceY + sourceHeight
+                                        pxX,
+                                        pxY,
+                                        pxX + pxW,
+                                        pxY + pxH
                                     )
-                                    lastLaunchedAppRect = RectF(
-                                        sourceX.toFloat(),
-                                        sourceY.toFloat(),
-                                        (sourceX + sourceWidth).toFloat(),
-                                        (sourceY + sourceHeight).toFloat()
+                                    GoLauncherApplication.lastLaunchedAppRect = RectF(
+                                        pxX.toFloat(),
+                                        pxY.toFloat(),
+                                        (pxX + pxW).toFloat(),
+                                        (pxY + pxH).toFloat()
                                     )
-                                    ActivityOptions.makeScaleUpAnimation(
+                                    ActivityOptions.makeClipRevealAnimation(
                                         window.decorView,
-                                        sourceX,
-                                        sourceY,
-                                        sourceWidth,
-                                        sourceHeight
+                                        pxX,
+                                        pxY,
+                                        pxW,
+                                        pxH
                                     )
                                 } else {
-                                    lastLaunchedAppRect = null
+                                    GoLauncherApplication.lastLaunchedAppRect = null
                                     ActivityOptions.makeBasic()
                                 }
 
