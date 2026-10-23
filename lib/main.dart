@@ -245,8 +245,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
             useMaterial3: true,
             pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
-                TargetPlatform.android: FadePageTransitionsBuilder(),
-                TargetPlatform.iOS: FadePageTransitionsBuilder(),
+                TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
               },
             ),
           ),
@@ -259,8 +259,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
             useMaterial3: true,
             pageTransitionsTheme: const PageTransitionsTheme(
               builders: {
-                TargetPlatform.android: FadePageTransitionsBuilder(),
-                TargetPlatform.iOS: FadePageTransitionsBuilder(),
+                TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
+                TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
               },
             ),
           ),
