@@ -45,7 +45,7 @@ Take full control over your home screen's look and feel! You can now apply any o
 
 ## Gesture Navigation
 
-Go to home settings, press gesture fallback, this will ask for accessibility settings whatever bro.
+Go to home settings, press gesture fallback, this will ask for accessibility settings access .
 
 ## Benchmarks
 
