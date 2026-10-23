@@ -123,18 +123,31 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
     }
   }
 
-  String _unescape(String text) {
-    return text
+  String _cleanText(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    var text = raw
         .replaceAll('<![CDATA[', '')
         .replaceAll(']]>', '')
-        .replaceAll('&amp;', '&')
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>')
         .replaceAll('&quot;', '"')
         .replaceAll('&#39;', "'")
         .replaceAll('&apos;', "'")
-        .replaceAll('&nbsp;', ' ')
-        .trim();
+        .replaceAll('&amp;', '&')
+        .replaceAll('&nbsp;', ' ');
+    // Strip HTML tags
+    text = text.replaceAll(RegExp(r'<[^>]*>'), ' ');
+    // In case of double entity encoding
+    text = text
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&apos;', "'")
+        .replaceAll('&amp;', '&')
+        .replaceAll('&nbsp;', ' ');
+    text = text.replaceAll(RegExp(r'<[^>]*>'), ' ');
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   List<NewsArticle> _parseGoogleNewsRss(String xmlString) {
@@ -150,7 +163,7 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         r'<title>(.*?)</title>',
         dotAll: true,
       ).firstMatch(itemContent);
-      var rawTitle = _unescape(titleMatch?.group(1) ?? '');
+      var rawTitle = _cleanText(titleMatch?.group(1) ?? '');
       if (rawTitle.isEmpty) continue;
 
       // Link
@@ -158,7 +171,7 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         r'<link>(.*?)</link>',
         dotAll: true,
       ).firstMatch(itemContent);
-      final link = _unescape(linkMatch?.group(1) ?? '');
+      final link = _cleanText(linkMatch?.group(1) ?? '');
       if (link.isEmpty) continue;
 
       // Source
@@ -166,7 +179,7 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         r'<source(?:\s+url="([^"]*)")?[^>]*>(.*?)</source>',
         dotAll: true,
       ).firstMatch(itemContent);
-      var sourceName = _unescape(sourceMatch?.group(2) ?? '');
+      var sourceName = _cleanText(sourceMatch?.group(2) ?? '');
       final sourceDomainUrl = sourceMatch?.group(1) ?? '';
 
       if (sourceName.isEmpty) {
@@ -190,9 +203,9 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         r'<pubDate>(.*?)</pubDate>',
         dotAll: true,
       ).firstMatch(itemContent);
-      final rawDate = _unescape(dateMatch?.group(1) ?? '');
+      final rawDate = _cleanText(dateMatch?.group(1) ?? '');
 
-      // Image
+      // Real Image (if provided by media tags)
       String? imageUrl;
       final mediaMatch = RegExp(
         r'<media:content[^>]+url="([^"]+)"',
@@ -210,35 +223,46 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
         }
       }
 
-      // If no thumbnail directly in RSS, use high-res source icon if domain available
-      if (imageUrl == null && sourceDomainUrl.isNotEmpty) {
+      // Publisher brand favicon
+      String? sourceFavicon;
+      if (sourceDomainUrl.isNotEmpty) {
         try {
           final host = Uri.parse(sourceDomainUrl).host;
           if (host.isNotEmpty) {
-            imageUrl = 'https://www.google.com/s2/favicons?domain=$host&sz=128';
+            sourceFavicon =
+                'https://www.google.com/s2/favicons?domain=$host&sz=128';
           }
         } catch (_) {}
       }
 
-      // Clean snippet
+      // Snippet / description (filter out Google's <ol><li> list of links)
       final descMatch = RegExp(
         r'<description>(.*?)</description>',
         dotAll: true,
       ).firstMatch(itemContent);
       final rawDesc = descMatch?.group(1) ?? '';
-      final cleanDesc = _unescape(rawDesc.replaceAll(RegExp(r'<[^>]*>'), ' '))
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
+      String? cleanDesc;
+      if (!rawDesc.contains('&lt;ol') &&
+          !rawDesc.contains('<ol') &&
+          !rawDesc.contains('&lt;li') &&
+          !rawDesc.contains('<li')) {
+        final stripped = _cleanText(rawDesc);
+        if (stripped.isNotEmpty &&
+            stripped != rawTitle &&
+            !stripped.startsWith('<')) {
+          cleanDesc = stripped;
+        }
+      }
 
       articles.add(
         NewsArticle(
           title: rawTitle,
-          description:
-              cleanDesc.isNotEmpty && cleanDesc != rawTitle ? cleanDesc : null,
+          description: cleanDesc,
           url: link,
           urlToImage: imageUrl,
           publishedAt: rawDate,
           sourceName: sourceName,
+          sourceFavicon: sourceFavicon,
         ),
       );
     }
@@ -292,82 +316,90 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
             bottom: false,
             child: Column(
               children: [
-                // Top Search Bar Pill (Clean Glass Pill)
+                // Top Floating Search Bar Pill & Outside Left Back Icon
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: Container(
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(26),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        width: 1.2,
+                  padding: const EdgeInsets.fromLTRB(8, 8, 16, 10),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded, size: 24),
+                        color: cs.onSurface,
+                        tooltip: 'Back',
+                        onPressed: () {
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          }
+                        },
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_rounded, size: 22),
-                          color: cs.onSurface,
-                          onPressed: () {
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                        ),
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            textInputAction: TextInputAction.search,
-                            onSubmitted: (query) => _fetchGoogleNews(query),
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: cs.onSurface,
-                              fontWeight: FontWeight.w500,
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: cs.surfaceContainerHighest.withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15),
+                              width: 1.0,
                             ),
-                            decoration: InputDecoration(
-                              hintText: 'Search Google News...',
-                              hintStyle: TextStyle(
-                                fontSize: 15,
-                                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.08),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
                               ),
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                            ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 14),
+                              Icon(
+                                Icons.search_rounded,
+                                size: 20,
+                                color: cs.primary,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  textInputAction: TextInputAction.search,
+                                  onSubmitted: (query) =>
+                                      _fetchGoogleNews(query),
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: cs.onSurface,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: 'Search Google News...',
+                                    hintStyle: TextStyle(
+                                      fontSize: 14,
+                                      color: cs.onSurfaceVariant
+                                          .withValues(alpha: 0.7),
+                                    ),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                ),
+                              ),
+                              if (_searchController.text.isNotEmpty)
+                                IconButton(
+                                  icon: const Icon(Icons.close_rounded,
+                                      size: 20),
+                                  color: cs.onSurfaceVariant,
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    _fetchGoogleNews();
+                                    setState(() {});
+                                  },
+                                ),
+                              const SizedBox(width: 6),
+                            ],
                           ),
                         ),
-                        if (_searchController.text.isNotEmpty)
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 20),
-                            color: cs.onSurfaceVariant,
-                            onPressed: () {
-                              _searchController.clear();
-                              _fetchGoogleNews();
-                              setState(() {});
-                            },
-                          )
-                        else
-                          IconButton(
-                            icon: Icon(
-                              Icons.search_rounded,
-                              size: 22,
-                              color: cs.primary,
-                            ),
-                            onPressed: () =>
-                                _fetchGoogleNews(_searchController.text),
-                          ),
-                        const SizedBox(width: 4),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
 
@@ -479,156 +511,130 @@ class _NewsPostItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final rawImageUrl = article.urlToImage?.trim();
-    final hasImage = rawImageUrl != null && rawImageUrl.isNotEmpty;
-    final imageUrl = (hasImage && rawImageUrl.startsWith('http://'))
+    final hasRealImage = rawImageUrl != null &&
+        rawImageUrl.isNotEmpty &&
+        !rawImageUrl.contains('favicons');
+    final imageUrl = (hasRealImage && rawImageUrl.startsWith('http://'))
         ? rawImageUrl.replaceFirst('http://', 'https://')
         : rawImageUrl;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.42),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.12),
-          width: 1,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Post image with rounded corners
-              if (hasImage && imageUrl != null) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Container(
-                        color:
-                            cs.surfaceContainerHighest.withValues(alpha: 0.5),
-                        child: Image.network(
-                          imageUrl,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          cacheWidth: 800,
-                          gaplessPlayback: true,
-                          errorBuilder: (context, error, stackTrace) =>
-                              Container(
-                            color: cs.surfaceContainerHigh,
-                            child: Center(
-                              child: Icon(
-                                Icons.newspaper_outlined,
-                                color:
-                                    cs.onSurfaceVariant.withValues(alpha: 0.5),
-                                size: 36,
-                              ),
-                            ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Publisher / source and time row
+                  Row(
+                    children: [
+                      if (article.sourceFavicon != null &&
+                          article.sourceFavicon!.isNotEmpty) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            article.sourceFavicon!,
+                            width: 16,
+                            height: 16,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
                           ),
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              color: cs.surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    value: loadingProgress
-                                                .expectedTotalBytes !=
-                                            null
-                                        ? loadingProgress
-                                                .cumulativeBytesLoaded /
-                                            loadingProgress.expectedTotalBytes!
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Flexible(
+                        child: Text(
+                          article.sourceName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: cs.primary,
+                          ),
                         ),
                       ),
+                      if (timeAgo.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '• $timeAgo',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Headline title
+                  Text(
+                    article.title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: cs.onSurface,
+                      height: 1.3,
                     ),
                   ),
-                ),
-              ],
 
-              // Post details under image
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Publisher / source and time row
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            article.sourceName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: cs.primary,
-                            ),
+                  // Image (with rounded corners ONLY)
+                  if (hasRealImage && imageUrl != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Container(
+                          color: cs.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                          child: Image.network(
+                            imageUrl,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            cacheWidth: 800,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
                           ),
                         ),
-                        if (timeAgo.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '• $timeAgo',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 6),
+                  ],
 
-                    // Headline title
+                  // Description snippet if present
+                  if (article.description != null &&
+                      article.description!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 8),
                     Text(
-                      article.title,
-                      maxLines: 3,
+                      article.description!.trim(),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: cs.onSurface,
-                        height: 1.3,
+                        fontSize: 13,
+                        color: cs.onSurfaceVariant,
+                        height: 1.35,
                       ),
                     ),
-
-                    // Description snippet
-                    if (article.description != null &&
-                        article.description!.trim().isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        article.description!.trim(),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: cs.onSurfaceVariant,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 0.6,
+              color: cs.outlineVariant.withValues(alpha: 0.2),
+            ),
+          ],
         ),
       ),
     );
