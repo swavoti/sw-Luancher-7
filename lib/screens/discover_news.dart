@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -247,8 +248,12 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
   String _formatTimeAgo(String? rawDate) {
     if (rawDate == null || rawDate.isEmpty) return '';
     try {
-      final parsed = DateTime.tryParse(rawDate) ??
-          DateTime.tryParse(HttpDate.parse(rawDate).toIso8601String());
+      DateTime? parsed = DateTime.tryParse(rawDate);
+      if (parsed == null) {
+        try {
+          parsed = HttpDate.parse(rawDate);
+        } catch (_) {}
+      }
       if (parsed == null) return rawDate;
       final diff = DateTime.now().difference(parsed);
       if (diff.inMinutes < 60) {
