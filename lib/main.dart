@@ -74,8 +74,8 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.reload();
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs = prefs;
       LightweightMode.apply(
         prefs.getBool(LightweightMode.preferenceKey) ?? false,
       );

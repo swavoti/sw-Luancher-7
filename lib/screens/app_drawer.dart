@@ -5,6 +5,7 @@ import 'package:installed_apps/app_info.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_lock_service.dart';
+import 'package:swavoti/screens/app_lock_screen.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
@@ -293,80 +294,136 @@ class AppDrawerState extends State<AppDrawer>
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
           child: Column(
             children: [
-              SizedBox(
-                height: 48,
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => FocusScope.of(context).unfocus(),
-                    borderRadius: BorderRadius.circular(28),
-                    child: Ink(
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 16),
-                          Icon(
-                            Icons.search_rounded,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              textAlignVertical: TextAlignVertical.center,
-                              style: TextStyle(
-                                fontSize: 15,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: 'Search apps',
-                                hintStyle: TextStyle(
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => FocusScope.of(context).unfocus(),
+                          borderRadius: BorderRadius.circular(28),
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 16),
+                                Icon(
+                                  Icons.search_rounded,
                                   color: Theme.of(
                                     context,
                                   ).colorScheme.onSurfaceVariant,
-                                  fontSize: 15,
+                                  size: 20,
                                 ),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.zero,
-                              ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchController,
+                                    textAlignVertical: TextAlignVertical.center,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      color: Theme.of(context).colorScheme.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: 'Search apps',
+                                      hintStyle: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                        fontSize: 15,
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                ),
+                                if (_searchController.text.isNotEmpty)
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                    ),
+                                    onPressed: () => _searchController.clear(),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                const SizedBox(width: 8),
+                              ],
                             ),
                           ),
-                          _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                  ),
-                                  onPressed: () => _searchController.clear(),
-                                  padding: EdgeInsets.zero,
-                                )
-                              : IconButton(
-                                  icon: Icon(
-                                    Icons.mic_rounded,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                    size: 20,
-                                  ),
-                                  onPressed:
-                                      LauncherService.openGoogleVoiceSearch,
-                                  padding: EdgeInsets.zero,
-                                ),
-                          const SizedBox(width: 8),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.more_vert_rounded,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      size: 22,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    onSelected: (value) {
+                      if (value == 'app_lock') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AppLockScreen(),
+                          ),
+                        );
+                      } else if (value == 'edit_icons') {
+                        Navigator.pushNamed(context, '/edit_icons');
+                      }
+                    },
+                    itemBuilder: (ctx) {
+                      final cs = Theme.of(ctx).colorScheme;
+                      return [
+                        PopupMenuItem(
+                          value: 'app_lock',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.lock_outline_rounded,
+                                size: 20,
+                                color: cs.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              const Text(
+                                'App Lock',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'edit_icons',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.palette_outlined,
+                                size: 20,
+                                color: cs.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              const Text(
+                                'Edit Icons',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ];
+                    },
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
               if (_searchController.text.isNotEmpty)

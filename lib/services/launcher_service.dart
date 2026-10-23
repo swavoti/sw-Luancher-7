@@ -315,6 +315,14 @@ class LauncherService {
     }
   }
 
+  static Future<void> openGoogleAiMode() async {
+    try {
+      await _systemChannel.invokeMethod('openGoogleAiMode');
+    } catch (e) {
+      print('Error opening Google AI mode: $e');
+    }
+  }
+
   static Future<void> openUrlInBrowser(
     String url, [
     String? packageName,

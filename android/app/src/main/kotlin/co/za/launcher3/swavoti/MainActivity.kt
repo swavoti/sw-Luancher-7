@@ -767,6 +767,37 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "openGoogleAiMode" -> {
+                    try {
+                        val geminiIntent = packageManager.getLaunchIntentForPackage("com.google.android.apps.bard")
+                        if (geminiIntent != null) {
+                            geminiIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(geminiIntent)
+                        } else {
+                            try {
+                                val assistIntent = Intent(Intent.ACTION_ASSIST).apply {
+                                    setPackage("com.google.android.googlequicksearchbox")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(assistIntent)
+                            } catch (_: Exception) {
+                                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?udm=24")).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(webIntent)
+                            }
+                        }
+                    } catch (_: Exception) {
+                        try {
+                            val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                                setPackage("com.google.android.googlequicksearchbox")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

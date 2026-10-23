@@ -99,6 +99,33 @@ class _SearchWidgetState extends State<SearchWidget> {
                 ),
               ),
               GestureDetector(
+                onTap: LauncherService.openGoogleAiMode,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        Icons.search_rounded,
+                        color: colorScheme.primary,
+                        size: 18,
+                      ),
+                      Positioned(
+                        right: -3,
+                        top: -3,
+                        child: Icon(
+                          Icons.auto_awesome,
+                          color: colorScheme.primary,
+                          size: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
                 onTap: LauncherService.openGoogleVoiceSearch,
                 child: Icon(
                   Icons.mic_rounded,
