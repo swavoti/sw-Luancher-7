@@ -137,12 +137,6 @@ class WorkspaceState extends State<Workspace>
       curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = false);
-    // Reset the inner scroll to top so it's fresh on next open
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_drawerScrollController.hasClients) {
-        _drawerScrollController.jumpTo(0);
-      }
-    });
   }
 
   void _openDiscover() => _discoverController.forward();

@@ -61,6 +61,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   Map<String, AppInfo> _appCache = {};
   ColorScheme? _lightDynamicColor;
   ColorScheme? _darkDynamicColor;
+  bool _dynamicThemingEnabled = true;
   final GlobalKey<WorkspaceState> _workspaceKey = GlobalKey<WorkspaceState>();
 
   @override
@@ -114,6 +115,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       LightweightMode.apply(
         prefs.getBool(LightweightMode.preferenceKey) ?? false,
       );
+      _dynamicThemingEnabled = prefs.getBool('dynamic_theming_enabled') ?? true;
     }
     _workspaceKey.currentState?.refreshLauncherSettings();
     setState(() {});
@@ -144,6 +146,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       prefs.getBool(LightweightMode.preferenceKey) ?? false,
     );
     AppDatabaseService.currentIconPack = prefs.getString('icon_pack') ?? "";
+    final dynamicThemingEnabled = prefs.getBool('dynamic_theming_enabled') ?? true;
 
     // Show the UI immediately with whatever we have.
     final welcomeCompleted = prefs.getBool('welcome_completed') ?? false;
@@ -151,6 +154,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       setState(() {
         _prefs = prefs;
         _welcomeCompleted = welcomeCompleted;
+        _dynamicThemingEnabled = dynamicThemingEnabled;
       });
     }
     if (!welcomeCompleted) return;
@@ -180,26 +184,43 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
 
         lightDynamic = _lightDynamicColor ?? lightDynamic;
         darkDynamic = _darkDynamicColor ?? darkDynamic;
-        if (lightDynamic != null && darkDynamic != null) {
+        if (_dynamicThemingEnabled && lightDynamic != null && darkDynamic != null) {
           lightColorScheme = lightDynamic.harmonized();
           darkColorScheme = darkDynamic.harmonized();
         } else {
-          // Fallback to default colors using the official M3 light surface
-          // palette instead of a near-white surface.
-          lightColorScheme = ColorScheme.fromSeed(seedColor: Colors.blue).copyWith(
-            surface: const Color(0xFFFEF7FF),
-            onSurface: const Color(0xFF1D1B20),
-            surfaceDim: const Color(0xFFDED8E1),
-            surfaceBright: const Color(0xFFFEF7FF),
+          // Dynamic theming OFF: Crisp clean light theme and true Pure OLED Black for dark mode.
+          lightColorScheme = ColorScheme.fromSeed(
+            seedColor: const Color(0xFF1A73E8),
+            brightness: Brightness.light,
+          ).copyWith(
+            surface: const Color(0xFFF8F9FA),
+            onSurface: const Color(0xFF1F1F1F),
             surfaceContainerLowest: const Color(0xFFFFFFFF),
-            surfaceContainerLow: const Color(0xFFF7F2FA),
-            surfaceContainer: const Color(0xFFF1ECF4),
-            surfaceContainerHigh: const Color(0xFFECE6EE),
-            surfaceContainerHighest: const Color(0xFFE6E0E9),
+            surfaceContainerLow: const Color(0xFFF1F3F4),
+            surfaceContainer: const Color(0xFFE8EAED),
+            surfaceContainerHigh: const Color(0xFFDADCE0),
+            surfaceContainerHighest: const Color(0xFFBDC1C6),
+            primary: const Color(0xFF1A73E8),
+            onPrimary: Colors.white,
           );
           darkColorScheme = ColorScheme.fromSeed(
-            seedColor: Colors.blue,
+            seedColor: Colors.white,
             brightness: Brightness.dark,
+          ).copyWith(
+            surface: Colors.black,
+            surfaceDim: Colors.black,
+            surfaceBright: const Color(0xFF121212),
+            surfaceContainerLowest: Colors.black,
+            surfaceContainerLow: const Color(0xFF0A0A0A),
+            surfaceContainer: const Color(0xFF121212),
+            surfaceContainerHigh: const Color(0xFF1A1A1A),
+            surfaceContainerHighest: const Color(0xFF242424),
+            onSurface: Colors.white,
+            onSurfaceVariant: const Color(0xFFC4C7C5),
+            primary: Colors.white,
+            onPrimary: Colors.black,
+            outline: const Color(0xFF3C4043),
+            outlineVariant: const Color(0xFF282A2D),
           );
         }
 

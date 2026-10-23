@@ -77,21 +77,16 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Do not wrap Flutter's SurfaceView in a hardware layer — that blanks
-        // the window for QuickStep and is a common Android 10 snap-back cause.
-        window.decorView.setLayerType(View.LAYER_TYPE_NONE, null)
-        reportFullyDrawn()
         NotificationDotService.refreshCurrentMedia()
         homeEventSink?.success("onHomeResumed")
     }
 
     override fun onNewIntent(intent: Intent) {
         // Reply to the home-gesture contract immediately so QuickStep can
-        // finish the recents animation instead of timing out and snapping back.
+        // finish the recents animation smoothly instead of timing out.
         fulfillGestureNavContract(intent)
         setIntent(intent)
         super.onNewIntent(intent)
-        reportFullyDrawn()
         homeEventSink?.success("onHomeGesture")
     }
 
@@ -462,7 +457,7 @@ class MainActivity : FlutterActivity() {
                                         (pxX + pxW).toFloat(),
                                         (pxY + pxH).toFloat()
                                     )
-                                    ActivityOptions.makeClipRevealAnimation(
+                                    ActivityOptions.makeScaleUpAnimation(
                                         window.decorView,
                                         pxX,
                                         pxY,

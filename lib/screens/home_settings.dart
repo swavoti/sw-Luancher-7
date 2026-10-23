@@ -23,6 +23,7 @@ class _HomeSettingsState extends State<HomeSettings> {
   bool _isDefaultLauncher = false;
   bool _frostedGlassEnabled = false;
   bool _lightweightModeEnabled = false;
+  bool _dynamicThemingEnabled = true;
 
   @override
   void initState() {
@@ -35,6 +36,8 @@ class _HomeSettingsState extends State<HomeSettings> {
     final isDefault = await LauncherService.isDefaultLauncher();
     final frostedGlassEnabled =
         prefs.getBool('frosted_glass_enabled') ?? true;
+    final dynamicThemingEnabled =
+        prefs.getBool('dynamic_theming_enabled') ?? true;
 
     if (mounted) {
       setState(() {
@@ -47,9 +50,17 @@ class _HomeSettingsState extends State<HomeSettings> {
         _frostedGlassEnabled = frostedGlassEnabled;
         _lightweightModeEnabled =
             prefs.getBool(LightweightMode.preferenceKey) ?? false;
+        _dynamicThemingEnabled = dynamicThemingEnabled;
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _toggleDynamicTheming(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('dynamic_theming_enabled', value);
+    setState(() => _dynamicThemingEnabled = value);
+    widget.onSettingsChanged?.call();
   }
 
   Future<void> _toggleFrostedGlass(bool value) async {
@@ -300,6 +311,15 @@ class _HomeSettingsState extends State<HomeSettings> {
                   title: 'Appearance',
                   subtitle: 'App drawer and icon styling',
                   settings: [
+                    SwitchListTile(
+                      secondary: const Icon(Icons.palette_outlined),
+                      title: const Text('Dynamic Theming (Material You)'),
+                      subtitle: const Text(
+                        'Adapt launcher colors to wallpaper. Pure OLED black when off',
+                      ),
+                      value: _dynamicThemingEnabled,
+                      onChanged: _toggleDynamicTheming,
+                    ),
                     SwitchListTile(
                       secondary: const Icon(Icons.blur_on),
                       title: const Text('Blur Wallpaper Background'),

@@ -53,7 +53,11 @@ class _WorkspaceItemData {
 
 
 
-class AppDrawerState extends State<AppDrawer> {
+class AppDrawerState extends State<AppDrawer>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   List<AppInfo> _apps = [];
   List<AppInfo> _filteredApps = [];
   bool _isLoading = true;
@@ -66,11 +70,13 @@ class AppDrawerState extends State<AppDrawer> {
   String _iconPack = '';
   int _iconGeneration = 0;
   int _currentPage = 0;
+  late final PageController _drawerPageController;
   DateTime? _lastLightweightAppRefresh;
 
   @override
   void initState() {
     super.initState();
+    _drawerPageController = PageController(initialPage: _currentPage);
     // If Workspace passed the pre-warmed app cache, mount instantly —
     // zero SQLite cold wait on the very first open.
     final preloaded = widget.preloadedAppCache;
@@ -111,6 +117,7 @@ class AppDrawerState extends State<AppDrawer> {
   void dispose() {
     _searchController.dispose();
     _pageNotifier.dispose();
+    _drawerPageController.dispose();
     super.dispose();
   }
 
@@ -279,6 +286,7 @@ class AppDrawerState extends State<AppDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final childContent = Column(
       children: [
         Padding(
@@ -484,6 +492,7 @@ class AppDrawerState extends State<AppDrawer> {
                       children: [
                         Expanded(
                           child: PageView.builder(
+                            controller: _drawerPageController,
                             physics: const BouncingScrollPhysics(
                               parent: PageScrollPhysics(),
                             ),
@@ -660,9 +669,7 @@ class _AppDrawerGridPage extends StatefulWidget {
 class _AppDrawerGridPageState extends State<_AppDrawerGridPage>
     with AutomaticKeepAliveClientMixin {
   @override
-  // Tiles are recycled by the lazy grid/viewport; keeping them alive retained
-  // every decoded bitmap and made swiping progressively heavier.
-  bool get wantKeepAlive => false;
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
@@ -728,6 +735,9 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   @override
   bool get wantKeepAlive => true;
 
+  static final Map<String, Uint8List> _renderedIconCache = {};
+  static int _cachedIconGeneration = -1;
+
   bool _dragStarted = false;
   Uint8List? _icon;
   int _iconLoadGeneration = 0;
@@ -735,9 +745,18 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   @override
   void initState() {
     super.initState();
-    _icon = widget.app.icon ??
+    if (_cachedIconGeneration != widget.iconGeneration) {
+      _renderedIconCache.clear();
+      _cachedIconGeneration = widget.iconGeneration;
+    }
+    _icon = _renderedIconCache[widget.app.packageName] ??
+        widget.app.icon ??
         AppDatabaseService.getCachedIcon(widget.app.packageName);
-    if (_icon == null) _loadIcon();
+    if (_icon != null) {
+      _renderedIconCache[widget.app.packageName] = _icon!;
+    } else {
+      _loadIcon();
+    }
   }
 
   @override
@@ -746,7 +765,12 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
     if (oldWidget.app.packageName != widget.app.packageName ||
         oldWidget.iconGeneration != widget.iconGeneration) {
       _iconLoadGeneration++;
-      _icon = widget.app.icon ??
+      if (oldWidget.iconGeneration != widget.iconGeneration) {
+        _renderedIconCache.clear();
+        _cachedIconGeneration = widget.iconGeneration;
+      }
+      _icon = _renderedIconCache[widget.app.packageName] ??
+          widget.app.icon ??
           AppDatabaseService.getCachedIcon(widget.app.packageName);
       if (_icon == null) {
         _loadIcon();
@@ -759,17 +783,22 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   Future<void> _loadIcon() async {
     final generation = ++_iconLoadGeneration;
     if (widget.app.icon != null) {
+      _renderedIconCache[widget.app.packageName] = widget.app.icon!;
       if (mounted) setState(() => _icon = widget.app.icon);
       return;
     }
 
     final cached = AppDatabaseService.getCachedIcon(widget.app.packageName);
     if (cached != null) {
+      _renderedIconCache[widget.app.packageName] = cached;
       if (mounted) setState(() => _icon = cached);
       return;
     }
 
     final icon = await AppDatabaseService.loadIcon(widget.app.packageName);
+    if (icon != null) {
+      _renderedIconCache[widget.app.packageName] = icon;
+    }
     if (!mounted || generation != _iconLoadGeneration) return;
     setState(() => _icon = icon);
   }
@@ -969,12 +998,12 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
           final bounds = (renderBox != null && renderBox.hasSize)
               ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
               : null;
-          widget.onCloseDrawer();
           AppLockService.launchApp(
             context,
             app.packageName,
             sourceBounds: bounds,
           );
+          widget.onCloseDrawer();
         },
         onLongPress: () {
           if (!_dragStarted) {
