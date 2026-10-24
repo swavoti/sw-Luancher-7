@@ -798,6 +798,7 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
   bool _dragStarted = false;
   Uint8List? _icon;
   int _iconLoadGeneration = 0;
+  final GlobalKey _iconBoxKey = GlobalKey();
 
   @override
   void initState() {
@@ -1051,16 +1052,19 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
       ),
       child: GestureDetector(
         onTap: () {
-          final renderBox = context.findRenderObject() as RenderBox?;
+          final renderBox =
+              _iconBoxKey.currentContext?.findRenderObject() as RenderBox? ??
+              context.findRenderObject() as RenderBox?;
           final bounds = (renderBox != null && renderBox.hasSize)
               ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
               : null;
+          widget.onCloseDrawer();
           AppLockService.launchApp(
             context,
             app.packageName,
             sourceBounds: bounds,
+            fromDrawer: true,
           );
-          widget.onCloseDrawer();
         },
         onLongPress: () {
           if (!_dragStarted) {
@@ -1071,24 +1075,29 @@ class _AppDrawerItemState extends State<_AppDrawerItem>
           children: [
             Stack(
               children: [
-                IconShapeClipper(
-                  shape: widget.iconShape,
-                  size: 48,
-                  child: icon != null
-                      ? Image.memory(
-                          icon,
-                          key: ValueKey('icon_${app.packageName}'),
-                          width: 48,
-                          height: 48,
-                          fit: BoxFit.cover,
-                          cacheWidth: 144,
-                          gaplessPlayback: true,
-                        )
-                      : _AppPlaceholder(
-                          key: ValueKey('placeholder_${app.packageName}'),
-                          name: app.name,
-                          size: 48,
-                        ),
+                SizedBox(
+                  key: _iconBoxKey,
+                  width: 48,
+                  height: 48,
+                  child: IconShapeClipper(
+                    shape: widget.iconShape,
+                    size: 48,
+                    child: icon != null
+                        ? Image.memory(
+                            icon,
+                            key: ValueKey('icon_${app.packageName}'),
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            cacheWidth: 144,
+                            gaplessPlayback: true,
+                          )
+                        : _AppPlaceholder(
+                            key: ValueKey('placeholder_${app.packageName}'),
+                            name: app.name,
+                            size: 48,
+                          ),
+                  ),
                 ),
                 if (widget.notificationCount > 0)
                   Positioned(

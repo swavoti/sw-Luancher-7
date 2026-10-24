@@ -1,85 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
-import 'package:flutter/gestures.dart';
+import 'dart:isolate';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:installed_apps/installed_apps.dart';
-import 'package:installed_apps/app_info.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_lock_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
 import 'package:swavoti/screens/discover_news.dart';
-import 'package:swavoti/widgets/search_widget.dart';
-import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
-import 'dart:isolate';
+import 'package:swavoti/widgets/widget_host.dart';
+import 'package:swavoti/widgets/widget_display.dart';
+import 'package:swavoti/main.dart' show launcherRouteObserver;
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
 
-class LauncherItem {
-  final String id;
-  String type; // 'app' or 'widget' or 'folder'
-  String packageName;
-  final String? className; // for widgets
-  final int? appWidgetId;
-  int x;
-  int y;
-  int spanX;
-  int spanY;
-  int page;
-  String label;
-  List<String>? folderApps;
-
-  LauncherItem({
-    required this.id,
-    required this.type,
-    required this.packageName,
-    this.className,
-    this.appWidgetId,
-    required this.x,
-    required this.y,
-    this.spanX = 1,
-    this.spanY = 1,
-    this.page = 0,
-    required this.label,
-    this.folderApps,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'type': type,
-    'packageName': packageName,
-    'className': className,
-    'appWidgetId': appWidgetId,
-    'x': x,
-    'y': y,
-    'spanX': spanX,
-    'spanY': spanY,
-    'page': page,
-    'label': label,
-    if (folderApps != null) 'folderApps': folderApps,
-  };
-
-  factory LauncherItem.fromJson(Map<String, dynamic> json) => LauncherItem(
-    id: json['id'],
-    type: json['type'],
-    packageName: json['packageName'],
-    className: json['className'],
-    appWidgetId: json['appWidgetId'],
-    x: json['x'],
-    y: json['y'],
-    spanX: json['spanX'] ?? 1,
-    spanY: json['spanY'] ?? 1,
-    page: json['page'] ?? 0,
-    label: json['label'] ?? '',
-    folderApps: json['folderApps'] != null
-        ? List<String>.from(json['folderApps'])
-        : null,
-  );
-}
+export 'package:swavoti/widgets/widget_host.dart' show LauncherItem;
 
 class HomeScreen extends StatefulWidget {
   final SharedPreferences prefs;
@@ -109,7 +46,8 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen>
+    with WidgetsBindingObserver, RouteAware {
   List<LauncherItem> _items = [];
   bool _isDragging = false;
   bool _isNavigatingToDiscover = false;
@@ -117,23 +55,20 @@ class HomeScreenState extends State<HomeScreen> {
   LauncherItem? _openedFolderItem;
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
+  final Map<String, GlobalKey> _itemIconKeys = {};
+  bool _externalOverlayOpen = false;
+  bool _routeCovered = false;
+  bool _sceneSyncScheduled = false;
 
   // Split-screen preloaded apps
   List<AppInfo> _allDeviceApps = [];
   bool _isLoadingDeviceApps = false;
   bool _supportsSplitScreen = false;
   String? _editingWidgetId;
-  bool _editingWidgetConfigurable = false;
-  bool _editingWidgetCanResizeX = false;
-  bool _editingWidgetCanResizeY = false;
-  int _editingWidgetMinSpanX = 1;
-  int _editingWidgetMinSpanY = 1;
-  double _resizeDragX = 0;
-  double _resizeDragY = 0;
-  final Map<String, GlobalKey> _widgetItemKeys = {};
+  WidgetCapabilities _editingWidgetCapabilities = const WidgetCapabilities();
 
   // Grid Configuration
-  final int _columns = 4;
+  int _columns = 4;
   final int _rows = 5;
 
   // Always 3 workspace pages minimum
@@ -154,11 +89,12 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // These are pure synchronous reads from SharedPreferences (already in
     // memory) — zero I/O, safe to call in initState.
-    _loadItemsSync();
     _loadSettingsSync();
+    _loadItemsSync();
     _workspaceController = PageController(initialPage: 0);
     _workspaceController.addListener(_onWorkspaceScroll);
 
@@ -168,7 +104,7 @@ class HomeScreenState extends State<HomeScreen> {
     // completely static layout the moment the window hand-off completes.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!LightweightMode.isEnabled) {
-        LauncherService.preloadWidgets();
+        unawaited(WidgetHostController.instance.getBudgetedCatalog());
         _preloadSplitScreenApps();
       } else {
         // Lightweight mode: skip the full app list, but still warm the
@@ -178,7 +114,133 @@ class HomeScreenState extends State<HomeScreen> {
       LauncherService.supportsSplitScreen().then((value) {
         if (mounted) setState(() => _supportsSplitScreen = value);
       });
+      _scheduleHomeSceneSync();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      launcherRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() {
+    _routeCovered = true;
+    unawaited(
+      LauncherService.syncHomeScene(
+        isCleanHome: false,
+        isSubRouteOpen: true,
+        iconShape: _iconShape,
+      ),
+    );
+  }
+
+  @override
+  void didPopNext() {
+    _routeCovered = false;
+    _scheduleHomeSceneSync();
+  }
+
+  void setExternalOverlayOpen(bool isOpen) {
+    if (_externalOverlayOpen == isOpen) return;
+    _externalOverlayOpen = isOpen;
+    if (isOpen) {
+      unawaited(
+        LauncherService.syncHomeScene(
+          isCleanHome: false,
+          iconShape: _iconShape,
+        ),
+      );
+    } else {
+      _scheduleHomeSceneSync();
+    }
+  }
+
+  GlobalKey _getIconKey(String itemId) =>
+      _itemIconKeys.putIfAbsent(itemId, () => GlobalKey());
+
+  Rect? _measureItemIconBounds(String itemId) {
+    final key = _itemIconKeys[itemId];
+    final renderBox = key?.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null && renderBox.attached && renderBox.hasSize) {
+      return renderBox.localToGlobal(Offset.zero) & renderBox.size;
+    }
+    return null;
+  }
+
+  bool get _isCleanHomeState =>
+      !_externalOverlayOpen &&
+      !_routeCovered &&
+      !_isDragging &&
+      !_isWorkspaceOverviewMode &&
+      !_isNavigatingToDiscover &&
+      _openedFolderItem == null &&
+      _editingWidgetId == null;
+
+  void _scheduleHomeSceneSync() {
+    if (_sceneSyncScheduled || !mounted) return;
+    _sceneSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sceneSyncScheduled = false;
+      if (!mounted) return;
+      final clean = _isCleanHomeState;
+      final targets = <Map<String, dynamic>>[];
+      final seenPackages = <String>{};
+
+      for (final item in _items) {
+        if (item.type != 'app' || item.packageName.isEmpty) continue;
+        if (item.page != -1 && item.page != _currentWorkspacePage) continue;
+        final rect = _measureItemIconBounds(item.id);
+        if (rect == null || rect.width <= 0 || rect.height <= 0) continue;
+        seenPackages.add(item.packageName);
+        targets.add({
+          'packageName': item.packageName,
+          'left': rect.left,
+          'top': rect.top,
+          'width': rect.width,
+          'height': rect.height,
+          'isFolderSlot': false,
+        });
+      }
+
+      for (final item in _items) {
+        if (item.type != 'folder') continue;
+        if (item.page != -1 && item.page != _currentWorkspacePage) continue;
+        final folderApps = item.folderApps;
+        if (folderApps == null || folderApps.isEmpty) continue;
+        final rect = _measureItemIconBounds(item.id);
+        if (rect == null || rect.width <= 0 || rect.height <= 0) continue;
+        for (final pkg in folderApps) {
+          if (pkg.isEmpty || !seenPackages.add(pkg)) continue;
+          targets.add({
+            'packageName': pkg,
+            'left': rect.left,
+            'top': rect.top,
+            'width': rect.width,
+            'height': rect.height,
+            'isFolderSlot': true,
+          });
+        }
+      }
+
+      unawaited(
+        LauncherService.syncHomeScene(
+          isCleanHome: clean,
+          isSubRouteOpen: _routeCovered,
+          iconShape: _iconShape,
+          targets: targets,
+        ),
+      );
+    });
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    WidgetHostController.instance.onMemoryPressure();
   }
 
   /// Number of icons warmed in lightweight mode (≈ first drawer page).
@@ -302,6 +364,8 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    launcherRouteObserver.unsubscribe(this);
+    WidgetsBinding.instance.removeObserver(this);
     _workspaceController.removeListener(_onWorkspaceScroll);
     _workspaceController.dispose();
     super.dispose();
@@ -365,6 +429,7 @@ class HomeScreenState extends State<HomeScreen> {
 
   void _loadSettingsSync() {
     _iconShape = widget.prefs.getString('icon_shape') ?? 'Circle';
+    _columns = (widget.prefs.getInt('grid_columns') ?? 4).clamp(3, 6);
   }
 
   Future<void> _reloadSettings() async {
@@ -383,7 +448,16 @@ class HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     setState(() {
       _iconShape = prefs.getString('icon_shape') ?? 'Circle';
+      _columns = (prefs.getInt('grid_columns') ?? 4).clamp(3, 6);
       _loadItemsFromPrefs(prefs);
+      for (final item in _items) {
+        if (item.page >= 0) {
+          item.spanX = item.spanX.clamp(1, _columns);
+          item.spanY = item.spanY.clamp(1, _rows);
+          item.x = item.x.clamp(0, _columns - item.spanX);
+          item.y = item.y.clamp(0, _rows - item.spanY);
+        }
+      }
     });
   }
 
@@ -673,16 +747,11 @@ class HomeScreenState extends State<HomeScreen> {
       builder: (context) => WidgetBottomSheet(
         onWidgetSelected: (widgetData) async {
           Navigator.pop(context);
-          final id = await LauncherService.allocateWidgetId();
-          if (id != -1) {
-            final success = await LauncherService.bindWidget(
-              id,
-              widgetData['providerPackage'],
-              widgetData['providerClass'],
-            );
-            if (success) {
-              addWidgetToWorkspace(widgetData, id);
-            }
+          final id = await WidgetHostController.instance.allocateAndBindWidget(
+            widgetData,
+          );
+          if (id != null && mounted) {
+            addWidgetToWorkspace(widgetData, id);
           }
         },
       ),
@@ -745,7 +814,9 @@ class HomeScreenState extends State<HomeScreen> {
       if (source == null ||
           source.type == 'widget' ||
           source.type == 'time_weather_widget' ||
-          source.type == 'search_widget') return false;
+          source.type == 'search_widget') {
+        return false;
+      }
     }
     if (source == null && data['type'] != 'app') return false;
 
@@ -828,9 +899,12 @@ class HomeScreenState extends State<HomeScreen> {
 
   void _removeItem(LauncherItem item) {
     if (item.appWidgetId != null) {
-      LauncherService.deleteWidgetId(item.appWidgetId!);
+      unawaited(WidgetHostController.instance.deleteWidget(item.appWidgetId));
     }
     setState(() {
+      if (_editingWidgetId == item.id) {
+        _editingWidgetId = null;
+      }
       _items.remove(item);
     });
     _saveItems();
@@ -876,58 +950,101 @@ class HomeScreenState extends State<HomeScreen> {
     int? targetY,
     int? targetPage,
   }) {
-    final spanX =
-        (widgetData['spanX'] as int? ?? 4).clamp(1, _columns);
-    final spanY =
-        (widgetData['spanY'] as int? ?? 2).clamp(1, _rows);
-    final page = targetPage ?? _currentWorkspacePage;
-    final positions = <(int, int)>[];
-    if (targetX != null && targetY != null) {
-      positions.add((
-        targetX.clamp(0, _columns - spanX).toInt(),
-        targetY.clamp(0, _rows - spanY).toInt(),
-      ));
-    }
-    for (int y = 0; y <= _rows - spanY; y++) {
-      for (int x = 0; x <= _columns - spanX; x++) {
-        if (!positions.contains((x, y))) positions.add((x, y));
-      }
-    }
+    final (spanX, spanY) = WidgetHostController.defaultSpanForWidgetData(
+      widgetData,
+      columns: _columns,
+      rows: _rows,
+    );
+    final preferredPage = targetPage ?? _currentWorkspacePage;
+    final pagesToTry = <int>[
+      preferredPage,
+      if (targetX == null)
+        for (int p = 0; p < _totalPages; p++)
+          if (p != preferredPage) p,
+    ];
 
-    for (final (x, y) in positions) {
-      final isOccupied = _items.any(
-        (item) =>
-            item.page == page &&
-            x < item.x + item.spanX &&
-            x + spanX > item.x &&
-            y < item.y + item.spanY &&
-            y + spanY > item.y,
+    for (final page in pagesToTry) {
+      final slot = WidgetGridSolver.findFirstFreeSlot(
+        items: _items,
+        page: page,
+        spanX: spanX,
+        spanY: spanY,
+        columns: _columns,
+        rows: _rows,
+        preferredX: page == preferredPage ? targetX : null,
+        preferredY: page == preferredPage ? targetY : null,
       );
-      if (isOccupied) continue;
-
-      _addNewItem(
-        LauncherItem(
+      if (slot != null) {
+        final created = LauncherItem(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
           type: 'widget',
-          packageName: widgetData['providerPackage'],
-          className: widgetData['providerClass'],
+          packageName: widgetData['providerPackage'] as String? ?? '',
+          className: widgetData['providerClass'] as String?,
           appWidgetId: widgetId,
-          x: x,
-          y: y,
+          x: slot.$1,
+          y: slot.$2,
           spanX: spanX,
           spanY: spanY,
           page: page,
-          label: widgetData['label'],
-        ),
-      );
-      return;
+          label: widgetData['label'] as String? ?? 'Widget',
+        );
+        setState(() {
+          _items.add(created);
+        });
+        _saveItems();
+        if (page != _currentWorkspacePage && _workspaceController.hasClients) {
+          _workspaceController.animateToPage(
+            page,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        _beginWidgetEdit(created);
+        return;
+      }
+
+      // If dropped onto occupied cells that have room to shift neighbors aside, nudge them!
+      if (page == preferredPage && targetX != null && targetY != null) {
+        final created = LauncherItem(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          type: 'widget',
+          packageName: widgetData['providerPackage'] as String? ?? '',
+          className: widgetData['providerClass'] as String?,
+          appWidgetId: widgetId,
+          x: targetX.clamp(0, _columns - spanX),
+          y: targetY.clamp(0, _rows - spanY),
+          spanX: spanX,
+          spanY: spanY,
+          page: page,
+          label: widgetData['label'] as String? ?? 'Widget',
+        );
+        final nudged = WidgetGridSolver.tryApplyWidgetRect(
+          items: _items,
+          target: created,
+          page: page,
+          newX: created.x,
+          newY: created.y,
+          newSpanX: spanX,
+          newSpanY: spanY,
+          columns: _columns,
+          rows: _rows,
+        );
+        if (nudged) {
+          setState(() {
+            _items.add(created);
+          });
+          _saveItems();
+          _beginWidgetEdit(created);
+          return;
+        }
+      }
     }
 
-    LauncherService.deleteWidgetId(widgetId);
+    unawaited(WidgetHostController.instance.deleteWidget(widgetId));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          'Not enough space for this widget (requires 4x2). Try a blank page!',
+          'Not enough free cells for $spanX×$spanY widget on this page.',
         ),
       ),
     );
@@ -935,15 +1052,22 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _scheduleHomeSceneSync();
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
     return Stack(
       children: [
         // The Workspace
         GestureDetector(
-          onLongPress: () => setState(() => _isWorkspaceOverviewMode = true),
-          onTap: _isWorkspaceOverviewMode
-              ? () => setState(() => _isWorkspaceOverviewMode = false)
+          onLongPress: () => setState(() {
+            _editingWidgetId = null;
+            _isWorkspaceOverviewMode = true;
+          }),
+          onTap: (_isWorkspaceOverviewMode || _editingWidgetId != null)
+              ? () => setState(() {
+                  _isWorkspaceOverviewMode = false;
+                  _editingWidgetId = null;
+                })
               : null,
           child: AnimatedScale(
             scale: _isWorkspaceOverviewMode ? 0.75 : 1.0,
@@ -989,6 +1113,22 @@ class HomeScreenState extends State<HomeScreen> {
                                   child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
+                                      if (_isDragging ||
+                                          (_editingWidgetId != null &&
+                                              pageIndex ==
+                                                  _currentWorkspacePage))
+                                        Positioned.fill(
+                                          child: WorkspaceResizeGridOverlay(
+                                            columns: _columns,
+                                            rows: _rows,
+                                            activeItem: pageItems
+                                                .where(
+                                                  (i) =>
+                                                      i.id == _editingWidgetId,
+                                                )
+                                                .firstOrNull,
+                                          ),
+                                        ),
                                       // Drop targets
                                       for (int y = 0; y < _rows; y++)
                                         for (int x = 0; x < _columns; x++)
@@ -1028,14 +1168,45 @@ class HomeScreenState extends State<HomeScreen> {
                                                     0,
                                                     _rows - spanY,
                                                   );
-                                                  return _canPlaceSpanAt(
-                                                    targetX,
-                                                    targetY,
-                                                    spanX,
-                                                    spanY,
-                                                    pageIndex,
-                                                    ignoreItemId: itemId,
-                                                  );
+                                                  final dummyTarget = itemId != null
+                                                      ? (_items
+                                                            .where((i) => i.id == itemId)
+                                                            .firstOrNull ??
+                                                        LauncherItem(
+                                                          id: itemId,
+                                                          type: type ?? 'widget',
+                                                          packageName: '',
+                                                          x: targetX,
+                                                          y: targetY,
+                                                          spanX: spanX,
+                                                          spanY: spanY,
+                                                          page: pageIndex,
+                                                          label: '',
+                                                        ))
+                                                      : LauncherItem(
+                                                          id: '__preview__',
+                                                          type: 'widget',
+                                                          packageName: '',
+                                                          x: targetX,
+                                                          y: targetY,
+                                                          spanX: spanX,
+                                                          spanY: spanY,
+                                                          page: pageIndex,
+                                                          label: '',
+                                                        );
+                                                  return WidgetGridSolver
+                                                      .tryApplyWidgetRect(
+                                                        items: _items,
+                                                        target: dummyTarget,
+                                                        page: pageIndex,
+                                                        newX: targetX,
+                                                        newY: targetY,
+                                                        newSpanX: spanX,
+                                                        newSpanY: spanY,
+                                                        columns: _columns,
+                                                        rows: _rows,
+                                                        dryRun: true,
+                                                      );
                                                 }
 
                                                 if (x >= _columns || y >= _rows) {
@@ -1053,9 +1224,7 @@ class HomeScreenState extends State<HomeScreen> {
                                                     )
                                                     .firstOrNull;
                                                 if (itemAtCell != null &&
-                                                    (itemAtCell.type == 'widget' ||
-                                                     itemAtCell.type == 'time_weather_widget' ||
-                                                     itemAtCell.type == 'search_widget')) {
+                                                    itemAtCell.isAnyWidget) {
                                                   return false;
                                                 }
                                                 return true;
@@ -1083,22 +1252,23 @@ class HomeScreenState extends State<HomeScreen> {
                                                 final item = _items.firstWhere(
                                                   (i) => i.id == itemId,
                                                 );
-                                                if (item.type == 'widget' ||
-                                                    item.type == 'time_weather_widget' ||
-                                                    item.type == 'search_widget') {
-                                                  if (_canMoveWidgetTo(
-                                                    item,
-                                                    targetX,
-                                                    targetY,
-                                                    pageIndex,
-                                                  )) {
-                                                    setState(() {
-                                                      item.x = targetX;
-                                                      item.y = targetY;
-                                                      item.page = pageIndex;
-                                                      _editingWidgetId = null;
-                                                    });
+                                                if (item.isAnyWidget) {
+                                                  final moved =
+                                                      WidgetGridSolver.tryApplyWidgetRect(
+                                                        items: _items,
+                                                        target: item,
+                                                        page: pageIndex,
+                                                        newX: targetX,
+                                                        newY: targetY,
+                                                        newSpanX: item.spanX,
+                                                        newSpanY: item.spanY,
+                                                        columns: _columns,
+                                                        rows: _rows,
+                                                      );
+                                                  if (moved) {
+                                                    setState(() {});
                                                     _saveItems();
+                                                    _beginWidgetEdit(item);
                                                   }
                                                   return;
                                                 }
@@ -1242,16 +1412,10 @@ class HomeScreenState extends State<HomeScreen> {
                                                     ScaffoldMessenger.maybeOf(
                                                       context,
                                                     );
-                                                LauncherService.allocateWidgetId().then((
-                                                  id,
-                                                ) {
-                                                  if (id != -1) {
-                                                    LauncherService.bindWidget(
-                                                      id,
-                                                      data['providerPackage'],
-                                                      data['providerClass'],
-                                                    ).then((success) {
-                                                      if (success) {
+                                                WidgetHostController.instance
+                                                    .allocateAndBindWidget(data)
+                                                    .then((id) {
+                                                      if (id != null) {
                                                         addWidgetToWorkspace(
                                                           data,
                                                           id,
@@ -1260,9 +1424,6 @@ class HomeScreenState extends State<HomeScreen> {
                                                           targetPage: pageIndex,
                                                         );
                                                       } else {
-                                                        LauncherService.deleteWidgetId(
-                                                          id,
-                                                        );
                                                         messenger?.showSnackBar(
                                                           const SnackBar(
                                                             content: Text(
@@ -1272,16 +1433,6 @@ class HomeScreenState extends State<HomeScreen> {
                                                         );
                                                       }
                                                     });
-                                                  } else {
-                                                    messenger?.showSnackBar(
-                                                      const SnackBar(
-                                                        content: Text(
-                                                          'Unable to allocate widget.',
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-                                                });
                                               }
                                             },
                                             builder:
@@ -1370,84 +1521,11 @@ class HomeScreenState extends State<HomeScreen> {
                                         top: item.y * cellHeight,
                                         width: item.spanX * cellWidth,
                                         height: item.spanY * cellHeight,
-                                        child: (item.type == 'widget' ||
-                                                item.type == 'time_weather_widget' ||
-                                                item.type == 'search_widget')
-                                            ? LongPressDraggable<
-                                                Map<String, dynamic>
-                                              >(
-                                                data: item.toJson(),
-                                                delay: const Duration(
-                                                  milliseconds: 150,
-                                                ),
-                                                onDragStarted: () {
-                                                  setState(() {
-                                                    _isDragging = true;
-                                                    _editingWidgetId = null;
-                                                  });
-                                                },
-                                                onDragEnd: (_) {
-                                                  setState(
-                                                    () => _isDragging = false,
-                                                  );
-                                                  widget.onDragEnded?.call();
-                                                },
-                                                onDraggableCanceled: (_, _) {
-                                                  setState(
-                                                    () => _isDragging = false,
-                                                  );
-                                                  widget.onDragEnded?.call();
-                                                },
-                                                feedback: Material(
-                                                  color: Colors.transparent,
-                                                  child: Container(
-                                                    width:
-                                                        item.spanX * cellWidth,
-                                                    height:
-                                                        item.spanY * cellHeight,
-                                                    decoration: BoxDecoration(
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            16,
-                                                          ),
-                                                      boxShadow: [
-                                                        BoxShadow(
-                                                          color: Colors.black
-                                                              .withValues(
-                                                                alpha: 0.24,
-                                                              ),
-                                                          blurRadius: 16,
-                                                        ),
-                                                      ],
-                                                    ),
-                                                    clipBehavior:
-                                                        Clip.antiAlias,
-                                                    child: _buildItemContent(
-                                                      item,
-                                                      cellWidth,
-                                                      cellHeight,
-                                                      isFeedback: true,
-                                                    ),
-                                                  ),
-                                                ),
-                                                childWhenDragging:
-                                                    const SizedBox.shrink(),
-                                                child: KeyedSubtree(
-                                                  key: _widgetItemKeys
-                                                      .putIfAbsent(
-                                                        item.id,
-                                                        () => GlobalKey(),
-                                                      ),
-                                                  child: GestureDetector(
-                                                    onDoubleTap: () =>
-                                                        _beginWidgetEdit(item),
-                                                    child: _buildItemContent(
-                                                      item,
-                                                      cellWidth,
-                                                      cellHeight,
-                                                    ),
-                                                  ),
-                                                ),
+                                        child: item.isAnyWidget
+                                            ? _buildPlacedWidgetSlot(
+                                                item,
+                                                cellWidth,
+                                                cellHeight,
                                               )
                                             : LongPressDraggable<
                                                 Map<String, dynamic>
@@ -1498,10 +1576,7 @@ class HomeScreenState extends State<HomeScreen> {
                                                 child: GestureDetector(
                                                   onTap: () {
                                                     if (item.type == 'app') {
-                                                      final renderBox = context.findRenderObject() as RenderBox?;
-                                                      final bounds = (renderBox != null && renderBox.hasSize)
-                                                          ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
-                                                          : null;
+                                                      final bounds = _measureItemIconBounds(item.id);
                                                       AppLockService.launchApp(
                                                         context,
                                                         item.packageName,
@@ -1805,6 +1880,7 @@ class HomeScreenState extends State<HomeScreen> {
                                                 item,
                                                 cellWidth,
                                                 90,
+                                                isFeedback: true,
                                               ),
                                             ),
                                           ),
@@ -1812,10 +1888,7 @@ class HomeScreenState extends State<HomeScreen> {
                                               const SizedBox.shrink(),
                                           child: GestureDetector(
                                             onTap: () {
-                                              final renderBox = context.findRenderObject() as RenderBox?;
-                                              final bounds = (renderBox != null && renderBox.hasSize)
-                                                  ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
-                                                  : null;
+                                              final bounds = _measureItemIconBounds(item.id);
                                               AppLockService.launchApp(
                                                 context,
                                                 item.packageName,
@@ -1918,44 +1991,17 @@ class HomeScreenState extends State<HomeScreen> {
     bool isFeedback = false,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    if (item.type == 'widget' && item.appWidgetId != null) {
-      final widgetView = Container(
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: _WidgetWrapper(
-            key: ValueKey('widget_view_${item.appWidgetId}'),
-            appWidgetId: item.appWidgetId!,
-          ),
-        ),
-      );
-      if (!isFeedback && _editingWidgetId == item.id) {
-        return _buildWidgetEditor(item, widgetView, cellWidth, cellHeight);
-      }
-      return widgetView;
-    } else if (item.type == 'search_widget') {
-      return Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: SearchWidget(
-          key: ValueKey('search_widget_${item.id}'),
-          onRemove: () {
-            setState(() {
-              _items.removeWhere((i) => i.id == item.id);
-            });
-            _saveItems();
-          },
-        ),
-      );
-    } else if (item.type == 'time_weather_widget') {
-      return TimeWeatherWidget(
-        key: ValueKey('time_weather_widget_${item.id}'),
-        onRemove: () {
-          setState(() {
-            _items.removeWhere((i) => i.id == item.id);
-          });
-          _saveItems();
-        },
+    if (item.isAnyWidget) {
+      return WidgetDisplay(
+        item: item,
+        cellWidth: cellWidth,
+        cellHeight: cellHeight,
+        currentPage: _currentWorkspacePage,
+        isFeedback: isFeedback,
+        isEditing: false,
+        onRemove: () => _removeItem(item),
+        onExitEdit: () => setState(() => _editingWidgetId = null),
+        onResetSize: () => _resetWidgetSize(item),
       );
     } else if (item.type == 'folder') {
       return GestureDetector(
@@ -1970,6 +2016,7 @@ class HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
+                key: isFeedback ? null : _getIconKey(item.id),
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
@@ -2072,7 +2119,12 @@ class HomeScreenState extends State<HomeScreen> {
             children: [
               Stack(
                 children: [
-                _buildHomeAppIcon(app, 56),
+                  SizedBox(
+                    key: isFeedback ? null : _getIconKey(item.id),
+                    width: 56,
+                    height: 56,
+                    child: _buildHomeAppIcon(app, 56),
+                  ),
                   if (showNotificationDots && notificationCount > 0)
                     Positioned(
                       right: 0,
@@ -2430,10 +2482,16 @@ class HomeScreenState extends State<HomeScreen> {
               final bounds = (renderBox != null && renderBox.hasSize)
                   ? (renderBox.localToGlobal(Offset.zero) & renderBox.size)
                   : null;
+              final folderBounds = _measureItemIconBounds(folder.id);
               setState(() {
                 _openedFolderItem = null;
               });
-              AppLockService.launchApp(context, pkg, sourceBounds: bounds);
+              AppLockService.launchApp(
+                context,
+                pkg,
+                sourceBounds: bounds,
+                returnBounds: folderBounds,
+              );
             },
             child: tileContent,
           ),
@@ -2574,242 +2632,178 @@ class HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildPlacedWidgetSlot(
+    LauncherItem item,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    final isEditing = _editingWidgetId == item.id;
+
+    final draggableCore = LongPressDraggable<Map<String, dynamic>>(
+      data: item.toJson(),
+      delay: const Duration(milliseconds: 220),
+      onDragStarted: () {
+        HapticFeedback.mediumImpact();
+        if (item.appWidgetId != null) {
+          unawaited(
+            WidgetHostController.instance.captureWidgetSnapshot(
+              item.appWidgetId!,
+            ),
+          );
+        }
+        setState(() {
+          _isDragging = true;
+          _editingWidgetId = null;
+        });
+      },
+      onDragEnd: (_) {
+        setState(() => _isDragging = false);
+        widget.onDragEnded?.call();
+      },
+      onDraggableCanceled: (_, _) {
+        setState(() => _isDragging = false);
+        widget.onDragEnded?.call();
+        // Long-press & release without moving -> immediately enter Lawnchair/Launcher3 4-edge resize mode
+        _beginWidgetEdit(item);
+      },
+      feedback: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: item.spanX * cellWidth,
+          height: item.spanY * cellHeight,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 18,
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: _buildItemContent(
+            item,
+            cellWidth,
+            cellHeight,
+            isFeedback: true,
+          ),
+        ),
+      ),
+      childWhenDragging: const SizedBox.shrink(),
+      child: WidgetDisplay(
+        item: item,
+        cellWidth: cellWidth,
+        cellHeight: cellHeight,
+        currentPage: _currentWorkspacePage,
+        suppressInnerPointers: isEditing,
+        onRemove: () => _removeItem(item),
+        onExitEdit: () => setState(() => _editingWidgetId = null),
+        onResetSize: () => _resetWidgetSize(item),
+      ),
+    );
+
+    if (!isEditing) {
+      return draggableCore;
+    }
+
+    return Launcher3ResizeFrame(
+      item: item,
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
+      capabilities: _editingWidgetCapabilities,
+      onRemove: () => _removeItem(item),
+      onExitEdit: () => setState(() => _editingWidgetId = null),
+      onResetSize: () => _resetWidgetSize(item),
+      onResizeStep: (edge, stepDelta) =>
+          _handleWidgetResizeStep(item, edge, stepDelta),
+      onResizeCommit: _saveItems,
+      child: draggableCore,
+    );
+  }
+
   void _beginWidgetEdit(LauncherItem item) {
-    if (item.appWidgetId == null) return;
+    if (!item.isAnyWidget) return;
+    HapticFeedback.selectionClick();
     setState(() {
       _editingWidgetId = item.id;
-      _editingWidgetConfigurable = false;
-      _editingWidgetCanResizeX = false;
-      _editingWidgetCanResizeY = false;
-      _editingWidgetMinSpanX = item.spanX;
-      _editingWidgetMinSpanY = item.spanY;
+      _editingWidgetCapabilities = const WidgetCapabilities();
     });
-    LauncherService.widgetCapabilities(item.appWidgetId!).then((capabilities) {
-      if (!mounted || _editingWidgetId != item.id) return;
-      final canResizeX = capabilities['resizeHorizontal'] == true;
-      final canResizeY = capabilities['resizeVertical'] == true;
-      final box = _widgetItemKeys[item.id]?.currentContext?.findRenderObject();
-      final cellWidth = box is RenderBox && box.hasSize
-          ? box.size.width / item.spanX
-          : 1.0;
-      final cellHeight = box is RenderBox && box.hasSize
-          ? box.size.height / item.spanY
-          : 1.0;
-      final minWidth = capabilities['minResizeWidth'] as int? ?? 0;
-      final minHeight = capabilities['minResizeHeight'] as int? ?? 0;
-      setState(() {
-        _editingWidgetConfigurable = capabilities['configurable'] == true;
-        _editingWidgetCanResizeX = canResizeX;
-        _editingWidgetCanResizeY = canResizeY;
-        _editingWidgetMinSpanX = canResizeX
-            ? (minWidth / cellWidth).ceil().clamp(1, _columns).toInt()
-            : item.spanX;
-        _editingWidgetMinSpanY = canResizeY
-            ? (minHeight / cellHeight).ceil().clamp(1, _rows).toInt()
-            : item.spanY;
-      });
-    });
+    WidgetHostController.instance
+        .getCapabilities(item, columns: _columns)
+        .then((capabilities) {
+          if (!mounted || _editingWidgetId != item.id) return;
+          setState(() {
+            _editingWidgetCapabilities = capabilities;
+          });
+        });
   }
 
-  bool _canResizeWidget(LauncherItem item, int spanX, int spanY) {
-    if (spanX < 1 ||
-        spanY < 1 ||
-        (spanX != item.spanX && spanX < _editingWidgetMinSpanX) ||
-        (spanY != item.spanY && spanY < _editingWidgetMinSpanY) ||
-        (spanX != item.spanX && !_editingWidgetCanResizeX) ||
-        (spanY != item.spanY && !_editingWidgetCanResizeY) ||
-        item.x + spanX > _columns ||
-        item.y + spanY > _rows) {
-      return false;
-    }
-    return !_items.any(
-      (other) =>
-          other.id != item.id &&
-          other.page == item.page &&
-          item.x < other.x + other.spanX &&
-          item.x + spanX > other.x &&
-          item.y < other.y + other.spanY &&
-          item.y + spanY > other.y,
-    );
-  }
-
-  bool _canPlaceSpanAt(
-    int x,
-    int y,
-    int spanX,
-    int spanY,
-    int page, {
-    String? ignoreItemId,
-  }) {
-    if (x < 0 || y < 0 || x + spanX > _columns || y + spanY > _rows) {
-      return false;
-    }
-    return !_items.any(
-      (other) =>
-          other.id != ignoreItemId &&
-          other.page == page &&
-          x < other.x + other.spanX &&
-          x + spanX > other.x &&
-          y < other.y + other.spanY &&
-          y + spanY > other.y,
-    );
-  }
-
-  bool _canMoveWidgetTo(LauncherItem item, int x, int y, int page) {
-    return _canPlaceSpanAt(
-      x,
-      y,
-      item.spanX,
-      item.spanY,
-      page,
-      ignoreItemId: item.id,
-    );
-  }
-
-  void _resizeWidgetByDrag(
+  bool _handleWidgetResizeStep(
     LauncherItem item,
-    Offset delta,
-    double cellWidth,
-    double cellHeight,
+    WidgetResizeEdge edge,
+    int stepDelta,
   ) {
-    _resizeDragX += delta.dx;
-    _resizeDragY += delta.dy;
-    var changed = false;
+    int newX = item.x;
+    int newY = item.y;
+    int newSpanX = item.spanX;
+    int newSpanY = item.spanY;
 
-    while (_resizeDragX >= cellWidth) {
-      if (!_canResizeWidget(item, item.spanX + 1, item.spanY)) {
-        _resizeDragX = 0;
-        break;
-      }
-      item.spanX++;
-      _resizeDragX -= cellWidth;
-      changed = true;
-    }
-    while (_resizeDragX <= -cellWidth) {
-      if (!_canResizeWidget(item, item.spanX - 1, item.spanY)) {
-        _resizeDragX = 0;
-        break;
-      }
-      item.spanX--;
-      _resizeDragX += cellWidth;
-      changed = true;
-    }
-    while (_resizeDragY >= cellHeight) {
-      if (!_canResizeWidget(item, item.spanX, item.spanY + 1)) {
-        _resizeDragY = 0;
-        break;
-      }
-      item.spanY++;
-      _resizeDragY -= cellHeight;
-      changed = true;
-    }
-    while (_resizeDragY <= -cellHeight) {
-      if (!_canResizeWidget(item, item.spanX, item.spanY - 1)) {
-        _resizeDragY = 0;
-        break;
-      }
-      item.spanY--;
-      _resizeDragY += cellHeight;
-      changed = true;
+    switch (edge) {
+      case WidgetResizeEdge.right:
+        newSpanX += stepDelta;
+      case WidgetResizeEdge.left:
+        newX += stepDelta;
+        newSpanX -= stepDelta;
+      case WidgetResizeEdge.bottom:
+        newSpanY += stepDelta;
+      case WidgetResizeEdge.top:
+        newY += stepDelta;
+        newSpanY -= stepDelta;
     }
 
-    if (changed && mounted) setState(() {});
+    final applied = WidgetGridSolver.tryApplyWidgetRect(
+      items: _items,
+      target: item,
+      page: item.page,
+      newX: newX,
+      newY: newY,
+      newSpanX: newSpanX,
+      newSpanY: newSpanY,
+      columns: _columns,
+      rows: _rows,
+    );
+
+    if (applied && mounted) {
+      setState(() {});
+    }
+    return applied;
   }
 
-  Widget _buildWidgetEditor(
-    LauncherItem item,
-    Widget child,
-    double cellWidth,
-    double cellHeight,
-  ) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Positioned.fill(child: child),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 2,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-        ),
-        if (_editingWidgetConfigurable)
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Material(
-              color: Theme.of(context).colorScheme.surface,
-              shape: const CircleBorder(),
-              child: IconButton(
-                tooltip: 'Widget settings',
-                visualDensity: VisualDensity.compact,
-                iconSize: 20,
-                onPressed: () =>
-                    LauncherService.configureWidget(item.appWidgetId!),
-                icon: const Icon(Icons.edit_outlined),
-              ),
-            ),
-          ),
-        Positioned(
-          top: 8,
-          left: 8,
-          child: Material(
-            color: Theme.of(context).colorScheme.surface,
-            shape: const CircleBorder(),
-            child: IconButton(
-              tooltip: 'Remove widget',
-              visualDensity: VisualDensity.compact,
-              iconSize: 20,
-              onPressed: () {
-                setState(() => _editingWidgetId = null);
-                _removeItem(item);
-              },
-              icon: const Icon(Icons.close_rounded),
-            ),
-          ),
-        ),
-        if (_editingWidgetCanResizeX || _editingWidgetCanResizeY)
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: GestureDetector(
-              onPanStart: (_) {
-                _resizeDragX = 0;
-                _resizeDragY = 0;
-              },
-              onPanUpdate: (details) => _resizeWidgetByDrag(
-                item,
-                details.delta,
-                cellWidth,
-                cellHeight,
-              ),
-              onPanEnd: (_) => _saveItems(),
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    bottomRight: Radius.circular(14),
-                  ),
-                ),
-                child: Icon(
-                  Icons.open_in_full_rounded,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.onPrimary,
-                ),
-              ),
-            ),
-          ),
-      ],
+  void _resetWidgetSize(LauncherItem item) {
+    final targetSpanX = _editingWidgetCapabilities.defaultSpanX.clamp(
+      1,
+      _columns,
     );
+    final targetSpanY = _editingWidgetCapabilities.defaultSpanY.clamp(1, _rows);
+    final targetX = item.x.clamp(0, _columns - targetSpanX);
+    final targetY = item.y.clamp(0, _rows - targetSpanY);
+
+    final applied = WidgetGridSolver.tryApplyWidgetRect(
+      items: _items,
+      target: item,
+      page: item.page,
+      newX: targetX,
+      newY: targetY,
+      newSpanX: targetSpanX,
+      newSpanY: targetSpanY,
+      columns: _columns,
+      rows: _rows,
+    );
+    if (applied) {
+      HapticFeedback.lightImpact();
+      setState(() {});
+      _saveItems();
+    }
   }
 }
 
@@ -2830,30 +2824,6 @@ class _WorkspaceGridPageState extends State<_WorkspaceGridPage>
   Widget build(BuildContext context) {
     super.build(context);
     return widget.child;
-  }
-}
-
-class _WidgetWrapper extends StatefulWidget {
-  final int appWidgetId;
-  const _WidgetWrapper({super.key, required this.appWidgetId});
-
-  @override
-  State<_WidgetWrapper> createState() => _WidgetWrapperState();
-}
-
-class _WidgetWrapperState extends State<_WidgetWrapper>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return AndroidView(
-      viewType: 'widget_view',
-      creationParams: {'appWidgetId': widget.appWidgetId},
-      creationParamsCodec: const StandardMessageCodec(),
-    );
   }
 }
 

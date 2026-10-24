@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:swavoti/services/app_database_service.dart';
-import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/widgets/widget_host.dart';
 import 'package:installed_apps/installed_apps.dart';
 
 class WidgetBottomSheet extends StatefulWidget {
@@ -63,7 +63,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
   }
 
   Future<void> _loadWidgetsIncremental() async {
-    final all = await LauncherService.getAllWidgets();
+    final all = await WidgetHostController.instance.getBudgetedCatalog();
     if (!mounted) return;
     setState(() {
       for (final w in all) {
@@ -441,18 +441,27 @@ class _DraggableWidgetRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final label = widgetData['label'] as String? ?? 'Widget';
     final previewBytes = widgetData['preview'] as Uint8List?;
+    final (defaultSpanX, defaultSpanY) =
+        WidgetHostController.defaultSpanForWidgetData(
+          widgetData,
+          columns: 4,
+          rows: 5,
+        );
 
     final dragData = {
       'type': 'widget_preview',
       'providerPackage': widgetData['providerPackage'],
       'providerClass': widgetData['providerClass'],
       'label': label,
-      'spanX': 4,
-      'spanY': 2,
+      'spanX': defaultSpanX,
+      'spanY': defaultSpanY,
+      'defaultSpanX': defaultSpanX,
+      'defaultSpanY': defaultSpanY,
     };
 
     final row = _WidgetRow(
       label: label,
+      spanBadge: '$defaultSpanX × $defaultSpanY',
       previewBytes: previewBytes,
       primaryColor: cs.primary,
       onTap: () => onWidgetSelected(widgetData),
@@ -511,12 +520,14 @@ class _DraggableWidgetRow extends StatelessWidget {
 
 class _WidgetRow extends StatelessWidget {
   final String label;
+  final String spanBadge;
   final Uint8List? previewBytes;
   final Color primaryColor;
   final VoidCallback onTap;
 
   const _WidgetRow({
     required this.label,
+    required this.spanBadge,
     required this.previewBytes,
     required this.primaryColor,
     required this.onTap,
@@ -556,14 +567,29 @@ class _WidgetRow extends StatelessWidget {
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '$spanBadge • Resizable',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
             Icon(

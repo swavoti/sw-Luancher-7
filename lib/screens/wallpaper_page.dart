@@ -14,7 +14,12 @@ import 'package:swavoti/widgets/weather_icon.dart';
 
 class WallpaperPage extends StatefulWidget {
   final Uint8List? homeScreenScreenshot;
-  const WallpaperPage({super.key, this.homeScreenScreenshot});
+  final VoidCallback? onWallpaperApplied;
+  const WallpaperPage({
+    super.key,
+    this.homeScreenScreenshot,
+    this.onWallpaperApplied,
+  });
 
   @override
   State<WallpaperPage> createState() => _WallpaperPageState();
@@ -350,6 +355,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
       if (success) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('saved_wallpaper_path', assetPath);
+        widget.onWallpaperApplied?.call();
       }
 
       if (mounted) {

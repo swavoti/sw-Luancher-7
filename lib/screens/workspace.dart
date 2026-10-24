@@ -122,6 +122,7 @@ class WorkspaceState extends State<Workspace>
     // setState() mid-animation and cause jank/frame drops on every open.
     // prefetchFirstPage() is fire-and-forget (unawaited) and safe.
     _appDrawerKey.currentState?.prefetchFirstPage();
+    _homeScreenKey.currentState?.setExternalOverlayOpen(true);
     _drawerController.animateTo(
       1.0,
       duration: const Duration(milliseconds: 34),
@@ -131,16 +132,32 @@ class WorkspaceState extends State<Workspace>
   }
 
   void _closeDrawer() {
-    _drawerController.animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 34),
-      curve: Curves.easeOutCubic,
-    );
+    _drawerController
+        .animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 34),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          if (mounted && !_drawerOpen && _discoverController.value <= 0.01) {
+            _homeScreenKey.currentState?.setExternalOverlayOpen(false);
+          }
+        });
     setState(() => _drawerOpen = false);
   }
 
-  void _openDiscover() => _discoverController.forward();
-  void _closeDiscover() => _discoverController.reverse();
+  void _openDiscover() {
+    _homeScreenKey.currentState?.setExternalOverlayOpen(true);
+    _discoverController.forward();
+  }
+
+  void _closeDiscover() {
+    _discoverController.reverse().whenComplete(() {
+      if (mounted && !_drawerOpen && _discoverController.value <= 0.01) {
+        _homeScreenKey.currentState?.setExternalOverlayOpen(false);
+      }
+    });
+  }
 
   void _onDragStarted(String packageName) {
     setState(() {
@@ -160,6 +177,7 @@ class WorkspaceState extends State<Workspace>
 
   void _onVerticalDragStart(DragStartDetails details) {
     _appDrawerKey.currentState?.prefetchFirstPage();
+    _homeScreenKey.currentState?.setExternalOverlayOpen(true);
     _dragStartY = details.globalPosition.dy;
     _dragStartExtent = _drawerController.value;
     // Stop any in-progress animation

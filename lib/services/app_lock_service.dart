@@ -103,6 +103,8 @@ class AppLockService {
     String packageName, {
     bool splitScreen = false,
     Rect? sourceBounds,
+    Rect? returnBounds,
+    bool fromDrawer = false,
   }) async {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -113,6 +115,8 @@ class AppLockService {
           packageName,
           splitScreen: splitScreen,
           sourceBounds: sourceBounds,
+          returnBounds: returnBounds,
+          fromDrawer: fromDrawer,
         );
         return;
       }
@@ -138,6 +142,8 @@ class AppLockService {
                 packageName,
                 splitScreen: splitScreen,
                 sourceBounds: sourceBounds,
+                returnBounds: returnBounds,
+                fromDrawer: fromDrawer,
               );
             },
           ),

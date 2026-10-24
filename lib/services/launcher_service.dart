@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:typed_data';
 import 'dart:ui';
@@ -6,34 +7,122 @@ class MediaPlaybackInfo {
   final String packageName;
   final String title;
   final String artist;
+  final String album;
   final Uint8List? albumArt;
   final Uint8List? appIcon;
   final bool isPlaying;
   final int positionMs;
   final int durationMs;
+  final double playbackSpeed;
+  final int updatedAtMs;
+  final bool isLocalPlayer;
+  final int? localTrackId;
 
   const MediaPlaybackInfo({
     required this.packageName,
     required this.title,
     required this.artist,
+    this.album = '',
     required this.albumArt,
     required this.appIcon,
     required this.isPlaying,
     required this.positionMs,
     required this.durationMs,
+    this.playbackSpeed = 1.0,
+    this.updatedAtMs = 0,
+    this.isLocalPlayer = false,
+    this.localTrackId,
   });
 
+  int livePositionMs([int? nowEpochMs]) {
+    if (!isPlaying) {
+      return durationMs > 0 ? positionMs.clamp(0, durationMs) : positionMs;
+    }
+    final now = nowEpochMs ?? DateTime.now().millisecondsSinceEpoch;
+    final anchor = updatedAtMs > 0 ? updatedAtMs : now;
+    final elapsed = (now - anchor).clamp(0, 5000);
+    final speed = playbackSpeed > 0 ? playbackSpeed : 1.0;
+    final extrapolated = positionMs + (elapsed * speed).round();
+    return durationMs > 0
+        ? extrapolated.clamp(0, durationMs)
+        : extrapolated.clamp(0, 999999999);
+  }
+
   factory MediaPlaybackInfo.fromMap(Map<dynamic, dynamic> value) {
+    final now = DateTime.now().millisecondsSinceEpoch;
     return MediaPlaybackInfo(
       packageName: value['packageName'] as String? ?? '',
       title: value['title'] as String? ?? '',
       artist: value['artist'] as String? ?? '',
+      album: value['album'] as String? ?? '',
       albumArt: value['albumArt'] as Uint8List?,
       appIcon: value['appIcon'] as Uint8List?,
       isPlaying: value['isPlaying'] as bool? ?? false,
-      positionMs: value['positionMs'] as int? ?? 0,
-      durationMs: value['durationMs'] as int? ?? 0,
+      positionMs: (value['positionMs'] as num?)?.toInt() ?? 0,
+      durationMs: (value['durationMs'] as num?)?.toInt() ?? 0,
+      playbackSpeed: (value['playbackSpeed'] as num?)?.toDouble() ?? 1.0,
+      updatedAtMs: now,
+      isLocalPlayer: value['isLocalPlayer'] as bool? ?? false,
+      localTrackId: (value['localTrackId'] as num?)?.toInt(),
     );
+  }
+}
+
+class LocalMusicTrack {
+  final int id;
+  final String title;
+  final String artist;
+  final String album;
+  final int durationMs;
+  final int sizeBytes;
+  final String format;
+  final String contentUri;
+  final int albumId;
+  final int dateAdded;
+
+  const LocalMusicTrack({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.durationMs,
+    required this.sizeBytes,
+    required this.format,
+    required this.contentUri,
+    required this.albumId,
+    required this.dateAdded,
+  });
+
+  factory LocalMusicTrack.fromMap(Map<dynamic, dynamic> map) {
+    return LocalMusicTrack(
+      id: (map['id'] as num?)?.toInt() ?? 0,
+      title: map['title'] as String? ?? 'Unknown Track',
+      artist: map['artist'] as String? ?? 'Local Audio',
+      album: map['album'] as String? ?? '',
+      durationMs: (map['durationMs'] as num?)?.toInt() ?? 0,
+      sizeBytes: (map['sizeBytes'] as num?)?.toInt() ?? 0,
+      format: map['format'] as String? ?? 'MP3',
+      contentUri: map['contentUri'] as String? ?? '',
+      albumId: (map['albumId'] as num?)?.toInt() ?? 0,
+      dateAdded: (map['dateAdded'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  String get durationLabel {
+    final totalSec = (durationMs ~/ 1000).clamp(0, 359999);
+    final mins = totalSec ~/ 60;
+    final secs = (totalSec % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
+  String get sizeLabel {
+    if (sizeBytes <= 0) return format;
+    final mb = sizeBytes / (1024 * 1024);
+    if (mb >= 1.0) {
+      return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB [$format]';
+    }
+    final kb = (sizeBytes / 1024).round();
+    return '$kb KB [$format]';
   }
 }
 
@@ -73,6 +162,14 @@ class LauncherService {
   static const _mediaChannel = EventChannel('co.za.launcher3.swavoti/media');
 
   static List<Map<String, dynamic>>? _cachedWidgets;
+  static final ValueNotifier<List<LocalMusicTrack>> localTracksNotifier =
+      ValueNotifier<List<LocalMusicTrack>>(const []);
+  static bool _localTracksLoadedOnce = false;
+  static final Map<int, Uint8List?> _localAlbumArtCache = <int, Uint8List?>{};
+
+  static void replaceCachedWidgets(List<Map<String, dynamic>> widgets) {
+    _cachedWidgets = widgets;
+  }
 
   static Future<void> preloadWidgets() async {
     if (_cachedWidgets != null) return;
@@ -206,21 +303,54 @@ class LauncherService {
     String packageName, {
     bool splitScreen = false,
     Rect? sourceBounds,
+    Rect? returnBounds,
+    bool fromDrawer = false,
   }) async {
     try {
       await _systemChannel.invokeMethod('startApp', {
         'packageName': packageName,
         'splitScreen': splitScreen,
+        'fromDrawer': fromDrawer,
         if (sourceBounds != null) ...{
+          'sourceLeft': sourceBounds.left,
+          'sourceTop': sourceBounds.top,
+          'sourceWidth': sourceBounds.width,
+          'sourceHeight': sourceBounds.height,
           'sourceX': sourceBounds.left.round(),
           'sourceY': sourceBounds.top.round(),
-          'sourceWidth': sourceBounds.width.round(),
-          'sourceHeight': sourceBounds.height.round(),
+        },
+        if (returnBounds != null) ...{
+          'returnLeft': returnBounds.left,
+          'returnTop': returnBounds.top,
+          'returnWidth': returnBounds.width,
+          'returnHeight': returnBounds.height,
         },
       });
     } catch (e) {
       print('Error starting app: $e');
     }
+  }
+
+  static Future<void> syncHomeScene({
+    required bool isCleanHome,
+    bool isSubRouteOpen = false,
+    String iconShape = 'Circle',
+    List<Map<String, dynamic>>? targets,
+  }) async {
+    try {
+      await _systemChannel.invokeMethod('syncHomeScene', {
+        'isCleanHome': isCleanHome,
+        'isSubRouteOpen': isSubRouteOpen,
+        'iconShape': iconShape,
+        if (targets != null) 'targets': targets,
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> invalidateCompositorIcons() async {
+    try {
+      await _systemChannel.invokeMethod('invalidateCompositorIcons');
+    } catch (_) {}
   }
 
   static Future<void> openAppInfo(String packageName) async {
@@ -399,6 +529,140 @@ class LauncherService {
         false;
   }
 
+  static Future<bool> hasAudioPermission() async {
+    try {
+      return await _systemChannel.invokeMethod<bool>('hasAudioPermission') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> requestAudioPermission() async {
+    try {
+      return await _systemChannel.invokeMethod<bool>(
+            'requestAudioPermission',
+          ) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<List<LocalMusicTrack>> getLocalMusicTracks({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh && _localTracksLoadedOnce) {
+      return localTracksNotifier.value;
+    }
+    try {
+      final hasPerm = await hasAudioPermission();
+      if (!hasPerm) {
+        return localTracksNotifier.value;
+      }
+      final List<dynamic>? raw = await _systemChannel.invokeMethod(
+        'getLocalMusicTracks',
+      );
+      if (raw != null) {
+        final parsed = raw
+            .whereType<Map>()
+            .map(LocalMusicTrack.fromMap)
+            .where((t) => t.id > 0)
+            .toList(growable: false);
+        _localTracksLoadedOnce = true;
+        localTracksNotifier.value = parsed;
+        return parsed;
+      }
+    } catch (e) {
+      debugPrint('Error querying local music tracks: $e');
+    }
+    return localTracksNotifier.value;
+  }
+
+  static Uint8List? getCachedLocalAlbumArt(int albumId, int trackId) {
+    final key = albumId > 0 ? albumId : -trackId;
+    return _localAlbumArtCache[key];
+  }
+
+  static Future<Uint8List?> getLocalAlbumArt(int albumId, int trackId) async {
+    final key = albumId > 0 ? albumId : -trackId;
+    if (_localAlbumArtCache.containsKey(key)) {
+      return _localAlbumArtCache[key];
+    }
+    try {
+      final bytes = await _systemChannel.invokeMethod<Uint8List>(
+        'getLocalAlbumArt',
+        {'albumId': albumId, 'trackId': trackId},
+      );
+      if (_localAlbumArtCache.length >= 120) {
+        _localAlbumArtCache.remove(_localAlbumArtCache.keys.first);
+      }
+      _localAlbumArtCache[key] = bytes;
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> playLocalTrack(
+    int trackId, {
+    List<int>? queueIds,
+  }) async {
+    try {
+      return await _systemChannel.invokeMethod<bool>('playLocalTrack', {
+            'trackId': trackId,
+            if (queueIds != null) 'queueIds': queueIds,
+          }) ??
+          false;
+    } catch (e) {
+      debugPrint('Error playing local track: $e');
+      return false;
+    }
+  }
+
+  static Future<bool> queueLocalTrackNext(int trackId) async {
+    try {
+      return await _systemChannel.invokeMethod<bool>('queueLocalTrackNext', {
+            'trackId': trackId,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> shareLocalTrack(String contentUri, String title) async {
+    try {
+      return await _systemChannel.invokeMethod<bool>('shareLocalTrack', {
+            'contentUri': contentUri,
+            'title': title,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<bool> deleteLocalTrack(int trackId, String contentUri) async {
+    try {
+      final deleted =
+          await _systemChannel.invokeMethod<bool>('deleteLocalTrack', {
+            'trackId': trackId,
+            'contentUri': contentUri,
+          }) ??
+          false;
+      if (deleted) {
+        final updated = localTracksNotifier.value
+            .where((t) => t.id != trackId)
+            .toList(growable: false);
+        localTracksNotifier.value = updated;
+      }
+      return deleted;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<Uint8List?> pickWallpaperImage() async {
     return _systemChannel.invokeMethod<Uint8List>('pickWallpaperImage');
   }
@@ -514,6 +778,42 @@ class LauncherService {
     } catch (e) {
       print('Error opening widget configuration: $e');
       return false;
+    }
+  }
+
+  static Future<bool> updateWidgetSize(
+    int appWidgetId, {
+    required int minWidthDp,
+    required int minHeightDp,
+    int? maxWidthDp,
+    int? maxHeightDp,
+  }) async {
+    try {
+      return await _widgetChannel.invokeMethod<bool>('updateWidgetSize', {
+            'appWidgetId': appWidgetId,
+            'minWidthDp': minWidthDp,
+            'minHeightDp': minHeightDp,
+            'maxWidthDp': maxWidthDp ?? minWidthDp,
+            'maxHeightDp': maxHeightDp ?? minHeightDp,
+          }) ??
+          false;
+    } catch (e) {
+      debugPrint('Error updating widget size: $e');
+      return false;
+    }
+  }
+
+  static Future<Uint8List?> captureWidgetSnapshot(
+    int appWidgetId, {
+    int maxSidePx = 320,
+  }) async {
+    try {
+      return await _widgetChannel.invokeMethod<Uint8List>(
+        'captureWidgetSnapshot',
+        {'appWidgetId': appWidgetId, 'maxSidePx': maxSidePx},
+      );
+    } catch (_) {
+      return null;
     }
   }
 

@@ -35,108 +35,108 @@ class _SearchWidgetState extends State<SearchWidget> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isPill = _style == 'pill';
-    final borderRadius = isPill ? 24.0 : 8.0;
-    final widgetHeight = isPill ? 44.0 : 48.0;
+    final borderRadius = isPill ? 24.0 : 12.0;
 
-    return GestureDetector(
-      onLongPress: () {
-        showDialog(
-          context: context,
-          builder: (context) {
-            final errorColor = Theme.of(context).colorScheme.error;
-            return AlertDialog(
-              title: const Text('Remove Search Widget?'),
-              content: const Text(
-                'You can re-enable this later in Home Settings.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    widget.onRemove();
-                  },
-                  child: Text('Remove', style: TextStyle(color: errorColor)),
-                ),
-              ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final veryCompact = constraints.maxWidth < 110;
+        final mediumCompact = constraints.maxWidth < 175;
+        final targetHeight = (isPill ? 44.0 : 48.0).clamp(
+          36.0,
+          constraints.maxHeight.isFinite
+              ? constraints.maxHeight.clamp(36.0, 64.0)
+              : 48.0,
+        );
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            LauncherService.openUrlInBrowser(
+              'https://www.google.com',
+              _browserPackage,
             );
           },
-        );
-      },
-      onTap: () {
-        LauncherService.openUrlInBrowser(
-          'https://www.google.com',
-          _browserPackage,
-        );
-      },
-      child: Center(
-        child: Container(
-          height: widgetHeight,
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(color: colorScheme.outlineVariant, width: 1),
-          ),
-          padding: EdgeInsets.symmetric(horizontal: isPill ? 16 : 14),
-          child: Row(
-            children: [
-              Icon(
-                Icons.search_rounded,
-                color: colorScheme.onSurfaceVariant,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Search',
-                  style: TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+          child: Center(
+            child: Container(
+              height: targetHeight,
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(borderRadius),
+                border: Border.all(
+                  color: colorScheme.outlineVariant,
+                  width: 1,
                 ),
               ),
-              GestureDetector(
-                onTap: LauncherService.openGoogleAiMode,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      Icon(
-                        Icons.search_rounded,
-                        color: colorScheme.primary,
-                        size: 18,
-                      ),
-                      Positioned(
-                        right: -3,
-                        top: -3,
-                        child: Icon(
-                          Icons.auto_awesome,
-                          color: colorScheme.primary,
-                          size: 10,
+              padding: EdgeInsets.symmetric(
+                horizontal: veryCompact ? 8 : (isPill ? 14 : 12),
+              ),
+              child: Row(
+                mainAxisAlignment: veryCompact
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.search_rounded,
+                    color: colorScheme.onSurfaceVariant,
+                    size: 17,
+                  ),
+                  if (!veryCompact) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Search',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 13,
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                    GestureDetector(
+                      onTap: LauncherService.openGoogleAiMode,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            Icon(
+                              Icons.search_rounded,
+                              color: colorScheme.primary,
+                              size: 18,
+                            ),
+                            Positioned(
+                              right: -3,
+                              top: -3,
+                              child: Icon(
+                                Icons.auto_awesome,
+                                color: colorScheme.primary,
+                                size: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (!mediumCompact) ...[
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: LauncherService.openGoogleVoiceSearch,
+                      child: Icon(
+                        Icons.mic_rounded,
+                        color: colorScheme.onSurfaceVariant,
+                        size: 16,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: LauncherService.openGoogleVoiceSearch,
-                child: Icon(
-                  Icons.mic_rounded,
-                  color: colorScheme.onSurfaceVariant,
-                  size: 16,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

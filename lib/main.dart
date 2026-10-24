@@ -10,7 +10,11 @@ import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
 import 'package:swavoti/screens/welcome_screen.dart';
 import 'package:swavoti/services/app_database_service.dart';
+import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
+
+final RouteObserver<ModalRoute<dynamic>> launcherRouteObserver =
+    RouteObserver<ModalRoute<dynamic>>();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -83,29 +87,33 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       if (AppDatabaseService.currentIconPack != savedPack) {
         AppDatabaseService.currentIconPack = savedPack;
         await AppDatabaseService.clearIconCache();
+        await LauncherService.invalidateCompositorIcons();
         if (mounted) setState(() {});
         // Re-warm icons with the new pack while the user is on home.
         if (!LightweightMode.isEnabled && _appCache.isNotEmpty) {
           AppDatabaseService.prefetchIcons(_appCache.keys.toList());
         }
       }
-      try {
-        final palette = await DynamicColorPlugin.getCorePalette();
-        if (mounted && palette != null) {
-          final newLight = palette.toColorScheme().harmonized();
-          final newDark = palette
-              .toColorScheme(brightness: Brightness.dark)
-              .harmonized();
-          if (newLight != _lightDynamicColor || newDark != _darkDynamicColor) {
-            setState(() {
-              _lightDynamicColor = newLight;
-              _darkDynamicColor = newDark;
-            });
-          }
+    }
+  }
+
+  Future<void> _refreshDynamicPalette() async {
+    try {
+      final palette = await DynamicColorPlugin.getCorePalette();
+      if (mounted && palette != null) {
+        final newLight = palette.toColorScheme().harmonized();
+        final newDark = palette
+            .toColorScheme(brightness: Brightness.dark)
+            .harmonized();
+        if (newLight != _lightDynamicColor || newDark != _darkDynamicColor) {
+          setState(() {
+            _lightDynamicColor = newLight;
+            _darkDynamicColor = newDark;
+          });
         }
-      } on Exception catch (error) {
-        debugPrint('Could not refresh dynamic colors: $error');
       }
+    } on Exception catch (error) {
+      debugPrint('Could not refresh dynamic colors: $error');
     }
   }
 
@@ -118,6 +126,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       _dynamicThemingEnabled = prefs.getBool('dynamic_theming_enabled') ?? true;
     }
     _workspaceKey.currentState?.refreshLauncherSettings();
+    _refreshDynamicPalette();
     setState(() {});
   }
 
@@ -227,11 +236,16 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
         return MaterialApp(
           title: 'Go Launcher 7',
           initialRoute: '/',
-          navigatorObservers: [UnfocusOnPageCloseObserver()],
+          navigatorObservers: [
+            UnfocusOnPageCloseObserver(),
+            launcherRouteObserver,
+          ],
           routes: {
             '/settings': (context) =>
                 HomeSettings(onSettingsChanged: _refreshAfterSettingsChanged),
-            '/wallpaper': (context) => const WallpaperPage(),
+            '/wallpaper': (context) => WallpaperPage(
+              onWallpaperApplied: _refreshAfterSettingsChanged,
+            ),
             '/edit_icons': (context) => EditIconsPage(
               backgroundWallpaperPath: '',
               onSettingsApplied: () async {

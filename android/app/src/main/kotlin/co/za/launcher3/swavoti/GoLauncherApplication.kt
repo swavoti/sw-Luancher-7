@@ -26,6 +26,7 @@ class GoLauncherApplication : Application() {
             // Widgets unavailable on this device — launcher still works.
         }
         ensureEngineWarmed()
+        LauncherSceneStore.preloadWallpaperAsync(this)
     }
 
     fun ensureEngineWarmed() {

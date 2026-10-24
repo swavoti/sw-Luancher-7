@@ -27,7 +27,11 @@ import android.graphics.RectF
 import android.os.Message
 import android.os.Messenger
 import android.os.Parcelable
+import android.view.Choreographer
+import android.view.TextureView
 import android.view.View
+import android.view.ViewGroup
+import io.flutter.embedding.engine.renderer.FlutterUiDisplayListener
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -52,10 +56,15 @@ class MainActivity : FlutterActivity() {
     private val REQUEST_BIND_APPWIDGET = 100
     private val REQUEST_CONFIGURE_APPWIDGET = 101
     private val REQUEST_PICK_WALLPAPER = 102
+    private val REQUEST_AUDIO_PERMISSION = 104
+    private val REQUEST_DELETE_AUDIO = 105
 
     private var pendingWidgetIdToBind: Int = -1
     private var pendingWidgetMethodResult: MethodChannel.Result? = null
     private var pendingWallpaperPickerResult: MethodChannel.Result? = null
+    private var pendingAudioPermissionResult: MethodChannel.Result? = null
+    private var pendingDeleteAudioResult: MethodChannel.Result? = null
+    private var pendingDeleteAudioTrackId: Long = -1L
     // lastLaunchedAppRect lives in GoLauncherApplication.Companion so that
     // MyAccessibilityService (same process, different class) can also read it.
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
@@ -68,17 +77,45 @@ class MainActivity : FlutterActivity() {
     )
     private val iconBytesCache = android.util.LruCache<String, ByteArray>(384)
     private lateinit var iconPackManager: IconPackManager
+    private var homeSnapshotShield: HomeSnapshotShieldView? = null
+    private val mainUiHandler = Handler(Looper.getMainLooper())
+    private var pendingResumeShieldRelease: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         iconPackManager = IconPackManager(this)
+        NotificationDotService.ensureGlobalLegacyReceiver(this)
+
+        val shield = HomeSnapshotShieldView(this)
+        addContentView(
+            shield,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        homeSnapshotShield = shield
+
         fulfillGestureNavContract(intent)
+    }
+
+    override fun onPause() {
+        if (LauncherSceneStore.isCleanHomeVisible) {
+            captureHomeUiSnapshotIfReady()
+        }
+        if (!LauncherSceneStore.isSubRouteOpen) {
+            homeSnapshotShield?.armIfSnapshotAvailable()
+        }
+        LauncherSceneStore.markHomeTransitionStarting()
+        super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        LauncherSceneStore.activeForegroundPackage = packageName
         NotificationDotService.refreshCurrentMedia()
         homeEventSink?.success("onHomeResumed")
+        schedulePostResumeFrameCommit()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -88,6 +125,99 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         super.onNewIntent(intent)
         homeEventSink?.success("onHomeGesture")
+        schedulePostResumeFrameCommit()
+    }
+
+    /**
+     * Releases [HomeSnapshotShieldView] and signals [LauncherSceneStore.markHomeDrawnAndReady]
+     * only after Flutter's `FlutterTextureView` has latched a live post-resume GPU frame,
+     * guaranteeing zero empty-wallpaper frames on any return path.
+     */
+    private fun schedulePostResumeFrameCommit() {
+        pendingResumeShieldRelease?.let { mainUiHandler.removeCallbacks(it) }
+        var released = false
+
+        fun finishCommit() {
+            if (released) return
+            released = true
+            pendingResumeShieldRelease?.let { mainUiHandler.removeCallbacks(it) }
+            pendingResumeShieldRelease = null
+            // Wait 2 VSYNCs so SurfaceTexture buffer swap is composited before dropping shield
+            Choreographer.getInstance().postFrameCallback {
+                Choreographer.getInstance().postFrameCallback {
+                    homeSnapshotShield?.releaseShield()
+                    if (LauncherSceneStore.isCleanHomeVisible) {
+                        captureHomeUiSnapshotIfReady()
+                    }
+                    LauncherSceneStore.markHomeDrawnAndReady()
+                }
+            }
+        }
+
+        val renderer = flutterEngine?.renderer
+        if (renderer != null && !renderer.isDisplayingFlutterUi) {
+            val listener = object : FlutterUiDisplayListener {
+                override fun onFlutterUiDisplayed() {
+                    renderer.removeIsDisplayingFlutterUiListener(this)
+                    finishCommit()
+                }
+
+                override fun onFlutterUiNoLongerDisplayed() = Unit
+            }
+            renderer.addIsDisplayingFlutterUiListener(listener)
+            val fallback = Runnable {
+                renderer.removeIsDisplayingFlutterUiListener(listener)
+                finishCommit()
+            }
+            pendingResumeShieldRelease = fallback
+            mainUiHandler.postDelayed(fallback, 90L)
+        } else {
+            finishCommit()
+        }
+    }
+
+    /**
+     * Captures the live transparent RGBA Flutter UI layer directly from
+     * `FlutterTextureView` into a reusable pre-allocated Bitmap (~1ms on GPU).
+     */
+    private fun captureHomeUiSnapshotIfReady() {
+        if (!LauncherSceneStore.isCleanHomeVisible) return
+        val tex = findFlutterTextureView(window?.decorView) ?: return
+        if (!tex.isAvailable || tex.width <= 0 || tex.height <= 0) return
+
+        val loc = IntArray(2)
+        tex.getLocationOnScreen(loc)
+        LauncherSceneStore.updateHomeUiSnapshot(
+            sourceGetter = { existing ->
+                try {
+                    if (existing != null &&
+                        !existing.isRecycled &&
+                        existing.width == tex.width &&
+                        existing.height == tex.height
+                    ) {
+                        tex.getBitmap(existing)
+                    } else {
+                        tex.getBitmap()
+                    }
+                } catch (_: Throwable) {
+                    null
+                }
+            },
+            originX = loc[0].toFloat(),
+            originY = loc[1].toFloat()
+        )
+    }
+
+    private fun findFlutterTextureView(root: View?): TextureView? {
+        if (root == null) return null
+        if (root is TextureView) return root
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) {
+                val found = findFlutterTextureView(root.getChildAt(i))
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     /**
@@ -111,9 +241,12 @@ class MainActivity : FlutterActivity() {
             decor.getLocationOnScreen(location)
             val width = decor.width.takeIf { it > 0 } ?: metrics.widthPixels
             val height = decor.height.takeIf { it > 0 } ?: metrics.heightPixels
-            // Use the launching icon bounds when available for fluid return animations,
-            // or safely fall back to a central bounds.
-            val iconPosition = GoLauncherApplication.lastLaunchedAppRect ?: RectF(
+            val resolvedTarget = LauncherSceneStore
+                .resolveReturnTarget(LauncherSceneStore.activeForegroundPackage)
+                ?.screenRect
+            // Use the resolved icon bounds when available for fluid return animations,
+            // or safely fall back to lastLaunchedAppRect or central bounds.
+            val iconPosition = resolvedTarget ?: GoLauncherApplication.lastLaunchedAppRect ?: RectF(
                 location[0].toFloat() + width * 0.35f,
                 location[1].toFloat() + height * 0.45f,
                 location[0].toFloat() + width * 0.65f,
@@ -198,13 +331,54 @@ class MainActivity : FlutterActivity() {
                     backgroundExecutor.execute {
                         val widgetList = mutableListOf<Map<String, Any>>()
                         try {
+                            val density = resources.displayMetrics.density.coerceAtLeast(1f)
                             val providers = appWidgetManager.installedProviders
                             if (providers != null) {
                                 for (info in providers) {
                                     val map = mutableMapOf<String, Any>()
                                     map["providerPackage"] = info.provider.packageName
                                     map["providerClass"] = info.provider.className
-                                    map["label"] = info.loadLabel(packageManager) ?: "Widget"
+                                    map["label"] = info.loadLabel(packageManager)?.toString() ?: "Widget"
+
+                                    val minWidthDp = kotlin.math.round(info.minWidth / density).toInt().coerceAtLeast(40)
+                                    val minHeightDp = kotlin.math.round(info.minHeight / density).toInt().coerceAtLeast(40)
+                                    val minResizeWidthDp = kotlin.math.round(info.minResizeWidth / density).toInt().coerceAtLeast(0)
+                                    val minResizeHeightDp = kotlin.math.round(info.minResizeHeight / density).toInt().coerceAtLeast(0)
+
+                                    val targetW = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        info.targetCellWidth
+                                    } else {
+                                        0
+                                    }
+                                    val targetH = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        info.targetCellHeight
+                                    } else {
+                                        0
+                                    }
+
+                                    val defaultSpanX = if (targetW > 0) {
+                                        targetW.coerceIn(1, 4)
+                                    } else {
+                                        ((minWidthDp + 30) / 70).coerceIn(1, 4)
+                                    }
+                                    val defaultSpanY = if (targetH > 0) {
+                                        targetH.coerceIn(1, 5)
+                                    } else {
+                                        ((minHeightDp + 30) / 70).coerceIn(1, 5)
+                                    }
+
+                                    val resizeMode = info.resizeMode
+                                    map["defaultSpanX"] = defaultSpanX
+                                    map["defaultSpanY"] = defaultSpanY
+                                    map["minWidthDp"] = minWidthDp
+                                    map["minHeightDp"] = minHeightDp
+                                    map["minResizeWidthDp"] = minResizeWidthDp
+                                    map["minResizeHeightDp"] = minResizeHeightDp
+                                    map["configurable"] = (info.configure != null)
+                                    map["resizeHorizontal"] =
+                                        (resizeMode and android.appwidget.AppWidgetProviderInfo.RESIZE_HORIZONTAL) != 0
+                                    map["resizeVertical"] =
+                                        (resizeMode and android.appwidget.AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
 
                                     val previewImage = try { info.loadPreviewImage(context, 0) } catch (_: Throwable) { null }
                                     val iconImage = try { info.loadIcon(context, 0) } catch (_: Throwable) { null }
@@ -212,7 +386,7 @@ class MainActivity : FlutterActivity() {
                                     val drawableToConvert = previewImage ?: iconImage
                                     if (drawableToConvert != null) {
                                         try {
-                                            val bytes = drawableToByteArray(drawableToConvert)
+                                            val bytes = drawableToByteArray(drawableToConvert, maxSize = 260)
                                             map["preview"] = bytes
                                         } catch (_: Throwable) {}
                                     }
@@ -264,7 +438,51 @@ class MainActivity : FlutterActivity() {
                     } else {
                         null
                     }
+                    val density = resources.displayMetrics.density.coerceAtLeast(1f)
                     val resizeMode = info?.resizeMode ?: 0
+                    val minWidthDp = if (info != null) {
+                        kotlin.math.round(info.minWidth / density).toInt().coerceAtLeast(40)
+                    } else {
+                        40
+                    }
+                    val minHeightDp = if (info != null) {
+                        kotlin.math.round(info.minHeight / density).toInt().coerceAtLeast(40)
+                    } else {
+                        40
+                    }
+                    val minResizeWidthDp = if (info != null) {
+                        kotlin.math.round(info.minResizeWidth / density).toInt().coerceAtLeast(0)
+                    } else {
+                        0
+                    }
+                    val minResizeHeightDp = if (info != null) {
+                        kotlin.math.round(info.minResizeHeight / density).toInt().coerceAtLeast(0)
+                    } else {
+                        0
+                    }
+                    val maxResizeWidthDp = if (info != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.maxResizeWidth > 0) {
+                        kotlin.math.round(info.maxResizeWidth / density).toInt()
+                    } else {
+                        0
+                    }
+                    val maxResizeHeightDp = if (info != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.maxResizeHeight > 0) {
+                        kotlin.math.round(info.maxResizeHeight / density).toInt()
+                    } else {
+                        0
+                    }
+                    val targetW = if (info != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        info.targetCellWidth
+                    } else {
+                        0
+                    }
+                    val targetH = if (info != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        info.targetCellHeight
+                    } else {
+                        0
+                    }
+                    val defaultSpanX = if (targetW > 0) targetW.coerceIn(1, 4) else ((minWidthDp + 30) / 70).coerceIn(1, 4)
+                    val defaultSpanY = if (targetH > 0) targetH.coerceIn(1, 5) else ((minHeightDp + 30) / 70).coerceIn(1, 5)
+
                     result.success(
                         mapOf(
                             "configurable" to (info?.configure != null),
@@ -274,10 +492,38 @@ class MainActivity : FlutterActivity() {
                             "resizeVertical" to (
                                 (resizeMode and android.appwidget.AppWidgetProviderInfo.RESIZE_VERTICAL) != 0
                             ),
-                            "minResizeWidth" to (info?.minResizeWidth ?: 0),
-                            "minResizeHeight" to (info?.minResizeHeight ?: 0)
+                            "minWidthDp" to minWidthDp,
+                            "minHeightDp" to minHeightDp,
+                            "minResizeWidthDp" to minResizeWidthDp,
+                            "minResizeHeightDp" to minResizeHeightDp,
+                            "maxResizeWidthDp" to maxResizeWidthDp,
+                            "maxResizeHeightDp" to maxResizeHeightDp,
+                            "defaultSpanX" to defaultSpanX,
+                            "defaultSpanY" to defaultSpanY
                         )
                     )
+                }
+                "updateWidgetSize" -> {
+                    val appWidgetId = call.argument<Number>("appWidgetId")?.toInt() ?: -1
+                    val minWidthDp = call.argument<Number>("minWidthDp")?.toInt() ?: 80
+                    val minHeightDp = call.argument<Number>("minHeightDp")?.toInt() ?: 80
+                    val maxWidthDp = call.argument<Number>("maxWidthDp")?.toInt() ?: minWidthDp
+                    val maxHeightDp = call.argument<Number>("maxHeightDp")?.toInt() ?: minHeightDp
+                    val updated = WidgetViewFactory.updateWidgetSize(
+                        this,
+                        appWidgetId,
+                        minWidthDp,
+                        minHeightDp,
+                        maxWidthDp,
+                        maxHeightDp
+                    )
+                    result.success(updated)
+                }
+                "captureWidgetSnapshot" -> {
+                    val appWidgetId = call.argument<Number>("appWidgetId")?.toInt() ?: -1
+                    val maxSidePx = call.argument<Number>("maxSidePx")?.toInt() ?: 320
+                    val bytes = WidgetViewFactory.captureSnapshotBytes(appWidgetId, maxSidePx)
+                    result.success(bytes)
                 }
                 "configureWidget" -> {
                     val appWidgetId = call.argument<Int>("appWidgetId") ?: -1
@@ -418,53 +664,152 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "syncHomeScene" -> {
+                    val isCleanHome = call.argument<Boolean>("isCleanHome") ?: true
+                    val isSubRouteOpen = call.argument<Boolean>("isSubRouteOpen") ?: false
+                    val iconShape = call.argument<String>("iconShape") ?: "Circle"
+                    val rawTargets = call.argument<List<*>>("targets")
+
+                    LauncherSceneStore.isCleanHomeVisible = isCleanHome
+                    LauncherSceneStore.isSubRouteOpen = isSubRouteOpen
+                    LauncherSceneStore.currentIconShape = iconShape
+
+                    if (rawTargets != null) {
+                        val density = resources.displayMetrics.density
+                        val decorLoc = IntArray(2)
+                        window.decorView.getLocationOnScreen(decorLoc)
+                        val updatedMap = HashMap<String, LauncherSceneStore.IconTargetSpec>()
+
+                        for (entry in rawTargets) {
+                            val map = entry as? Map<*, *> ?: continue
+                            val pkg = map["packageName"] as? String ?: continue
+                            if (pkg.isEmpty()) continue
+                            val left = (map["left"] as? Number)?.toFloat() ?: continue
+                            val top = (map["top"] as? Number)?.toFloat() ?: continue
+                            val w = (map["width"] as? Number)?.toFloat() ?: continue
+                            val h = (map["height"] as? Number)?.toFloat() ?: continue
+                            if (w <= 0f || h <= 0f) continue
+
+                            val isFolderSlot = map["isFolderSlot"] as? Boolean ?: false
+                            val sx = decorLoc[0] + left * density
+                            val sy = decorLoc[1] + top * density
+                            val sw = w * density
+                            val sh = h * density
+                            updatedMap[pkg] = LauncherSceneStore.IconTargetSpec(
+                                packageName = pkg,
+                                screenRect = RectF(sx, sy, sx + sw, sy + sh),
+                                iconShape = iconShape,
+                                isFolderSlot = isFolderSlot
+                            )
+                            LauncherSceneStore.warmAppVisualAsync(this, pkg)
+                        }
+
+                        LauncherSceneStore.visibleHomeTargets.clear()
+                        LauncherSceneStore.visibleHomeTargets.putAll(updatedMap)
+                    }
+
+                    if (isCleanHome && hasWindowFocus()) {
+                        Choreographer.getInstance().postFrameCallback {
+                            captureHomeUiSnapshotIfReady()
+                        }
+                    }
+                    result.success(null)
+                }
+                "invalidateCompositorIcons" -> {
+                    LauncherSceneStore.invalidateIconVisualCache()
+                    result.success(null)
+                }
                 "startApp" -> {
                     val packageName = call.argument<String>("packageName")
                     val splitScreen = call.argument<Boolean>("splitScreen") ?: false
-                    val sourceX = call.argument<Int>("sourceX")
-                    val sourceY = call.argument<Int>("sourceY")
-                    val sourceWidth = call.argument<Int>("sourceWidth")
-                    val sourceHeight = call.argument<Int>("sourceHeight")
+                    val fromDrawer = call.argument<Boolean>("fromDrawer") ?: false
+                    val sourceLeft = (call.argument<Number>("sourceLeft") ?: call.argument<Number>("sourceX"))?.toFloat()
+                    val sourceTop = (call.argument<Number>("sourceTop") ?: call.argument<Number>("sourceY"))?.toFloat()
+                    val sourceWidth = call.argument<Number>("sourceWidth")?.toFloat()
+                    val sourceHeight = call.argument<Number>("sourceHeight")?.toFloat()
+
+                    val returnLeft = call.argument<Number>("returnLeft")?.toFloat()
+                    val returnTop = call.argument<Number>("returnTop")?.toFloat()
+                    val returnWidth = call.argument<Number>("returnWidth")?.toFloat()
+                    val returnHeight = call.argument<Number>("returnHeight")?.toFloat()
+
                     if (packageName != null) {
                         try {
                             val intent = packageManager.getLaunchIntentForPackage(packageName)
                             if (intent != null) {
+                                // Abort any lingering return overlay immediately for instant tap chaining
+                                LauncherSceneStore.onAppLaunchStartedCallback?.invoke()
+
+                                if (LauncherSceneStore.isCleanHomeVisible && !fromDrawer) {
+                                    captureHomeUiSnapshotIfReady()
+                                }
+                                LauncherSceneStore.warmAppVisualAsync(this, packageName)
+
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                                 if (splitScreen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                                     intent.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT)
                                     intent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                                 }
 
+                                val density = resources.displayMetrics.density
+                                val decorLoc = IntArray(2)
+                                window.decorView.getLocationOnScreen(decorLoc)
+
                                 val options = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-                                    sourceX != null && sourceY != null && sourceWidth != null && sourceHeight != null &&
-                                    sourceWidth > 0 && sourceHeight > 0
+                                    sourceLeft != null && sourceTop != null &&
+                                    sourceWidth != null && sourceHeight != null &&
+                                    sourceWidth > 0f && sourceHeight > 0f
                                 ) {
-                                    val density = resources.displayMetrics.density
-                                    val pxX = kotlin.math.round(sourceX * density).toInt()
-                                    val pxY = kotlin.math.round(sourceY * density).toInt()
-                                    val pxW = kotlin.math.round(sourceWidth * density).toInt()
-                                    val pxH = kotlin.math.round(sourceHeight * density).toInt()
+                                    val relX = kotlin.math.round(sourceLeft * density).toInt()
+                                    val relY = kotlin.math.round(sourceTop * density).toInt()
+                                    val pxW = kotlin.math.round(sourceWidth * density).toInt().coerceAtLeast(1)
+                                    val pxH = kotlin.math.round(sourceHeight * density).toInt().coerceAtLeast(1)
+                                    val absX = decorLoc[0] + relX
+                                    val absY = decorLoc[1] + relY
 
                                     intent.sourceBounds = android.graphics.Rect(
-                                        pxX,
-                                        pxY,
-                                        pxX + pxW,
-                                        pxY + pxH
+                                        absX,
+                                        absY,
+                                        absX + pxW,
+                                        absY + pxH
                                     )
-                                    GoLauncherApplication.lastLaunchedAppRect = RectF(
-                                        pxX.toFloat(),
-                                        pxY.toFloat(),
-                                        (pxX + pxW).toFloat(),
-                                        (pxY + pxH).toFloat()
-                                    )
-                                    ActivityOptions.makeScaleUpAnimation(
+
+                                    val hasExplicitReturnRect =
+                                        returnLeft != null && returnTop != null &&
+                                        returnWidth != null && returnHeight != null &&
+                                        returnWidth > 0f && returnHeight > 0f
+                                    val returnRect = if (hasExplicitReturnRect) {
+                                        val rX = decorLoc[0] + returnLeft!! * density
+                                        val rY = decorLoc[1] + returnTop!! * density
+                                        val rW = returnWidth!! * density
+                                        val rH = returnHeight!! * density
+                                        RectF(rX, rY, rX + rW, rY + rH)
+                                    } else {
+                                        RectF(
+                                            absX.toFloat(),
+                                            absY.toFloat(),
+                                            (absX + pxW).toFloat(),
+                                            (absY + pxH).toFloat()
+                                        )
+                                    }
+
+                                    LauncherSceneStore.lastLaunchedPackage = packageName
+                                    LauncherSceneStore.lastLaunchedFromDrawer = fromDrawer
+                                    LauncherSceneStore.lastLaunchedReturnIsFolder = hasExplicitReturnRect
+                                    LauncherSceneStore.lastLaunchedReturnRect = if (fromDrawer) null else returnRect
+                                    GoLauncherApplication.lastLaunchedAppRect = returnRect
+
+                                    ActivityOptions.makeClipRevealAnimation(
                                         window.decorView,
-                                        pxX,
-                                        pxY,
+                                        relX,
+                                        relY,
                                         pxW,
                                         pxH
                                     )
                                 } else {
+                                    LauncherSceneStore.lastLaunchedPackage = packageName
+                                    LauncherSceneStore.lastLaunchedFromDrawer = fromDrawer
+                                    LauncherSceneStore.lastLaunchedReturnRect = null
                                     GoLauncherApplication.lastLaunchedAppRect = null
                                     ActivityOptions.makeBasic()
                                 }
@@ -483,6 +828,8 @@ class MainActivity : FlutterActivity() {
                                     }
                                 }
 
+                                LauncherSceneStore.activeForegroundPackage = packageName
+                                LauncherSceneStore.markHomeTransitionStarting()
                                 startActivity(intent, options.toBundle())
                                 result.success(true)
                             } else {
@@ -517,7 +864,12 @@ class MainActivity : FlutterActivity() {
                             val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                             val wm = android.app.WallpaperManager.getInstance(context)
                             var flags = 0
-                            if (type == 1 || type == 3) flags = flags or android.app.WallpaperManager.FLAG_SYSTEM
+                            if (type == 1 || type == 3) {
+                                flags = flags or android.app.WallpaperManager.FLAG_SYSTEM
+                                if (bitmap != null) {
+                                    LauncherSceneStore.updateWallpaperSource(this, bitmap)
+                                }
+                            }
                             if (type == 2 || type == 3) flags = flags or android.app.WallpaperManager.FLAG_LOCK
                             wm.setBitmap(bitmap, null, true, flags)
                             result.success(true)
@@ -552,7 +904,107 @@ class MainActivity : FlutterActivity() {
                 "controlMedia" -> {
                     val action = call.argument<String>("action") ?: ""
                     val position = call.argument<Number>("positionMs")?.toLong()
-                    result.success(NotificationDotService.controlMedia(action, position))
+                    result.success(NotificationDotService.controlMedia(action, position, this))
+                }
+                "hasAudioPermission" -> {
+                    result.success(LocalMusicManager.hasAudioPermission(this))
+                }
+                "requestAudioPermission" -> {
+                    if (LocalMusicManager.hasAudioPermission(this)) {
+                        result.success(true)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        pendingAudioPermissionResult = result
+                        requestPermissions(
+                            arrayOf(LocalMusicManager.requiredPermission()),
+                            REQUEST_AUDIO_PERMISSION
+                        )
+                    } else {
+                        result.success(true)
+                    }
+                }
+                "getLocalMusicTracks" -> {
+                    backgroundExecutor.execute {
+                        val tracks = LocalMusicManager.queryLocalTracks(this)
+                        Handler(Looper.getMainLooper()).post {
+                            result.success(tracks)
+                        }
+                    }
+                }
+                "getLocalAlbumArt" -> {
+                    val albumId = call.argument<Number>("albumId")?.toLong() ?: 0L
+                    val trackId = call.argument<Number>("trackId")?.toLong() ?: 0L
+                    iconExecutor.execute {
+                        val bytes = LocalMusicManager.loadAlbumArtBytes(this, albumId, trackId)
+                        Handler(Looper.getMainLooper()).post {
+                            result.success(bytes)
+                        }
+                    }
+                }
+                "playLocalTrack" -> {
+                    val trackId = call.argument<Number>("trackId")?.toLong() ?: -1L
+                    val rawQueue = call.argument<List<*>>("queueIds")
+                    val queueIds = rawQueue?.mapNotNull { (it as? Number)?.toLong() }
+                    if (trackId <= 0L) {
+                        result.success(false)
+                    } else {
+                        val started = LocalMusicManager.playTrack(this, trackId, queueIds)
+                        result.success(started)
+                    }
+                }
+                "queueLocalTrackNext" -> {
+                    val trackId = call.argument<Number>("trackId")?.toLong() ?: -1L
+                    result.success(
+                        if (trackId > 0L) LocalMusicManager.queueTrackNext(trackId) else false
+                    )
+                }
+                "shareLocalTrack" -> {
+                    val contentUri = call.argument<String>("contentUri") ?: ""
+                    val title = call.argument<String>("title") ?: "Audio"
+                    result.success(
+                        if (contentUri.isNotEmpty()) {
+                            LocalMusicManager.shareTrack(this, contentUri, title)
+                        } else {
+                            false
+                        }
+                    )
+                }
+                "deleteLocalTrack" -> {
+                    val trackId = call.argument<Number>("trackId")?.toLong() ?: -1L
+                    val contentUri = call.argument<String>("contentUri") ?: ""
+                    if (trackId <= 0L || contentUri.isEmpty()) {
+                        result.success(false)
+                    } else {
+                        try {
+                            val uri = Uri.parse(contentUri)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                val pendingIntent = android.provider.MediaStore.createDeleteRequest(
+                                    contentResolver,
+                                    listOf(uri)
+                                )
+                                pendingDeleteAudioResult = result
+                                pendingDeleteAudioTrackId = trackId
+                                startIntentSenderForResult(
+                                    pendingIntent.intentSender,
+                                    REQUEST_DELETE_AUDIO,
+                                    null,
+                                    0,
+                                    0,
+                                    0,
+                                    null
+                                )
+                            } else {
+                                val rows = contentResolver.delete(uri, null, null)
+                                if (rows > 0) {
+                                    LocalMusicManager.onTrackDeletedFromDevice(trackId)
+                                }
+                                result.success(rows > 0)
+                            }
+                        } catch (e: Exception) {
+                            pendingDeleteAudioResult = null
+                            pendingDeleteAudioTrackId = -1L
+                            result.success(false)
+                        }
+                    }
                 }
                 "launchMediaApp" -> {
                     val packageName = call.argument<String>("packageName")
@@ -597,6 +1049,7 @@ class MainActivity : FlutterActivity() {
                         if (windowToken != null) {
                             android.app.WallpaperManager.getInstance(context).setWallpaperOffsets(windowToken, offset, 0f)
                         }
+                        LauncherSceneStore.updateWallpaperOffset(this, offset)
                     } catch (e: Exception) {}
                     result.success(null)
                 }
@@ -896,6 +1349,36 @@ class MainActivity : FlutterActivity() {
             }
             pendingWidgetIdToBind = -1
             pendingWidgetMethodResult = null
+            return
+        }
+        if (requestCode == REQUEST_DELETE_AUDIO) {
+            val delResult = pendingDeleteAudioResult
+            val trackId = pendingDeleteAudioTrackId
+            pendingDeleteAudioResult = null
+            pendingDeleteAudioTrackId = -1L
+            if (resultCode == Activity.RESULT_OK) {
+                if (trackId > 0L) {
+                    LocalMusicManager.onTrackDeletedFromDevice(trackId)
+                }
+                delResult?.success(true)
+            } else {
+                delResult?.success(false)
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_AUDIO_PERMISSION) {
+            val permResult = pendingAudioPermissionResult
+            pendingAudioPermissionResult = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            permResult?.success(granted)
         }
     }
 
@@ -971,12 +1454,11 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun drawableToByteArray(drawable: Drawable): ByteArray {
+    private fun drawableToByteArray(drawable: Drawable, maxSize: Int = 150): ByteArray {
         var width = Math.max(1, drawable.intrinsicWidth)
         var height = Math.max(1, drawable.intrinsicHeight)
-        
+
         // Scale down large drawables to prevent OOM / TransactionTooLargeException
-        val maxSize = 150
         if (width > maxSize || height > maxSize) {
             val ratio = Math.min(maxSize.toFloat() / width, maxSize.toFloat() / height)
             width = Math.max(1, (width * ratio).toInt())
