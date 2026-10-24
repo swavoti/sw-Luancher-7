@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Region
 import android.os.Build
@@ -14,6 +15,7 @@ import android.view.Choreographer
 import android.view.View
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * 60/90/120Hz hardware-accelerated Sub-Mini Compositor surface rendered inside
@@ -41,6 +43,7 @@ class GestureCompositorView(
 
     private val cardRect = RectF()
     private val punchRect = RectF()
+    private val homeIconSrcRect = Rect()
     private val clipPath = Path()
     private val drawMatrix = Matrix()
     private val overlayScreenLoc = IntArray(2)
@@ -352,7 +355,25 @@ class GestureCompositorView(
         //  0.00 .. 0.45 -> 100% live app texture
         //  0.45 .. 0.90 -> smooth crossfade into crisp target app icon
         //  0.90 .. 1.00 -> 100% crisp target app icon
-        val iconReveal = if (hasValidIconTarget && appIconBitmap != null) {
+        val canSampleRenderedHomeIcon = if (
+            hasValidIconTarget && !isFolderTarget && target != null &&
+            homeUi != null && !homeUi.isRecycled
+        ) {
+            val sl = (target.screenRect.left - LauncherSceneStore.homeUiScreenOriginX).roundToInt()
+            val st = (target.screenRect.top - LauncherSceneStore.homeUiScreenOriginY).roundToInt()
+            val sr = (target.screenRect.right - LauncherSceneStore.homeUiScreenOriginX).roundToInt()
+            val sb = (target.screenRect.bottom - LauncherSceneStore.homeUiScreenOriginY).roundToInt()
+            if (sl >= 0 && st >= 0 && sr <= homeUi.width && sb <= homeUi.height && sr - sl > 4 && sb - st > 4) {
+                homeIconSrcRect.set(sl, st, sr, sb)
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+
+        val iconReveal = if (hasValidIconTarget && (canSampleRenderedHomeIcon || appIconBitmap != null)) {
             smoothStep(0.42f, 0.88f, progress)
         } else {
             0f
@@ -399,10 +420,18 @@ class GestureCompositorView(
             }
         }
 
-        val iconBmp = appIconBitmap
-        if (iconOverlayAlpha > 0 && iconBmp != null && !iconBmp.isRecycled) {
+        if (iconOverlayAlpha > 0) {
             iconPaint.alpha = iconOverlayAlpha
-            canvas.drawBitmap(iconBmp, null, cardRect, iconPaint)
+            if (canSampleRenderedHomeIcon && homeUi != null && !homeUi.isRecycled) {
+                // Crossfade directly into the exact rendered Flutter icon (including Monochrome /
+                // Material You themed tint & icon packs) so 0 pixels change when the curtain drops.
+                canvas.drawBitmap(homeUi, homeIconSrcRect, cardRect, iconPaint)
+            } else {
+                val iconBmp = appIconBitmap
+                if (iconBmp != null && !iconBmp.isRecycled) {
+                    canvas.drawBitmap(iconBmp, null, cardRect, iconPaint)
+                }
+            }
         }
 
         canvas.restoreToCount(cardSave)

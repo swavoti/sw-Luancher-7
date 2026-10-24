@@ -42,6 +42,23 @@ class MyAccessibilityService : AccessibilityService() {
                 compositorView?.abortImmediately()
             }
         }
+
+        // If toggled on while inside Settings or another app, arm the bottom sensor immediately
+        val currentPkg = try {
+            rootInActiveWindow?.packageName?.toString()
+        } catch (_: Throwable) {
+            null
+        }
+        if (!currentPkg.isNullOrEmpty() &&
+            currentPkg != packageName &&
+            !isSystemOverlayNoise(currentPkg) &&
+            !isSystemNavigationUi(currentPkg)
+        ) {
+            LauncherSceneStore.activeForegroundPackage = currentPkg
+            LauncherSceneStore.warmAppVisualAsync(this, currentPkg)
+            showGestureHandle()
+            updateSensorForKeyboardState()
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -122,6 +139,7 @@ class MyAccessibilityService : AccessibilityService() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                fitInsetsTypes = 0
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -156,7 +174,7 @@ class MyAccessibilityService : AccessibilityService() {
         val handle = GestureSensorStrip()
         val params = WindowManager.LayoutParams(
             sensorWidth,
-            dp(20),
+            dp(22),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -166,6 +184,7 @@ class MyAccessibilityService : AccessibilityService() {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             y = 0
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                fitInsetsTypes = 0
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -177,13 +196,12 @@ class MyAccessibilityService : AccessibilityService() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val gestureInset = insets.mandatorySystemGestureInsets.bottom
                 val targetHeight = if (gestureInset > 0) {
-                    gestureInset.coerceIn(dp(16), dp(26))
+                    gestureInset.coerceIn(dp(18), dp(28))
                 } else {
-                    dp(20)
+                    dp(22)
                 }
-                if (params.height != targetHeight || params.y != 0) {
+                if (params.height != targetHeight) {
                     params.height = targetHeight
-                    params.y = 0
                     try {
                         manager.updateViewLayout(view, params)
                     } catch (_: RuntimeException) {
@@ -191,6 +209,25 @@ class MyAccessibilityService : AccessibilityService() {
                 }
             }
             insets
+        }
+        handle.addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+            if (gestureHandle !== view || view.height <= 0) return@addOnLayoutChangeListener
+            val (_, realH) = getRealDisplaySize()
+            val loc = IntArray(2)
+            view.getLocationOnScreen(loc)
+            val actualBottom = loc[1] + view.height
+            val gapToBottom = realH - actualBottom
+            if (abs(gapToBottom) in 2..dp(64)) {
+                params.y -= gapToBottom
+                view.post {
+                    if (gestureHandle === view) {
+                        try {
+                            manager.updateViewLayout(view, params)
+                        } catch (_: RuntimeException) {
+                        }
+                    }
+                }
+            }
         }
         try {
             manager.addView(handle, params)
