@@ -550,10 +550,10 @@ class AppDrawerState extends State<AppDrawer>
                         Expanded(
                           child: PageView.builder(
                             controller: _drawerPageController,
-                            physics: const BouncingScrollPhysics(
-                              parent: PageScrollPhysics(),
+                            physics: const ClampingScrollPhysics(
+                              parent: Snappy45msPageScrollPhysics(),
                             ),
-                              itemCount: pages,
+                            itemCount: pages,
                               onPageChanged: (page) {
                                 _currentPage = page;
                                 _pageNotifier.value = page;
@@ -1171,4 +1171,20 @@ class _AppPlaceholder extends StatelessWidget {
       color: color.withValues(alpha: 0.85),
     );
   }
+}
+
+class Snappy45msPageScrollPhysics extends PageScrollPhysics {
+  const Snappy45msPageScrollPhysics({super.parent});
+
+  @override
+  Snappy45msPageScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return Snappy45msPageScrollPhysics(parent: buildParent(ancestor));
+  }
+
+  @override
+  SpringDescription get spring => const SpringDescription(
+        mass: 0.05,
+        stiffness: 800.0,
+        damping: 1.0,
+      );
 }

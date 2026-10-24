@@ -67,7 +67,7 @@ class WorkspaceState extends State<Workspace>
 
     _drawerController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 100),
+      duration: const Duration(milliseconds: 34),
       value: 0.0,
     );
 
@@ -124,7 +124,7 @@ class WorkspaceState extends State<Workspace>
     _appDrawerKey.currentState?.prefetchFirstPage();
     _drawerController.animateTo(
       1.0,
-      duration: const Duration(milliseconds: 100),
+      duration: const Duration(milliseconds: 34),
       curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = true);
@@ -133,7 +133,7 @@ class WorkspaceState extends State<Workspace>
   void _closeDrawer() {
     _drawerController.animateTo(
       0.0,
-      duration: const Duration(milliseconds: 100),
+      duration: const Duration(milliseconds: 34),
       curve: Curves.easeOutCubic,
     );
     setState(() => _drawerOpen = false);
