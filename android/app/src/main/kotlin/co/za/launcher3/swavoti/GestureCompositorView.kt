@@ -95,7 +95,9 @@ class GestureCompositorView(
                 } else {
                     isAwaitingHomeReady = true
                     removeCallbacks(safetyReleaseRunnable)
-                    postDelayed(safetyReleaseRunnable, 260L)
+                    // Hold Z-layer 31 displaying the full crisp Home Screen across Xiaomi HyperOS's
+                    // 1.5s RemoteAnimation dead-zone until MainActivity actually gains window focus.
+                    postDelayed(safetyReleaseRunnable, 2200L)
                 }
             }
         }
@@ -264,7 +266,9 @@ class GestureCompositorView(
             bitmapPaint.alpha = 255
             canvas.drawBitmap(wp, drawMatrix, bitmapPaint)
         } else {
-            canvas.drawColor(Color.BLACK)
+            // FLAG_SHOW_WALLPAPER is set on this overlay window, so leaving the canvas
+            // transparent lets SurfaceFlinger show the real live/system wallpaper natively.
+            canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
         }
 
         val scrimAlpha = ((1f - progress) * 58f).toInt().coerceIn(0, 90)
@@ -302,6 +306,12 @@ class GestureCompositorView(
             bitmapPaint.alpha = (155 + (100 * progress).toInt()).coerceIn(0, 255)
             canvas.drawBitmap(homeUi, uiX, uiY, bitmapPaint)
             canvas.restoreToCount(saveCount)
+
+            // Once settled at 1.0, Layer 2 is already drawing the complete unclipped Home Screen
+            // (all icons, dock, widgets, clock) at 100% opacity while bridging HyperOS's handoff.
+            if (progress >= 0.998f && state.isSettlingToHome) {
+                return
+            }
         }
 
         // ── Layer 3: Morphing Live App Window -> Target Icon ────────────────────

@@ -96,7 +96,36 @@ class MainActivity : FlutterActivity() {
         )
         homeSnapshotShield = shield
 
+        // Pre-wake Flutter's GPU surface the instant the user touches the bottom gesture strip
+        // (~200ms before finger-up) so the Home frame is already hot in VRAM.
+        LauncherSceneStore.onHomeSwipeTouchDownCallback = {
+            mainUiHandler.post {
+                keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
+            }
+        }
+        LauncherSceneStore.onHomeSwipeCancelledCallback = {
+            mainUiHandler.post {
+                if (!hasWindowFocus()) {
+                    flutterEngine?.lifecycleChannel?.appIsInactive()
+                }
+            }
+        }
+
         fulfillGestureNavContract(intent)
+    }
+
+    override fun shouldDispatchAppLifecycleState(): Boolean = false
+
+    private fun keepFlutterSurfaceAliveAndHot(resumeLifecycle: Boolean) {
+        findViewById<View>(FLUTTER_VIEW_ID)?.let { fv ->
+            if (fv.visibility != View.VISIBLE) {
+                fv.visibility = View.VISIBLE
+            }
+        }
+        flutterEngine?.renderer?.restoreSurfaceProducers()
+        if (resumeLifecycle) {
+            flutterEngine?.lifecycleChannel?.appIsResumed()
+        }
     }
 
     override fun onPause() {
@@ -108,14 +137,41 @@ class MainActivity : FlutterActivity() {
         }
         LauncherSceneStore.markHomeTransitionStarting()
         super.onPause()
+        flutterEngine?.lifecycleChannel?.appIsInactive()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // CRITICAL LAUNCHER FIX: FlutterActivity.onStop() sets FlutterView to View.GONE and
+        // calls onTrimMemory(TRIM_MEMORY_BACKGROUND), which destroys FlutterTextureView's
+        // SurfaceTexture and forces a 1-2s cold GPU texture rebuild when swiping home.
+        // Restoring View.VISIBLE synchronously before the next traversal keeps the Home
+        // GPU surface permanently resident in RAM/VRAM like a native stock launcher.
+        keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
     }
 
     override fun onResume() {
         super.onResume()
+        keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
+        LauncherSceneStore.homeResumeEpoch.incrementAndGet()
         LauncherSceneStore.activeForegroundPackage = packageName
         NotificationDotService.refreshCurrentMedia()
         homeEventSink?.success("onHomeResumed")
-        schedulePostResumeFrameCommit()
+        if (hasWindowFocus()) {
+            schedulePostResumeFrameCommit()
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
+            schedulePostResumeFrameCommit()
+        } else {
+            if (LauncherSceneStore.isCleanHomeVisible) {
+                captureHomeUiSnapshotIfReady()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -124,16 +180,22 @@ class MainActivity : FlutterActivity() {
         fulfillGestureNavContract(intent)
         setIntent(intent)
         super.onNewIntent(intent)
+        keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
+        LauncherSceneStore.homeResumeEpoch.incrementAndGet()
         homeEventSink?.success("onHomeGesture")
-        schedulePostResumeFrameCommit()
+        if (hasWindowFocus()) {
+            schedulePostResumeFrameCommit()
+        }
     }
 
     /**
      * Releases [HomeSnapshotShieldView] and signals [LauncherSceneStore.markHomeDrawnAndReady]
-     * only after Flutter's `FlutterTextureView` has latched a live post-resume GPU frame,
-     * guaranteeing zero empty-wallpaper frames on any return path.
+     * ONLY after `MainActivity` actually holds window focus (`hasWindowFocus() == true`, meaning
+     * Xiaomi HyperOS's 1.5s QuickStep dead-zone has ended and the window is visible on screen)
+     * AND Flutter's `FlutterTextureView` has latched a live GPU frame.
      */
     private fun schedulePostResumeFrameCommit() {
+        if (!hasWindowFocus()) return
         pendingResumeShieldRelease?.let { mainUiHandler.removeCallbacks(it) }
         var released = false
 
@@ -142,14 +204,17 @@ class MainActivity : FlutterActivity() {
             released = true
             pendingResumeShieldRelease?.let { mainUiHandler.removeCallbacks(it) }
             pendingResumeShieldRelease = null
-            // Wait 2 VSYNCs so SurfaceTexture buffer swap is composited before dropping shield
+            // Wait 2 VSYNCs after window focus + UI display so SurfaceFlinger has composited
+            // MainActivity's live buffer before Z-layer 31 drops its curtain.
             Choreographer.getInstance().postFrameCallback {
                 Choreographer.getInstance().postFrameCallback {
                     homeSnapshotShield?.releaseShield()
                     if (LauncherSceneStore.isCleanHomeVisible) {
                         captureHomeUiSnapshotIfReady()
                     }
-                    LauncherSceneStore.markHomeDrawnAndReady()
+                    if (hasWindowFocus()) {
+                        LauncherSceneStore.markHomeDrawnAndReady()
+                    }
                 }
             }
         }
@@ -170,7 +235,7 @@ class MainActivity : FlutterActivity() {
                 finishCommit()
             }
             pendingResumeShieldRelease = fallback
-            mainUiHandler.postDelayed(fallback, 90L)
+            mainUiHandler.postDelayed(fallback, 450L)
         } else {
             finishCommit()
         }
@@ -295,6 +360,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        LauncherSceneStore.onHomeSwipeTouchDownCallback = null
+        LauncherSceneStore.onHomeSwipeCancelledCallback = null
         // Do not destroy the cached Flutter engine — android:persistent keeps
         // this process alive so the engine survives lock/unlock naturally.
         super.onDestroy()
@@ -708,10 +775,15 @@ class MainActivity : FlutterActivity() {
                         LauncherSceneStore.visibleHomeTargets.putAll(updatedMap)
                     }
 
-                    if (isCleanHome && hasWindowFocus()) {
+                    if (isCleanHome) {
                         Choreographer.getInstance().postFrameCallback {
                             captureHomeUiSnapshotIfReady()
                         }
+                        mainUiHandler.postDelayed({
+                            if (LauncherSceneStore.isCleanHomeVisible) {
+                                captureHomeUiSnapshotIfReady()
+                            }
+                        }, 220L)
                     }
                     result.success(null)
                 }

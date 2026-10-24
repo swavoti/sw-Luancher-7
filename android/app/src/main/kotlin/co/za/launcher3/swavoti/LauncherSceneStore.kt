@@ -18,6 +18,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -104,17 +105,28 @@ object LauncherSceneStore {
         private set
 
     /**
-     * Set to `false` the moment a Home gesture begins or `MainActivity` stops,
-     * and flipped to `true` only after `MainActivity` is resumed AND Flutter has
-     * presented a fresh post-resume frame.
+     * Set to `false` the moment a Home gesture begins or `MainActivity` loses focus,
+     * and flipped to `true` ONLY after `MainActivity` actually receives window focus
+     * (`onWindowFocusChanged(true)`) AND has swapped a live post-resume GPU frame.
      */
     val isHomeActivityDrawnAndReady = AtomicBoolean(true)
 
+    /** Incremented each time `MainActivity` enters `onResume` / `onNewIntent`. */
+    val homeResumeEpoch = AtomicInteger(0)
+
     private val homeReadyListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
-    /** Invoked on MainActivity.startApp so any in-flight return overlay aborts immediately. */
+    /** Invoked on MainActivity.startApp or live Home touch so any return overlay aborts immediately. */
     @Volatile
     var onAppLaunchStartedCallback: (() -> Unit)? = null
+
+    /** Invoked on bottom-strip `ACTION_DOWN` to pre-wake Flutter's GPU surface 200ms early. */
+    @Volatile
+    var onHomeSwipeTouchDownCallback: (() -> Unit)? = null
+
+    /** Invoked if a bottom swipe is aborted back into the foreground app. */
+    @Volatile
+    var onHomeSwipeCancelledCallback: (() -> Unit)? = null
 
     fun addHomeReadyListener(listener: () -> Unit) {
         homeReadyListeners.add(listener)

@@ -550,8 +550,8 @@ class AppDrawerState extends State<AppDrawer>
                         Expanded(
                           child: PageView.builder(
                             controller: _drawerPageController,
-                            physics: const ClampingScrollPhysics(
-                              parent: Snappy45msPageScrollPhysics(),
+                            physics: const SmoothCarouselScrollPhysics(
+                              parent: BouncingScrollPhysics(),
                             ),
                             itemCount: pages,
                               onPageChanged: (page) {
@@ -1182,18 +1182,18 @@ class _AppPlaceholder extends StatelessWidget {
   }
 }
 
-class Snappy45msPageScrollPhysics extends PageScrollPhysics {
-  const Snappy45msPageScrollPhysics({super.parent});
+class SmoothCarouselScrollPhysics extends PageScrollPhysics {
+  const SmoothCarouselScrollPhysics({super.parent});
 
   @override
-  Snappy45msPageScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return Snappy45msPageScrollPhysics(parent: buildParent(ancestor));
+  SmoothCarouselScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return SmoothCarouselScrollPhysics(parent: buildParent(ancestor));
   }
 
   @override
   SpringDescription get spring => const SpringDescription(
-        mass: 0.05,
-        stiffness: 800.0,
-        damping: 1.0,
+        mass: 0.5,
+        stiffness: 100.0,
+        damping: 14.2,
       );
 }

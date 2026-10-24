@@ -26,6 +26,7 @@
             android:exported="true"
             android:resizeableActivity="true"
             android:launchMode="singleTask"
+            android:alwaysRetainTaskState="true"
             android:clearTaskOnLaunch="true"
             android:stateNotNeeded="true"
             android:excludeFromRecents="true"

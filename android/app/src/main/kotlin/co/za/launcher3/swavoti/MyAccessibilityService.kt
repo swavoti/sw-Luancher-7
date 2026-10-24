@@ -1,6 +1,7 @@
 package co.za.launcher3.swavoti
 
 import android.accessibilityservice.AccessibilityService
+import android.app.ActivityOptions
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -134,6 +135,7 @@ class MyAccessibilityService : AccessibilityService() {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -299,19 +301,43 @@ class MyAccessibilityService : AccessibilityService() {
     private fun dispatchHomeNavigation() {
         suppressHandleUntilAppSwitch = true
         hideGestureHandle()
-        val succeeded = performGlobalAction(GLOBAL_ACTION_HOME)
-        if (!succeeded) {
-            try {
-                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    setPackage(packageName)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                startActivity(homeIntent)
-            } catch (e: Exception) {
-                android.util.Log.w("MyAccessibilityService", "Direct Home fallback failed", e)
+
+        val epochBefore = LauncherSceneStore.homeResumeEpoch.get()
+        var directLaunched = false
+        try {
+            // Bypass PhoneWindowManager.launchHomeFromHotKey() / MIUI QuickStep's 1.5s freeze
+            // by explicitly bringing our own MainActivity task forward with 0ms animation.
+            val homeIntent = Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION
+                )
             }
+            val noAnimOpts = ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle()
+            startActivity(homeIntent, noAnimOpts)
+            directLaunched = true
+        } catch (e: Exception) {
+            android.util.Log.w("MyAccessibilityService", "Direct MainActivity launch blocked, using global home", e)
         }
+
+        if (!directLaunched) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            return
+        }
+
+        // Verify within 95ms (while Z-layer 31 is still mid-spring) that MIUI didn't intercept
+        // the startActivity call; if MainActivity hasn't resumed yet, trigger GLOBAL_ACTION_HOME.
+        mainHandler.postDelayed({
+            if (LauncherSceneStore.homeResumeEpoch.get() == epochBefore &&
+                LauncherSceneStore.activeForegroundPackage != packageName
+            ) {
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
+        }, 95L)
     }
 
     private fun getRealDisplaySize(): Pair<Int, Int> {
@@ -399,6 +425,7 @@ class MyAccessibilityService : AccessibilityService() {
                         addRawMovement(it, event)
                     }
 
+                    LauncherSceneStore.onHomeSwipeTouchDownCallback?.invoke()
                     compositorView?.prepareSession(
                         foregroundPkg = LauncherSceneStore.activeForegroundPackage,
                         displayW = displayW,
@@ -470,6 +497,7 @@ class MyAccessibilityService : AccessibilityService() {
                             dispatchHomeNavigation()
                         } else {
                             compositorView?.abortImmediately()
+                            LauncherSceneStore.onHomeSwipeCancelledCallback?.invoke()
                         }
                         return true
                     }
@@ -483,6 +511,7 @@ class MyAccessibilityService : AccessibilityService() {
                         dispatchHomeNavigation()
                     } else {
                         compositorView?.cancelBackToApp(vx, vy)
+                        LauncherSceneStore.onHomeSwipeCancelledCallback?.invoke()
                     }
                     return true
                 }
@@ -496,6 +525,7 @@ class MyAccessibilityService : AccessibilityService() {
                     } else {
                         compositorView?.abortImmediately()
                     }
+                    LauncherSceneStore.onHomeSwipeCancelledCallback?.invoke()
                     return true
                 }
             }
