@@ -29,8 +29,8 @@ class WorkspaceResizeGridOverlay extends StatelessWidget {
         painter: _WorkspaceGridPainter(
           columns: columns,
           rows: rows,
-          lineColor: Colors.white.withValues(alpha: 0.16),
-          cellHighlightColor: cs.primary.withValues(alpha: 0.10),
+          lineColor: Colors.white.withValues(alpha: 0.055),
+          cellHighlightColor: cs.primary.withValues(alpha: 0.045),
           activeRect: activeItem == null
               ? null
               : (
@@ -84,8 +84,8 @@ class _WorkspaceGridPainter extends CustomPainter {
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
-    const dashLen = 5.0;
-    const gapLen = 5.0;
+    const dashLen = 3.0;
+    const gapLen = 9.0;
 
     for (int c = 0; c <= columns; c++) {
       final dx = c * cellW;
@@ -509,10 +509,10 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
           child: IgnorePointer(
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: cs.primary,
-                  width: 2.0,
+                  width: 1.5,
                 ),
               ),
             ),
@@ -521,8 +521,8 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
 
         // Remove 'X' button on top-right of outline
         Positioned(
-          top: -16,
-          right: -16,
+          top: -12,
+          right: -12,
           child: Material(
             color: cs.error,
             shape: const CircleBorder(),
@@ -531,10 +531,10 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
               customBorder: const CircleBorder(),
               onTap: widget.onRemove,
               child: Padding(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(5),
                 child: Icon(
                   Icons.close_rounded,
-                  size: 18,
+                  size: 16,
                   color: cs.onError,
                 ),
               ),
@@ -544,16 +544,16 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
 
         // Live Span Dimension Pill Badge (e.g. "2 × 2") & Done check
         Positioned(
-          bottom: -16,
-          right: -10,
+          bottom: -12,
+          right: -8,
           child: GestureDetector(
             onTap: widget.onExitEdit,
             child: Material(
               color: cs.primaryContainer,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
               elevation: 4,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -581,10 +581,10 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
 
         // TOP Edge Handle
         Positioned(
-          top: -16,
+          top: -12,
           left: 0,
           right: 0,
-          height: 34,
+          height: 26,
           child: Center(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -595,8 +595,8 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
               onVerticalDragEnd: (_) => _onEdgeDragEnd(),
               onVerticalDragCancel: _onEdgeDragEnd,
               child: SizedBox(
-                width: 64,
-                height: 34,
+                width: 48,
+                height: 26,
                 child: Center(
                   child: _EdgePillVisual(
                     horizontal: true,
@@ -610,10 +610,10 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
 
         // BOTTOM Edge Handle
         Positioned(
-          bottom: -16,
+          bottom: -12,
           left: 0,
           right: 0,
-          height: 34,
+          height: 26,
           child: Center(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -626,8 +626,8 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
               onVerticalDragEnd: (_) => _onEdgeDragEnd(),
               onVerticalDragCancel: _onEdgeDragEnd,
               child: SizedBox(
-                width: 64,
-                height: 34,
+                width: 48,
+                height: 26,
                 child: Center(
                   child: _EdgePillVisual(
                     horizontal: true,
@@ -641,10 +641,10 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
 
         // LEFT Edge Handle
         Positioned(
-          left: -16,
+          left: -12,
           top: 0,
           bottom: 0,
-          width: 34,
+          width: 26,
           child: Center(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -655,8 +655,8 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
               onHorizontalDragEnd: (_) => _onEdgeDragEnd(),
               onHorizontalDragCancel: _onEdgeDragEnd,
               child: SizedBox(
-                width: 34,
-                height: 64,
+                width: 26,
+                height: 48,
                 child: Center(
                   child: _EdgePillVisual(
                     horizontal: false,
@@ -670,10 +670,10 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
 
         // RIGHT Edge Handle
         Positioned(
-          right: -16,
+          right: -12,
           top: 0,
           bottom: 0,
-          width: 34,
+          width: 26,
           child: Center(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -686,8 +686,8 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
               onHorizontalDragEnd: (_) => _onEdgeDragEnd(),
               onHorizontalDragCancel: _onEdgeDragEnd,
               child: SizedBox(
-                width: 34,
-                height: 64,
+                width: 26,
+                height: 48,
                 child: Center(
                   child: _EdgePillVisual(
                     horizontal: false,
@@ -712,8 +712,8 @@ class _EdgePillVisual extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final mainLen = active ? 34.0 : 28.0;
-    final crossLen = active ? 13.0 : 11.0;
+    final mainLen = active ? 26.0 : 22.0;
+    final crossLen = active ? 9.0 : 7.0;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 110),

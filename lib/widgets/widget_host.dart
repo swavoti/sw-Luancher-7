@@ -501,8 +501,8 @@ class WidgetHostController extends ChangeNotifier {
         configurable: false,
         resizeHorizontal: true,
         resizeVertical: true,
-        defaultSpanX: columns.clamp(1, 4),
-        defaultSpanY: 1,
+        defaultSpanX: 2.clamp(1, columns),
+        defaultSpanY: 2,
       );
     }
     if (item.type == 'search_widget') {

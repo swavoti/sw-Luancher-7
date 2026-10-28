@@ -684,10 +684,10 @@ class AppDrawerState extends State<AppDrawer>
 
             // A-Z Alphabet Fast Scroll Rail on right edge
             Positioned(
-              right: 2,
+              right: 4,
               top: 0,
               bottom: 24,
-              width: 28,
+              width: 16,
               child: _AlphabetRail(
                 activeLetter: _activeAlphabetLetter,
                 onLetterSelected: (letter) {
@@ -1433,11 +1433,7 @@ class _AlphabetRail extends StatelessWidget {
           onTapCancel: onLetterReleased,
           child: Container(
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: _letters.map((letter) {

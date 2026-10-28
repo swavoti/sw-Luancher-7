@@ -428,10 +428,11 @@ class HomeScreenState extends State<HomeScreen>
         .map((item) => LauncherItem.fromJson(jsonDecode(item)))
         .toList();
 
-    if (!loadedItems.any((i) => i.page == -1)) {
-      // Note: _applyDefaultWallpaper is intentionally NOT called here.
-      // It must be called before setState to avoid async-inside-setState crash.
-
+    // Seed the default layout ONLY on genuine first run (no stored items).
+    // The previous guard keyed off the dock ("page":-1), so deleting a dock
+    // icon — or moving one up to the workspace — regenerated and overwrote
+    // the user's entire home screen. Never key destruction off a sub-element.
+    if (loadedItems.isEmpty) {
       // Dock
       final dock = [
         'com.google.android.dialer',
@@ -461,9 +462,9 @@ class HomeScreenState extends State<HomeScreen>
             type: 'time_weather_widget',
             packageName: '',
             label: 'Time & Weather',
-            x: 0,
+            x: 1,
             y: 0,
-            spanX: 4,
+            spanX: 2,
             spanY: 2,
             page: 0,
           ),
@@ -511,7 +512,45 @@ class HomeScreenState extends State<HomeScreen>
       _saveItems();
       return;
     }
+
+    final defaultTimeWidget = loadedItems
+        .where(
+          (item) =>
+              item.id == 'time_weather_default' &&
+              item.type == 'time_weather_widget' &&
+              item.spanX > 2,
+        )
+        .firstOrNull;
+    var migratedTimeWidget = false;
+    if (defaultTimeWidget != null) {
+      final targetSpanX = 2.clamp(1, _columns);
+      final targetSpanY = 2.clamp(1, _rows);
+      final slot = WidgetGridSolver.findFirstFreeSlot(
+        items: loadedItems
+            .where((item) => item.id != defaultTimeWidget.id)
+            .toList(),
+        page: defaultTimeWidget.page,
+        spanX: targetSpanX,
+        spanY: targetSpanY,
+        columns: _columns,
+        rows: _rows,
+        preferredX: 1,
+        preferredY: 0,
+      );
+      if (slot != null) {
+        defaultTimeWidget
+          ..x = slot.$1
+          ..y = slot.$2
+          ..spanX = targetSpanX
+          ..spanY = targetSpanY;
+        migratedTimeWidget = true;
+      }
+    }
+
     _items = loadedItems;
+    if (migratedTimeWidget) {
+      _saveItems();
+    }
   }
 
   Future<void> _applyDefaultWallpaper() async {
@@ -563,7 +602,9 @@ class HomeScreenState extends State<HomeScreen>
           : Icon(Icons.android, size: size);
 
       if (isThemed) {
-        final monoCached = AppDatabaseService.getCachedMonochromeIcon(app.packageName);
+        final monoCached = AppDatabaseService.getCachedMonochromeIcon(
+          app.packageName,
+        );
         if (monoCached != null) {
           return IconShapeClipper(
             shape: _iconShape,
@@ -574,10 +615,7 @@ class HomeScreenState extends State<HomeScreen>
               color: colors.surfaceContainerHighest,
               alignment: Alignment.center,
               child: ColorFiltered(
-                colorFilter: ColorFilter.mode(
-                  colors.primary,
-                  BlendMode.srcIn,
-                ),
+                colorFilter: ColorFilter.mode(colors.primary, BlendMode.srcIn),
                 child: SizedBox(
                   width: size * 0.58,
                   height: size * 0.58,
@@ -636,11 +674,7 @@ class HomeScreenState extends State<HomeScreen>
         );
       }
 
-      return IconShapeClipper(
-        shape: _iconShape,
-        size: size,
-        child: iconWidget,
-      );
+      return IconShapeClipper(shape: _iconShape, size: size, child: iconWidget);
     }
 
     final cachedIcon = AppDatabaseService.getCachedIcon(app.packageName);
@@ -648,8 +682,7 @@ class HomeScreenState extends State<HomeScreen>
 
     return FutureBuilder<Uint8List?>(
       future: AppDatabaseService.loadIcon(app.packageName),
-      builder: (context, snapshot) =>
-          buildIcon(snapshot.data ?? app.icon),
+      builder: (context, snapshot) => buildIcon(snapshot.data ?? app.icon),
     );
   }
 
@@ -743,7 +776,8 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   bool _canAcceptDockDrop(Map<String, dynamic> data, int x) {
-    final isWidgetType = data['type'] == 'widget' ||
+    final isWidgetType =
+        data['type'] == 'widget' ||
         data['type'] == 'widget_preview' ||
         data['type'] == 'time_weather_widget' ||
         data['type'] == 'search_widget';
@@ -1077,14 +1111,15 @@ class HomeScreenState extends State<HomeScreen>
                                       for (int y = 0; y < _rows; y++)
                                         for (int x = 0; x < _columns; x++)
                                           Positioned(
-                                            key: ValueKey('cell_${pageIndex}_${x}_$y'),
+                                            key: ValueKey(
+                                              'cell_${pageIndex}_${x}_$y',
+                                            ),
                                             left: x * cellWidth,
                                             top: y * cellHeight,
                                             width: cellWidth,
                                             height: cellHeight,
                                             child: DragTarget<Map<String, dynamic>>(
-                                              onWillAcceptWithDetails:
-                                                  (details) {
+                                              onWillAcceptWithDetails: (details) {
                                                 final data = details.data;
                                                 final spanX =
                                                     (data['spanX'] as int? ?? 1)
@@ -1100,7 +1135,8 @@ class HomeScreenState extends State<HomeScreen>
                                                 final isWidget =
                                                     type == 'widget' ||
                                                     type == 'widget_preview' ||
-                                                    type == 'time_weather_widget' ||
+                                                    type ==
+                                                        'time_weather_widget' ||
                                                     type == 'search_widget';
 
                                                 if (isWidget) {
@@ -1112,21 +1148,28 @@ class HomeScreenState extends State<HomeScreen>
                                                     0,
                                                     _rows - spanY,
                                                   );
-                                                  final dummyTarget = itemId != null
+                                                  final dummyTarget =
+                                                      itemId != null
                                                       ? (_items
-                                                            .where((i) => i.id == itemId)
-                                                            .firstOrNull ??
-                                                        LauncherItem(
-                                                          id: itemId,
-                                                          type: type ?? 'widget',
-                                                          packageName: '',
-                                                          x: targetX,
-                                                          y: targetY,
-                                                          spanX: spanX,
-                                                          spanY: spanY,
-                                                          page: pageIndex,
-                                                          label: '',
-                                                        ))
+                                                                .where(
+                                                                  (i) =>
+                                                                      i.id ==
+                                                                      itemId,
+                                                                )
+                                                                .firstOrNull ??
+                                                            LauncherItem(
+                                                              id: itemId,
+                                                              type:
+                                                                  type ??
+                                                                  'widget',
+                                                              packageName: '',
+                                                              x: targetX,
+                                                              y: targetY,
+                                                              spanX: spanX,
+                                                              spanY: spanY,
+                                                              page: pageIndex,
+                                                              label: '',
+                                                            ))
                                                       : LauncherItem(
                                                           id: '__preview__',
                                                           type: 'widget',
@@ -1138,22 +1181,22 @@ class HomeScreenState extends State<HomeScreen>
                                                           page: pageIndex,
                                                           label: '',
                                                         );
-                                                  return WidgetGridSolver
-                                                      .tryApplyWidgetRect(
-                                                        items: _items,
-                                                        target: dummyTarget,
-                                                        page: pageIndex,
-                                                        newX: targetX,
-                                                        newY: targetY,
-                                                        newSpanX: spanX,
-                                                        newSpanY: spanY,
-                                                        columns: _columns,
-                                                        rows: _rows,
-                                                        dryRun: true,
-                                                      );
+                                                  return WidgetGridSolver.tryApplyWidgetRect(
+                                                    items: _items,
+                                                    target: dummyTarget,
+                                                    page: pageIndex,
+                                                    newX: targetX,
+                                                    newY: targetY,
+                                                    newSpanX: spanX,
+                                                    newSpanY: spanY,
+                                                    columns: _columns,
+                                                    rows: _rows,
+                                                    dryRun: true,
+                                                  );
                                                 }
 
-                                                if (x >= _columns || y >= _rows) {
+                                                if (x >= _columns ||
+                                                    y >= _rows) {
                                                   return false;
                                                 }
                                                 final itemAtCell = _items
@@ -1173,90 +1216,99 @@ class HomeScreenState extends State<HomeScreen>
                                                 }
                                                 return true;
                                               },
-                                            onAcceptWithDetails: (details) {
-                                              final data = details.data;
-                                              final spanX =
-                                                  (data['spanX'] as int? ?? 1)
-                                                      .clamp(1, _columns);
-                                              final spanY =
-                                                  (data['spanY'] as int? ?? 1)
-                                                      .clamp(1, _rows);
-                                              final targetX = x.clamp(
-                                                0,
-                                                _columns - spanX,
-                                              );
-                                              final targetY = y.clamp(
-                                                0,
-                                                _rows - spanY,
-                                              );
-
-                                              if (data['id'] != null) {
-                                                final itemId =
-                                                    data['id'] as String;
-                                                final item = _items.firstWhere(
-                                                  (i) => i.id == itemId,
+                                              onAcceptWithDetails: (details) {
+                                                final data = details.data;
+                                                final spanX =
+                                                    (data['spanX'] as int? ?? 1)
+                                                        .clamp(1, _columns);
+                                                final spanY =
+                                                    (data['spanY'] as int? ?? 1)
+                                                        .clamp(1, _rows);
+                                                final targetX = x.clamp(
+                                                  0,
+                                                  _columns - spanX,
                                                 );
-                                                if (item.isAnyWidget) {
-                                                  final moved =
-                                                      WidgetGridSolver.tryApplyWidgetRect(
-                                                        items: _items,
-                                                        target: item,
-                                                        page: pageIndex,
-                                                        newX: targetX,
-                                                        newY: targetY,
-                                                        newSpanX: item.spanX,
-                                                        newSpanY: item.spanY,
-                                                        columns: _columns,
-                                                        rows: _rows,
+                                                final targetY = y.clamp(
+                                                  0,
+                                                  _rows - spanY,
+                                                );
+
+                                                if (data['id'] != null) {
+                                                  final itemId =
+                                                      data['id'] as String;
+                                                  final item = _items
+                                                      .firstWhere(
+                                                        (i) => i.id == itemId,
                                                       );
-                                                  if (moved) {
-                                                    setState(() {});
-                                                    _saveItems();
-                                                    _beginWidgetEdit(item);
+                                                  if (item.isAnyWidget) {
+                                                    final moved =
+                                                        WidgetGridSolver.tryApplyWidgetRect(
+                                                          items: _items,
+                                                          target: item,
+                                                          page: pageIndex,
+                                                          newX: targetX,
+                                                          newY: targetY,
+                                                          newSpanX: item.spanX,
+                                                          newSpanY: item.spanY,
+                                                          columns: _columns,
+                                                          rows: _rows,
+                                                        );
+                                                    if (moved) {
+                                                      setState(() {});
+                                                      _saveItems();
+                                                      _beginWidgetEdit(item);
+                                                    }
+                                                    return;
                                                   }
-                                                  return;
-                                                }
-                                                setState(() {
-                                                  // Check if there's already an item at target position
-                                                  final existingIdx = _items
-                                                      .indexWhere(
-                                                        (i) =>
-                                                            i.id != itemId &&
-                                                            i.page ==
-                                                                pageIndex &&
-                                                            i.x == targetX &&
-                                                            i.y == targetY,
-                                                      );
-                                                  if (existingIdx != -1) {
-                                                    final target =
-                                                        _items[existingIdx];
-                                                    if (target.type == 'app' &&
-                                                        item.type == 'app') {
-                                                      target.type = 'folder';
-                                                      target.label =
-                                                          'Unnamed text';
-                                                      target.folderApps = [
-                                                        target.packageName,
-                                                        item.packageName,
-                                                      ];
-                                                      _items.remove(item);
-                                                    } else if (target.type ==
-                                                            'folder' &&
-                                                        item.type == 'app') {
-                                                      target.folderApps ??= [];
-                                                      if (target
-                                                              .folderApps!
-                                                              .length <
-                                                          8) {
-                                                        if (!target.folderApps!
-                                                            .contains(
-                                                              item.packageName,
-                                                            )) {
-                                                          target.folderApps!.add(
-                                                            item.packageName,
-                                                          );
-                                                        }
+                                                  setState(() {
+                                                    // Check if there's already an item at target position
+                                                    final existingIdx = _items
+                                                        .indexWhere(
+                                                          (i) =>
+                                                              i.id != itemId &&
+                                                              i.page ==
+                                                                  pageIndex &&
+                                                              i.x == targetX &&
+                                                              i.y == targetY,
+                                                        );
+                                                    if (existingIdx != -1) {
+                                                      final target =
+                                                          _items[existingIdx];
+                                                      if (target.type ==
+                                                              'app' &&
+                                                          item.type == 'app') {
+                                                        target.type = 'folder';
+                                                        target.label =
+                                                            'Unnamed text';
+                                                        target.folderApps = [
+                                                          target.packageName,
+                                                          item.packageName,
+                                                        ];
                                                         _items.remove(item);
+                                                      } else if (target.type ==
+                                                              'folder' &&
+                                                          item.type == 'app') {
+                                                        target.folderApps ??=
+                                                            [];
+                                                        if (target
+                                                                .folderApps!
+                                                                .length <
+                                                            8) {
+                                                          if (!target
+                                                              .folderApps!
+                                                              .contains(
+                                                                item.packageName,
+                                                              )) {
+                                                            target.folderApps!.add(
+                                                              item.packageName,
+                                                            );
+                                                          }
+                                                          _items.remove(item);
+                                                        } else {
+                                                          item.x = targetX;
+                                                          item.y = targetY;
+                                                          item.page = pageIndex;
+                                                        }
                                                       } else {
                                                         item.x = targetX;
                                                         item.y = targetY;
@@ -1267,346 +1319,390 @@ class HomeScreenState extends State<HomeScreen>
                                                       item.y = targetY;
                                                       item.page = pageIndex;
                                                     }
-                                                  } else {
-                                                    item.x = targetX;
-                                                    item.y = targetY;
-                                                    item.page = pageIndex;
-                                                  }
-                                                });
-                                                _saveItems();
-                                              } else if (data['type'] ==
-                                                  'app') {
-                                                final existingIdx = _items
-                                                    .indexWhere(
-                                                      (i) =>
-                                                          i.page == pageIndex &&
-                                                          i.x == targetX &&
-                                                          i.y == targetY,
-                                                    );
-                                                setState(() {
-                                                  if (data['source_folder_id'] !=
-                                                      null) {
-                                                    final folder = _items
-                                                        .firstWhere(
-                                                          (i) =>
-                                                              i.id ==
-                                                              data['source_folder_id'],
-                                                        );
-                                                    folder.folderApps?.remove(
-                                                      data['packageName'],
-                                                    );
-                                                    if (folder
-                                                            .folderApps
-                                                            ?.isEmpty ==
-                                                        true) {
-                                                      _items.remove(folder);
-                                                    }
-                                                  }
-
-                                                  if (existingIdx != -1) {
-                                                    final target =
-                                                        _items[existingIdx];
-                                                    if (target.type == 'app') {
-                                                      target.type = 'folder';
-                                                      target.label =
-                                                          'Unnamed text';
-                                                      target.folderApps = [
-                                                        target.packageName,
+                                                  });
+                                                  _saveItems();
+                                                } else if (data['type'] ==
+                                                    'app') {
+                                                  final existingIdx = _items
+                                                      .indexWhere(
+                                                        (i) =>
+                                                            i.page ==
+                                                                pageIndex &&
+                                                            i.x == targetX &&
+                                                            i.y == targetY,
+                                                      );
+                                                  setState(() {
+                                                    if (data['source_folder_id'] !=
+                                                        null) {
+                                                      final folder = _items
+                                                          .firstWhere(
+                                                            (i) =>
+                                                                i.id ==
+                                                                data['source_folder_id'],
+                                                          );
+                                                      folder.folderApps?.remove(
                                                         data['packageName'],
-                                                      ];
-                                                      _saveItems();
-                                                    } else if (target.type ==
-                                                        'folder') {
-                                                      target.folderApps ??= [];
-                                                      if (target
+                                                      );
+                                                      if (folder
+                                                              .folderApps
+                                                              ?.isEmpty ==
+                                                          true) {
+                                                        _items.remove(folder);
+                                                      }
+                                                    }
+
+                                                    if (existingIdx != -1) {
+                                                      final target =
+                                                          _items[existingIdx];
+                                                      if (target.type ==
+                                                          'app') {
+                                                        target.type = 'folder';
+                                                        target.label =
+                                                            'Unnamed text';
+                                                        target.folderApps = [
+                                                          target.packageName,
+                                                          data['packageName'],
+                                                        ];
+                                                        _saveItems();
+                                                      } else if (target.type ==
+                                                          'folder') {
+                                                        target.folderApps ??=
+                                                            [];
+                                                        if (target
+                                                                .folderApps!
+                                                                .length <
+                                                            8) {
+                                                          if (!target
                                                               .folderApps!
-                                                              .length <
-                                                          8) {
-                                                        if (!target.folderApps!
-                                                            .contains(
+                                                              .contains(
+                                                                data['packageName'],
+                                                              )) {
+                                                            target.folderApps!.add(
                                                               data['packageName'],
-                                                            )) {
-                                                          target.folderApps!.add(
-                                                            data['packageName'],
+                                                            );
+                                                          }
+                                                          _saveItems();
+                                                        }
+                                                      }
+                                                    } else {
+                                                      _addNewItem(
+                                                        LauncherItem(
+                                                          id: DateTime.now()
+                                                              .millisecondsSinceEpoch
+                                                              .toString(),
+                                                          type: 'app',
+                                                          packageName:
+                                                              data['packageName'],
+                                                          label: data['label'],
+                                                          x: targetX,
+                                                          y: targetY,
+                                                          page: pageIndex,
+                                                        ),
+                                                      );
+                                                    }
+                                                  });
+                                                } else if (data['type'] ==
+                                                    'widget_preview') {
+                                                  final messenger =
+                                                      ScaffoldMessenger.maybeOf(
+                                                        context,
+                                                      );
+                                                  WidgetHostController.instance
+                                                      .allocateAndBindWidget(
+                                                        data,
+                                                      )
+                                                      .then((id) {
+                                                        if (id != null) {
+                                                          addWidgetToWorkspace(
+                                                            data,
+                                                            id,
+                                                            targetX: targetX,
+                                                            targetY: targetY,
+                                                            targetPage:
+                                                                pageIndex,
+                                                          );
+                                                        } else {
+                                                          messenger?.showSnackBar(
+                                                            const SnackBar(
+                                                              content: Text(
+                                                                'Widget permission was not granted.',
+                                                              ),
+                                                            ),
                                                           );
                                                         }
-                                                        _saveItems();
-                                                      }
-                                                    }
-                                                  } else {
-                                                    _addNewItem(
-                                                      LauncherItem(
-                                                        id: DateTime.now()
-                                                            .millisecondsSinceEpoch
-                                                            .toString(),
-                                                        type: 'app',
-                                                        packageName:
-                                                            data['packageName'],
-                                                        label: data['label'],
-                                                        x: targetX,
-                                                        y: targetY,
-                                                        page: pageIndex,
-                                                      ),
-                                                    );
-                                                  }
-                                                });
-                                              } else if (data['type'] ==
-                                                  'widget_preview') {
-                                                final messenger =
-                                                    ScaffoldMessenger.maybeOf(
-                                                      context,
-                                                    );
-                                                WidgetHostController.instance
-                                                    .allocateAndBindWidget(data)
-                                                    .then((id) {
-                                                      if (id != null) {
-                                                        addWidgetToWorkspace(
-                                                          data,
-                                                          id,
-                                                          targetX: targetX,
-                                                          targetY: targetY,
-                                                          targetPage: pageIndex,
-                                                        );
-                                                      } else {
-                                                        messenger?.showSnackBar(
-                                                          const SnackBar(
-                                                            content: Text(
-                                                              'Widget permission was not granted.',
-                                                            ),
-                                                          ),
-                                                        );
-                                                      }
-                                                    });
-                                              }
-                                            },
-                                            builder:
-                                                (context, candidateData, _) {
-                                                  if (candidateData.isNotEmpty) {
-                                                    final data =
-                                                        candidateData.first;
-                                                    final spanX =
-                                                        (data?['spanX'] as int? ??
-                                                                1)
-                                                            .clamp(1, _columns);
-                                                    final spanY =
-                                                        (data?['spanY'] as int? ??
-                                                                1)
-                                                            .clamp(1, _rows);
-                                                    final targetX = x.clamp(
-                                                      0,
-                                                      _columns - spanX,
-                                                    );
-                                                    final targetY = y.clamp(
-                                                      0,
-                                                      _rows - spanY,
-                                                    );
-                                                    final offsetX =
-                                                        (targetX - x) * cellWidth;
-                                                    final offsetY =
-                                                        (targetY - y) * cellHeight;
+                                                      });
+                                                }
+                                              },
+                                              builder: (context, candidateData, _) {
+                                                if (candidateData.isNotEmpty) {
+                                                  final data =
+                                                      candidateData.first;
+                                                  final spanX =
+                                                      (data?['spanX'] as int? ??
+                                                              1)
+                                                          .clamp(1, _columns);
+                                                  final spanY =
+                                                      (data?['spanY'] as int? ??
+                                                              1)
+                                                          .clamp(1, _rows);
+                                                  final targetX = x.clamp(
+                                                    0,
+                                                    _columns - spanX,
+                                                  );
+                                                  final targetY = y.clamp(
+                                                    0,
+                                                    _rows - spanY,
+                                                  );
+                                                  final offsetX =
+                                                      (targetX - x) * cellWidth;
+                                                  final offsetY =
+                                                      (targetY - y) *
+                                                      cellHeight;
 
-                                                    return Transform.translate(
-                                                      offset: Offset(
-                                                        offsetX,
-                                                        offsetY,
-                                                      ),
-                                                      child: OverflowBox(
-                                                        alignment:
-                                                            Alignment.topLeft,
-                                                        minWidth: 0,
-                                                        minHeight: 0,
-                                                        maxWidth:
+                                                  return Transform.translate(
+                                                    offset: Offset(
+                                                      offsetX,
+                                                      offsetY,
+                                                    ),
+                                                    child: OverflowBox(
+                                                      alignment:
+                                                          Alignment.topLeft,
+                                                      minWidth: 0,
+                                                      minHeight: 0,
+                                                      maxWidth:
+                                                          spanX * cellWidth,
+                                                      maxHeight:
+                                                          spanY * cellHeight,
+                                                      child: Container(
+                                                        width:
                                                             spanX * cellWidth,
-                                                        maxHeight:
+                                                        height:
                                                             spanY * cellHeight,
-                                                        child: Container(
-                                                          width:
-                                                              spanX * cellWidth,
-                                                          height:
-                                                              spanY * cellHeight,
-                                                          margin:
-                                                              const EdgeInsets.all(
-                                                                4,
-                                                              ),
-                                                          decoration:
-                                                              BoxDecoration(
-                                                                color: Theme.of(
-                                                                  context,
-                                                                ).colorScheme.primary.withValues(
-                                                                  alpha: 0.22,
-                                                                ),
-                                                                border: Border.all(
-                                                                  color: Theme.of(
-                                                                    context,
-                                                                  ).colorScheme.primary.withValues(
-                                                                    alpha: 0.85,
+                                                        margin:
+                                                            const EdgeInsets.all(
+                                                              4,
+                                                            ),
+                                                        decoration: BoxDecoration(
+                                                          color:
+                                                              Theme.of(context)
+                                                                  .colorScheme
+                                                                  .primary
+                                                                  .withValues(
+                                                                    alpha: 0.22,
                                                                   ),
-                                                                  width: 2,
-                                                                ),
-                                                                borderRadius:
-                                                                    BorderRadius.circular(
-                                                                      16,
+                                                          border: Border.all(
+                                                            color:
+                                                                Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .primary
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.85,
                                                                     ),
+                                                            width: 2,
+                                                          ),
+                                                          borderRadius:
+                                                              BorderRadius.circular(
+                                                                16,
                                                               ),
                                                         ),
                                                       ),
-                                                    );
-                                                  }
-                                                  return const SizedBox.shrink();
-                                                },
+                                                    ),
+                                                  );
+                                                }
+                                                return const SizedBox.shrink();
+                                              },
+                                            ),
                                           ),
-                                        ),
 
-                                    // Placed Items
-                                    ...pageItems.map((item) {
-                                      return Positioned(
-                                        key: ValueKey('grid_item_${item.id}'),
-                                        left: item.x * cellWidth,
-                                        top: item.y * cellHeight,
-                                        width: item.spanX * cellWidth,
-                                        height: item.spanY * cellHeight,
-                                        child: item.isAnyWidget
-                                            ? _buildPlacedWidgetSlot(
-                                                item,
-                                                cellWidth,
-                                                cellHeight,
-                                              )
-                                            : LongPressDraggable<
-                                                Map<String, dynamic>
-                                              >(
-                                                data: item.toJson(),
-                                                delay: const Duration(
-                                                  milliseconds: 150,
-                                                ),
-                                                onDragStarted: () {
-                                                  _hideContextMenu();
-                                                  setState(
-                                                    () => _isDragging = true,
-                                                  );
-                                                  if (item.type == 'app') {
-                                                    widget.onDragStarted?.call(
-                                                      item.packageName,
+                                      // Placed Items
+                                      ...pageItems.map((item) {
+                                        return Positioned(
+                                          key: ValueKey('grid_item_${item.id}'),
+                                          left: item.x * cellWidth,
+                                          top: item.y * cellHeight,
+                                          width: item.spanX * cellWidth,
+                                          height: item.spanY * cellHeight,
+                                          child: item.isAnyWidget
+                                              ? _buildPlacedWidgetSlot(
+                                                  item,
+                                                  cellWidth,
+                                                  cellHeight,
+                                                )
+                                              : LongPressDraggable<
+                                                  Map<String, dynamic>
+                                                >(
+                                                  data: item.toJson(),
+                                                  delay: const Duration(
+                                                    milliseconds: 150,
+                                                  ),
+                                                  onDragStarted: () {
+                                                    _hideContextMenu();
+                                                    _showItemContextMenuAtItem(
+                                                      item,
                                                     );
-                                                  }
-                                                },
-                                                onDragEnd: (_) {
-                                                  setState(
-                                                    () => _isDragging = false,
-                                                  );
-                                                  widget.onDragEnded?.call();
-                                                },
-                                                onDraggableCanceled: (_, _) {
-                                                  setState(
-                                                    () => _isDragging = false,
-                                                  );
-                                                  widget.onDragEnded?.call();
-                                                  _showItemContextMenuAtItem(item);
-                                                },
-                                                feedback: Material(
-                                                  color: Colors.transparent,
-                                                  child: SizedBox(
-                                                    width:
-                                                        item.spanX * cellWidth,
-                                                    height:
-                                                        item.spanY * cellHeight,
+                                                    setState(
+                                                      () => _isDragging = true,
+                                                    );
+                                                    if (item.type == 'app') {
+                                                      widget.onDragStarted
+                                                          ?.call(
+                                                            item.packageName,
+                                                          );
+                                                    }
+                                                  },
+                                                  onDragEnd: (details) {
+                                                    setState(
+                                                      () => _isDragging = false,
+                                                    );
+                                                    if (details.wasAccepted) {
+                                                      _hideContextMenu();
+                                                    }
+                                                    widget.onDragEnded?.call();
+                                                  },
+                                                  onDraggableCanceled: (_, _) {
+                                                    setState(
+                                                      () => _isDragging = false,
+                                                    );
+                                                    widget.onDragEnded?.call();
+                                                    _showItemContextMenuAtItem(
+                                                      item,
+                                                    );
+                                                  },
+                                                  feedback: Material(
+                                                    color: Colors.transparent,
+                                                    child: SizedBox(
+                                                      width:
+                                                          item.spanX *
+                                                          cellWidth,
+                                                      height:
+                                                          item.spanY *
+                                                          cellHeight,
+                                                      child: _buildItemContent(
+                                                        item,
+                                                        cellWidth,
+                                                        cellHeight,
+                                                        isFeedback: true,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  childWhenDragging:
+                                                      const SizedBox.shrink(),
+                                                  child: GestureDetector(
+                                                    onTap: () {
+                                                      _hideContextMenu();
+                                                      if (item.type == 'app') {
+                                                        final bounds =
+                                                            _measureItemIconBounds(
+                                                              item.id,
+                                                            );
+                                                        AppLockService.launchApp(
+                                                          context,
+                                                          item.packageName,
+                                                          sourceBounds: bounds,
+                                                        );
+                                                      }
+                                                    },
+                                                    onLongPress: () =>
+                                                        _showItemContextMenuAtItem(
+                                                          item,
+                                                        ),
                                                     child: _buildItemContent(
                                                       item,
                                                       cellWidth,
                                                       cellHeight,
-                                                      isFeedback: true,
                                                     ),
                                                   ),
                                                 ),
-                                                childWhenDragging:
-                                                    const SizedBox.shrink(),
-                                                child: GestureDetector(
-                                                  onTap: () {
-                                                    _hideContextMenu();
-                                                    if (item.type == 'app') {
-                                                      final bounds = _measureItemIconBounds(item.id);
-                                                      AppLockService.launchApp(
-                                                        context,
-                                                        item.packageName,
-                                                        sourceBounds: bounds,
+                                        );
+                                      }),
+
+                                      // Edge drag prev page
+                                      if (_isDragging && pageIndex > 0)
+                                        Positioned(
+                                          left: 0,
+                                          top: 0,
+                                          bottom: 0,
+                                          width: 24,
+                                          child:
+                                              DragTarget<Map<String, dynamic>>(
+                                                onWillAcceptWithDetails: (_) {
+                                                  _workspaceController
+                                                      .previousPage(
+                                                        duration:
+                                                            const Duration(
+                                                              milliseconds: 380,
+                                                            ),
+                                                        curve: Curves.easeInOut,
                                                       );
-                                                    }
-                                                  },
-                                                  onLongPress: () =>
-                                                      _showItemContextMenuAtItem(
-                                                        item,
-                                                      ),
-                                                  child: _buildItemContent(
-                                                    item,
-                                                    cellWidth,
-                                                    cellHeight,
-                                                  ),
-                                                ),
+                                                  return false;
+                                                },
+                                                builder:
+                                                    (
+                                                      context,
+                                                      candidateData,
+                                                      _,
+                                                    ) {
+                                                      return Container(
+                                                        color:
+                                                            candidateData
+                                                                .isNotEmpty
+                                                            ? Colors.white
+                                                                  .withValues(
+                                                                    alpha: 0.2,
+                                                                  )
+                                                            : Colors
+                                                                  .transparent,
+                                                      );
+                                                    },
                                               ),
-                                      );
-                                    }),
-
-                                    // Edge drag prev page
-                                    if (_isDragging && pageIndex > 0)
-                                      Positioned(
-                                        left: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        width: 24,
-                                        child: DragTarget<Map<String, dynamic>>(
-                                          onWillAcceptWithDetails: (_) {
-                                            _workspaceController.previousPage(
-                                              duration: const Duration(
-                                                milliseconds: 380,
-                                              ),
-                                              curve: Curves.easeInOut,
-                                            );
-                                            return false;
-                                          },
-                                          builder: (context, candidateData, _) {
-                                            return Container(
-                                              color: candidateData.isNotEmpty
-                                                  ? Colors.white.withValues(
-                                                      alpha: 0.2,
-                                                    )
-                                                  : Colors.transparent,
-                                            );
-                                          },
                                         ),
-                                      ),
 
-                                    // Edge drag next page
-                                    if (_isDragging &&
-                                        pageIndex < _totalPages - 1)
-                                      Positioned(
-                                        right: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        width: 24,
-                                        child: DragTarget<Map<String, dynamic>>(
-                                          onWillAcceptWithDetails: (_) {
-                                            _workspaceController.nextPage(
-                                              duration: const Duration(
-                                                milliseconds: 380,
+                                      // Edge drag next page
+                                      if (_isDragging &&
+                                          pageIndex < _totalPages - 1)
+                                        Positioned(
+                                          right: 0,
+                                          top: 0,
+                                          bottom: 0,
+                                          width: 24,
+                                          child:
+                                              DragTarget<Map<String, dynamic>>(
+                                                onWillAcceptWithDetails: (_) {
+                                                  _workspaceController.nextPage(
+                                                    duration: const Duration(
+                                                      milliseconds: 380,
+                                                    ),
+                                                    curve: Curves.easeInOut,
+                                                  );
+                                                  return false;
+                                                },
+                                                builder:
+                                                    (
+                                                      context,
+                                                      candidateData,
+                                                      _,
+                                                    ) {
+                                                      return Container(
+                                                        color:
+                                                            candidateData
+                                                                .isNotEmpty
+                                                            ? Colors.white
+                                                                  .withValues(
+                                                                    alpha: 0.2,
+                                                                  )
+                                                            : Colors
+                                                                  .transparent,
+                                                      );
+                                                    },
                                               ),
-                                              curve: Curves.easeInOut,
-                                            );
-                                            return false;
-                                          },
-                                          builder: (context, candidateData, _) {
-                                            return Container(
-                                              color: candidateData.isNotEmpty
-                                                  ? Colors.white.withValues(
-                                                      alpha: 0.2,
-                                                    )
-                                                  : Colors.transparent,
-                                            );
-                                          },
                                         ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
+                                    ],
+                                  ),
+                                );
+                              },
                             );
                           },
                         ),
@@ -1647,7 +1743,7 @@ class HomeScreenState extends State<HomeScreen>
                         children: [
                           // Dock Apps Row
                           SizedBox(
-                            height: 76,
+                            height: 70,
                             child: LayoutBuilder(
                               builder: (context, constraints) {
                                 final cellWidth = constraints.maxWidth / 4;
@@ -1662,23 +1758,36 @@ class HomeScreenState extends State<HomeScreen>
                                         left: x * cellWidth,
                                         top: 0,
                                         width: cellWidth,
-                                        height: 76,
+                                        height: 70,
                                         child: DragTarget<Map<String, dynamic>>(
                                           onWillAcceptWithDetails: (details) =>
                                               _dockItemAt(x) == null &&
-                                              _canAcceptDockDrop(details.data, x),
+                                              _canAcceptDockDrop(
+                                                details.data,
+                                                x,
+                                              ),
                                           onAcceptWithDetails: (details) {
                                             _acceptDockDrop(details.data, x);
                                           },
                                           builder:
-                                              (context, candidateData, rejectedData) {
+                                              (
+                                                context,
+                                                candidateData,
+                                                rejectedData,
+                                              ) {
                                                 return Container(
-                                                  margin: const EdgeInsets.all(6),
+                                                  margin: const EdgeInsets.all(
+                                                    6,
+                                                  ),
                                                   decoration: BoxDecoration(
                                                     borderRadius:
-                                                        BorderRadius.circular(16),
+                                                        BorderRadius.circular(
+                                                          16,
+                                                        ),
                                                     border: Border.all(
-                                                      color: candidateData.isNotEmpty
+                                                      color:
+                                                          candidateData
+                                                              .isNotEmpty
                                                           ? Theme.of(context)
                                                                 .colorScheme
                                                                 .primary
@@ -1700,7 +1809,7 @@ class HomeScreenState extends State<HomeScreen>
                                         left: item.x * cellWidth,
                                         top: 0,
                                         width: cellWidth,
-                                        height: 76,
+                                        height: 70,
                                         child: DragTarget<Map<String, dynamic>>(
                                           onWillAcceptWithDetails: (details) =>
                                               _canAcceptDockDrop(
@@ -1708,7 +1817,10 @@ class HomeScreenState extends State<HomeScreen>
                                                 item.x,
                                               ),
                                           onAcceptWithDetails: (details) =>
-                                              _acceptDockDrop(details.data, item.x),
+                                              _acceptDockDrop(
+                                                details.data,
+                                                item.x,
+                                              ),
                                           builder: (context, candidateData, _) =>
                                               LongPressDraggable<
                                                 Map<String, dynamic>
@@ -1718,22 +1830,35 @@ class HomeScreenState extends State<HomeScreen>
                                                   milliseconds: 180,
                                                 ),
                                                 onDragStarted: () {
-                                                  _hideContextMenu();
-                                                  setState(() => _isDragging = true);
+                                                  _showItemContextMenuAtItem(
+                                                    item,
+                                                  );
+                                                  setState(
+                                                    () => _isDragging = true,
+                                                  );
                                                   if (item.type == 'app') {
                                                     widget.onDragStarted?.call(
                                                       item.packageName,
                                                     );
                                                   }
                                                 },
-                                                onDragEnd: (_) {
-                                                  setState(() => _isDragging = false);
+                                                onDragEnd: (details) {
+                                                  setState(
+                                                    () => _isDragging = false,
+                                                  );
+                                                  if (details.wasAccepted) {
+                                                    _hideContextMenu();
+                                                  }
                                                   widget.onDragEnded?.call();
                                                 },
                                                 onDraggableCanceled: (_, _) {
-                                                  setState(() => _isDragging = false);
+                                                  setState(
+                                                    () => _isDragging = false,
+                                                  );
                                                   widget.onDragEnded?.call();
-                                                  _showItemContextMenuAtItem(item);
+                                                  _showItemContextMenuAtItem(
+                                                    item,
+                                                  );
                                                 },
                                                 feedback: Material(
                                                   color: Colors.transparent,
@@ -1742,7 +1867,7 @@ class HomeScreenState extends State<HomeScreen>
                                                     child: _buildItemContent(
                                                       item,
                                                       cellWidth,
-                                                      76,
+                                                      70,
                                                       isFeedback: true,
                                                     ),
                                                   ),
@@ -1752,7 +1877,10 @@ class HomeScreenState extends State<HomeScreen>
                                                 child: GestureDetector(
                                                   onTap: () {
                                                     _hideContextMenu();
-                                                    final bounds = _measureItemIconBounds(item.id);
+                                                    final bounds =
+                                                        _measureItemIconBounds(
+                                                          item.id,
+                                                        );
                                                     AppLockService.launchApp(
                                                       context,
                                                       item.packageName,
@@ -1760,11 +1888,13 @@ class HomeScreenState extends State<HomeScreen>
                                                     );
                                                   },
                                                   onLongPress: () =>
-                                                      _showItemContextMenuAtItem(item),
+                                                      _showItemContextMenuAtItem(
+                                                        item,
+                                                      ),
                                                   child: _buildItemContent(
                                                     item,
                                                     cellWidth,
-                                                    76,
+                                                    70,
                                                   ),
                                                 ),
                                               ),
@@ -1776,7 +1906,7 @@ class HomeScreenState extends State<HomeScreen>
                               },
                             ),
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 10),
                           // Search Widget Pill in Dock
                           SearchWidget(
                             key: const ValueKey('dock_search_pill'),
@@ -1785,7 +1915,7 @@ class HomeScreenState extends State<HomeScreen>
                         ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12 + MediaQuery.paddingOf(context).bottom),
                   ],
                 ),
               ),
@@ -1856,14 +1986,18 @@ class HomeScreenState extends State<HomeScreen>
 
         // Launcher3 Anchored Contextual Popup Menu
         if (_contextMenuItem != null && _contextMenuPos != null) ...[
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: _hideContextMenu,
-              child: const SizedBox.expand(),
+          if (!_isDragging)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _hideContextMenu,
+                child: const SizedBox.expand(),
+              ),
             ),
+          IgnorePointer(
+            ignoring: _isDragging,
+            child: _buildLauncher3ContextMenu(context),
           ),
-          _buildLauncher3ContextMenu(context),
         ],
       ],
     );
@@ -2115,9 +2249,7 @@ class HomeScreenState extends State<HomeScreen>
                     _openedFolderItem = null;
                   });
                 },
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.55),
-                ),
+                child: Container(color: Colors.black.withValues(alpha: 0.55)),
               ),
             ),
             Center(
@@ -2130,10 +2262,9 @@ class HomeScreenState extends State<HomeScreen>
                     maxHeight: MediaQuery.of(context).size.height * 0.65,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHigh
-                        .withValues(alpha: 0.96),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHigh.withValues(alpha: 0.96),
                     borderRadius: BorderRadius.circular(28),
                     boxShadow: [
                       BoxShadow(
@@ -2157,12 +2288,8 @@ class HomeScreenState extends State<HomeScreen>
                                   folder.label.isNotEmpty
                                       ? folder.label
                                       : 'Folder',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleLarge
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w600),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -2243,9 +2370,9 @@ class HomeScreenState extends State<HomeScreen>
                       child: Container(
                         width: 56,
                         height: 56,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         child: const Icon(Icons.android, size: 32),
                       ),
                     );
@@ -2261,10 +2388,7 @@ class HomeScreenState extends State<HomeScreen>
                   color: Theme.of(context).colorScheme.error,
                   shape: BoxShape.circle,
                 ),
-                constraints: const BoxConstraints(
-                  minWidth: 16,
-                  minHeight: 16,
-                ),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
                 child: Text(
                   '$notificationCount',
                   style: TextStyle(
@@ -2292,9 +2416,9 @@ class HomeScreenState extends State<HomeScreen>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 11,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontSize: 11),
             ),
           ],
         ),
@@ -2441,7 +2565,7 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   void _showItemContextMenuAtItem(LauncherItem item) {
-    HapticFeedback.mediumImpact();
+    HapticFeedback.selectionClick();
     final screenSize = MediaQuery.of(context).size;
 
     double itemX = 0;
@@ -2480,107 +2604,172 @@ class HomeScreenState extends State<HomeScreen>
     final cs = Theme.of(context).colorScheme;
 
     const popupWidth = 190.0;
+    const popupHeight = 224.0;
     final left = (pos.dx + (itemSize.width - popupWidth) / 2).clamp(
       16.0,
       screenSize.width - popupWidth - 16.0,
     );
-    final showAbove = pos.dy > screenSize.height * 0.45;
-    final top = showAbove
-        ? (pos.dy - 124.0).clamp(40.0, screenSize.height - 140.0)
-        : (pos.dy + itemSize.height + 8.0);
+    final showAbove = pos.dy > screenSize.height * 0.5;
+    final top =
+        (showAbove
+                ? pos.dy - popupHeight - 8.0
+                : pos.dy + itemSize.height + 8.0)
+            .clamp(40.0, screenSize.height - popupHeight - 16.0);
+    final title = item.type == 'app'
+        ? widget.appCache[item.packageName]?.name ?? item.label
+        : item.label;
+    final subtitle = item.type == 'app'
+        ? 'App shortcut'
+        : item.type == 'folder'
+        ? 'Folder'
+        : 'Home screen widget';
+    final leadingIcon = item.type == 'app'
+        ? Icons.apps_rounded
+        : item.type == 'folder'
+        ? Icons.folder_rounded
+        : Icons.widgets_rounded;
+    final actions = <Widget>[
+      if (item.type == 'app') ...[
+        _buildPopupTile(
+          icon: Icons.info_outline_rounded,
+          label: 'App info',
+          color: cs.onSurface,
+          onTap: () {
+            _hideContextMenu();
+            LauncherService.openAppInfo(item.packageName);
+          },
+        ),
+        _buildPopupTile(
+          icon: Icons.delete_outline_rounded,
+          label: 'Uninstall',
+          color: cs.error,
+          onTap: () {
+            _hideContextMenu();
+            LauncherService.uninstallApp(item.packageName);
+          },
+        ),
+        _buildPopupTile(
+          icon: Icons.close_rounded,
+          label: item.page == -1 ? 'Remove from Dock' : 'Remove from Home',
+          color: cs.onSurfaceVariant,
+          onTap: () {
+            _hideContextMenu();
+            _removeItem(item);
+          },
+        ),
+      ] else if (item.isAnyWidget) ...[
+        _buildPopupTile(
+          icon: Icons.close_rounded,
+          label: 'Remove widget',
+          color: cs.error,
+          onTap: () {
+            _hideContextMenu();
+            _removeItem(item);
+          },
+        ),
+        _buildPopupTile(
+          icon: Icons.aspect_ratio_rounded,
+          label: 'Resize',
+          color: cs.primary,
+          onTap: () {
+            _hideContextMenu();
+            _beginWidgetEdit(item);
+          },
+        ),
+      ] else if (item.type == 'folder') ...[
+        _buildPopupTile(
+          icon: Icons.edit_outlined,
+          label: 'Rename folder',
+          color: cs.onSurface,
+          onTap: () {
+            _hideContextMenu();
+            _renameFolder(item);
+          },
+        ),
+        _buildPopupTile(
+          icon: Icons.close_rounded,
+          label: 'Remove folder',
+          color: cs.error,
+          onTap: () {
+            _hideContextMenu();
+            _removeItem(item);
+          },
+        ),
+      ],
+    ];
 
     return Positioned(
       left: left,
       top: top,
-      child: Material(
-        color: cs.surfaceContainerHigh,
-        elevation: 8,
-        shadowColor: Colors.black45,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          width: popupWidth,
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.5),
-              width: 1,
+      child: SizedBox(
+        width: popupWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Material(
+              color: cs.surfaceContainerHigh,
+              elevation: 6,
+              shadowColor: Colors.black45,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Icon(leadingIcon, color: cs.primary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: cs.onSurface,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            subtitle,
+                            style: TextStyle(
+                              color: cs.onSurfaceVariant,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (item.type == 'app') ...[
-                _buildPopupTile(
-                  icon: Icons.info_outline_rounded,
-                  label: 'App info',
-                  color: cs.onSurface,
-                  onTap: () {
-                    _hideContextMenu();
-                    LauncherService.openAppInfo(item.packageName);
-                  },
+            const SizedBox(height: 6),
+            Material(
+              color: cs.surfaceContainerHigh,
+              elevation: 8,
+              shadowColor: Colors.black45,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.45),
+                    width: 1,
+                  ),
                 ),
-                _buildPopupTile(
-                  icon: Icons.delete_outline_rounded,
-                  label: 'Uninstall',
-                  color: cs.error,
-                  onTap: () {
-                    _hideContextMenu();
-                    LauncherService.uninstallApp(item.packageName);
-                  },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: actions,
                 ),
-                _buildPopupTile(
-                  icon: Icons.close_rounded,
-                  label: item.page == -1
-                      ? 'Remove from Dock'
-                      : 'Remove from Home',
-                  color: cs.onSurfaceVariant,
-                  onTap: () {
-                    _hideContextMenu();
-                    _removeItem(item);
-                  },
-                ),
-              ] else if (item.isAnyWidget) ...[
-                _buildPopupTile(
-                  icon: Icons.close_rounded,
-                  label: 'Remove widget',
-                  color: cs.error,
-                  onTap: () {
-                    _hideContextMenu();
-                    _removeItem(item);
-                  },
-                ),
-                _buildPopupTile(
-                  icon: Icons.aspect_ratio_rounded,
-                  label: 'Resize',
-                  color: cs.primary,
-                  onTap: () {
-                    _hideContextMenu();
-                    _beginWidgetEdit(item);
-                  },
-                ),
-              ] else if (item.type == 'folder') ...[
-                _buildPopupTile(
-                  icon: Icons.edit_outlined,
-                  label: 'Rename folder',
-                  color: cs.onSurface,
-                  onTap: () {
-                    _hideContextMenu();
-                    _renameFolder(item);
-                  },
-                ),
-                _buildPopupTile(
-                  icon: Icons.close_rounded,
-                  label: 'Remove folder',
-                  color: cs.error,
-                  onTap: () {
-                    _hideContextMenu();
-                    _removeItem(item);
-                  },
-                ),
-              ],
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2628,8 +2817,8 @@ class HomeScreenState extends State<HomeScreen>
       data: item.toJson(),
       delay: const Duration(milliseconds: 220),
       onDragStarted: () {
-        HapticFeedback.mediumImpact();
         _hideContextMenu();
+        _showItemContextMenuAtItem(item);
         if (item.appWidgetId != null) {
           unawaited(
             WidgetHostController.instance.captureWidgetSnapshot(
@@ -2642,15 +2831,16 @@ class HomeScreenState extends State<HomeScreen>
           _editingWidgetId = null;
         });
       },
-      onDragEnd: (_) {
+      onDragEnd: (details) {
         setState(() => _isDragging = false);
+        if (details.wasAccepted) {
+          _hideContextMenu();
+        }
         widget.onDragEnded?.call();
       },
       onDraggableCanceled: (_, _) {
         setState(() => _isDragging = false);
         widget.onDragEnded?.call();
-        // Show Launcher3 popup menu on long press & release
-        _showItemContextMenuAtItem(item);
       },
       feedback: Material(
         color: Colors.transparent,
@@ -2717,14 +2907,14 @@ class HomeScreenState extends State<HomeScreen>
       _editingWidgetId = item.id;
       _editingWidgetCapabilities = const WidgetCapabilities();
     });
-    WidgetHostController.instance
-        .getCapabilities(item, columns: _columns)
-        .then((capabilities) {
-          if (!mounted || _editingWidgetId != item.id) return;
-          setState(() {
-            _editingWidgetCapabilities = capabilities;
-          });
+    WidgetHostController.instance.getCapabilities(item, columns: _columns).then(
+      (capabilities) {
+        if (!mounted || _editingWidgetId != item.id) return;
+        setState(() {
+          _editingWidgetCapabilities = capabilities;
         });
+      },
+    );
   }
 
   bool _handleWidgetResizeStep(

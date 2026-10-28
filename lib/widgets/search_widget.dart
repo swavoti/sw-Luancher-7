@@ -60,10 +60,10 @@ class _SearchWidgetState extends State<SearchWidget> {
             child: Container(
               height: targetHeight,
               decoration: BoxDecoration(
-                color: colorScheme.surface,
+                color: colorScheme.surface.withValues(alpha: 0.62),
                 borderRadius: BorderRadius.circular(borderRadius),
                 border: Border.all(
-                  color: colorScheme.outlineVariant,
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.55),
                   width: 1,
                 ),
               ),

@@ -2,8 +2,55 @@
   "openFilePaths": [
     "/android/app/src/main/kotlin/co/za/launcher3/swavoti/MainActivity.kt",
     "/lib/main.dart",
-    "/android/app/src/main/kotlin/co/za/launcher3/swavoti/NotificationDotService.kt"
+    "/android/app/src/main/kotlin/co/za/launcher3/swavoti/NotificationDotService.kt",
+    "/lib/screens/home_screen.dart",
+    "/.github/workflows/build_release.yml"
   ],
-  "activeFilePath": "/android/app/src/main/kotlin/co/za/launcher3/swavoti/MainActivity.kt",
-  "updatedAt": 1792250216578
+  "activeFilePath": "/.github/workflows/build_release.yml",
+  "extensionTabs": {
+    "web-live-preview": {
+      "id": "web-live-preview",
+      "name": "web-live-preview",
+      "displayName": "Web Live Preview",
+      "version": "1.0.0",
+      "debuggerContributions": []
+    },
+    "codetist-debugger": {
+      "id": "codetist-debugger",
+      "name": "codetist-debugger",
+      "displayName": "Codetist DAP Starter",
+      "version": "1.0.0",
+      "debuggerContributions": [
+        {
+          "type": "codetist-sample",
+          "label": "Codetist DAP Sample",
+          "languages": [
+            "typescript",
+            "javascript"
+          ],
+          "adapter": {
+            "command": "node",
+            "args": [
+              "${extensionPath}/dist/adapter.js"
+            ]
+          }
+        }
+      ]
+    },
+    "codetist-env-len": {
+      "id": "codetist-env-len",
+      "name": "codetist-env-len",
+      "displayName": "Env & Secrets Vault",
+      "version": "1.0.0",
+      "debuggerContributions": []
+    },
+    "codetist-pkg-lens": {
+      "id": "codetist-pkg-lens",
+      "name": "codetist-pkg-lens",
+      "displayName": "Package & DependencyLens",
+      "version": "1.0.0",
+      "debuggerContributions": []
+    }
+  },
+  "updatedAt": 1793186009967
 }
