@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/widget_host.dart';
@@ -450,7 +449,7 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
     if (stepSize <= 8) return;
 
     _dragAccum += primaryDelta;
-    final threshold = stepSize * 0.65;
+    final threshold = stepSize * 0.48;
 
     while (_dragAccum >= threshold) {
       final applied = widget.onResizeStep?.call(edge, 1) ?? false;
@@ -495,117 +494,85 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final showToolbarBelow = widget.item.y == 0;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Positioned.fill(child: widget.child),
 
-        // Glowing Launcher3 / Lawnchair primary frame
-        Positioned.fill(
+        // Clean exterior outline border (positioned outside widget bounds)
+        Positioned(
+          left: -4,
+          top: -4,
+          right: -4,
+          bottom: -4,
           child: IgnorePointer(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              margin: const EdgeInsets.all(2),
+            child: Container(
               decoration: BoxDecoration(
-                color: cs.primary.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: cs.primary,
-                  width: 2.4,
+                  width: 2.0,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: cs.primary.withValues(alpha: 0.28),
-                    blurRadius: 12,
-                    spreadRadius: 0.5,
-                  ),
-                ],
               ),
             ),
           ),
         ),
 
-        // Floating Action Pill Bar (Configure, Reset Size, Delete, Done)
+        // Remove 'X' button on top-right of outline
         Positioned(
-          top: showToolbarBelow ? null : -46,
-          bottom: showToolbarBelow ? -50 : null,
-          left: -40,
-          right: -40,
-          child: Center(
-            child: Material(
-              color: cs.surfaceContainerHighest.withValues(alpha: 0.96),
-              elevation: 6,
-              shadowColor: Colors.black54,
-              borderRadius: BorderRadius.circular(24),
+          top: -16,
+          right: -16,
+          child: Material(
+            color: cs.error,
+            shape: const CircleBorder(),
+            elevation: 4,
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: widget.onRemove,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: cs.onError,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Live Span Dimension Pill Badge (e.g. "2 × 2") & Done check
+        Positioned(
+          bottom: -16,
+          right: -10,
+          child: GestureDetector(
+            onTap: widget.onExitEdit,
+            child: Material(
+              color: cs.primaryContainer,
+              borderRadius: BorderRadius.circular(14),
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (widget.capabilities.configurable &&
-                        widget.item.appWidgetId != null)
-                      _ToolbarChipButton(
-                        icon: Icons.settings_outlined,
-                        tooltip: 'Configure widget',
-                        color: cs.onSurface,
-                        onTap: () {
-                          LauncherService.configureWidget(
-                            widget.item.appWidgetId!,
-                          );
-                        },
+                    Text(
+                      '${widget.item.spanX} × ${widget.item.spanY}',
+                      style: TextStyle(
+                        color: cs.onPrimaryContainer,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
                       ),
-                    _ToolbarChipButton(
-                      icon: Icons.fit_screen_rounded,
-                      tooltip: 'Reset default size',
-                      color: cs.onSurface,
-                      onTap: widget.onResetSize,
                     ),
-                    _ToolbarChipButton(
-                      icon: Icons.delete_outline_rounded,
-                      tooltip: 'Remove widget',
-                      color: cs.error,
-                      onTap: widget.onRemove,
-                    ),
-                    _ToolbarChipButton(
-                      icon: Icons.check_rounded,
-                      tooltip: 'Done editing',
-                      color: cs.primary,
-                      onTap: widget.onExitEdit,
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.check_rounded,
+                      size: 14,
+                      color: cs.onPrimaryContainer,
                     ),
                   ],
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // Live Span Dimension Pill Badge (e.g. "2 × 2")
-        Positioned(
-          bottom: 8,
-          right: 10,
-          child: IgnorePointer(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              decoration: BoxDecoration(
-                color: cs.primary,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black38,
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                '${widget.item.spanX} × ${widget.item.spanY}',
-                style: TextStyle(
-                  color: cs.onPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.2,
                 ),
               ),
             ),
@@ -771,35 +738,6 @@ class _EdgePillVisual extends StatelessWidget {
             color: cs.onPrimary.withValues(alpha: 0.9),
             borderRadius: BorderRadius.circular(2),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolbarChipButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ToolbarChipButton({
-    required this.icon,
-    required this.tooltip,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-          child: Icon(icon, size: 19, color: color),
         ),
       ),
     );

@@ -548,31 +548,25 @@ class _WallpaperPageState extends State<WallpaperPage> {
                   else
                     Container(color: Colors.black87),
 
-                  // Vignette gradient for text contrast
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.black.withValues(
-                            alpha: isLockScreen ? 0.35 : 0.25,
-                          ),
-                          Colors.transparent,
-                          Colors.black.withValues(
-                            alpha: isLockScreen ? 0.45 : 0.35,
-                          ),
-                        ],
-                        stops: const [0.0, 0.4, 1.0],
+                  // For Home Screen preview: pure wallpaper, nothing else cluttering it
+                  if (isLockScreen) ...[
+                    // Vignette gradient for text contrast
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.35),
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.45),
+                          ],
+                          stops: const [0.0, 0.4, 1.0],
+                        ),
                       ),
                     ),
-                  ),
-
-                  // Live Mockup Overlay
-                  if (isLockScreen)
-                    _buildLockScreenOverlay()
-                  else
-                    _buildHomeScreenOverlay(),
+                    _buildLockScreenOverlay(),
+                  ],
                 ],
               ),
             ),

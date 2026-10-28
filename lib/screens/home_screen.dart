@@ -8,10 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_lock_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
-import 'package:swavoti/screens/discover_news.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
 import 'package:swavoti/widgets/widget_host.dart';
 import 'package:swavoti/widgets/widget_display.dart';
+import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/main.dart' show launcherRouteObserver;
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
@@ -26,8 +26,6 @@ class HomeScreen extends StatefulWidget {
   final void Function(Map<String, dynamic>)? onAddAppToHomeScreen;
   final void Function(String packageName)? onDragStarted;
   final VoidCallback? onDragEnded;
-  final VoidCallback? onDiscoverOpen;
-  final VoidCallback? onDiscoverClose;
 
   const HomeScreen({
     super.key,
@@ -38,8 +36,6 @@ class HomeScreen extends StatefulWidget {
     this.onAddAppToHomeScreen,
     this.onDragStarted,
     this.onDragEnded,
-    this.onDiscoverOpen,
-    this.onDiscoverClose,
   });
 
   @override
@@ -50,9 +46,13 @@ class HomeScreenState extends State<HomeScreen>
     with WidgetsBindingObserver, RouteAware {
   List<LauncherItem> _items = [];
   bool _isDragging = false;
-  bool _isNavigatingToDiscover = false;
   bool _isWorkspaceOverviewMode = false;
   LauncherItem? _openedFolderItem;
+
+  // Launcher3 contextual popup menu state
+  LauncherItem? _contextMenuItem;
+  Offset? _contextMenuPos;
+  Size? _contextMenuSize;
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
   final Map<String, GlobalKey> _itemIconKeys = {};
@@ -177,7 +177,7 @@ class HomeScreenState extends State<HomeScreen>
       !_routeCovered &&
       !_isDragging &&
       !_isWorkspaceOverviewMode &&
-      !_isNavigatingToDiscover &&
+      _contextMenuItem == null &&
       _openedFolderItem == null &&
       _editingWidgetId == null;
 
@@ -384,47 +384,6 @@ class HomeScreenState extends State<HomeScreen>
       final wallpaperOffset = page / (_totalPages - 1);
       LauncherService.setWallpaperOffset(wallpaperOffset);
     }
-
-    if (_isNavigatingToDiscover) return;
-    if (_currentWorkspacePage != 0) return;
-    final offset = _workspaceController.offset;
-    if (offset < -60) {
-      _isNavigatingToDiscover = true;
-      widget.onDiscoverOpen?.call();
-      // Snap back to position 0 so the bounce doesn't look weird on return
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_workspaceController.hasClients) {
-          _workspaceController.jumpTo(0);
-        }
-      });
-      Navigator.of(context)
-          .push(
-            PageRouteBuilder(
-              opaque: true,
-              pageBuilder: (_, _, _) => const DiscoverNewsPage(),
-              transitionsBuilder: (_, animation, _, child) {
-                final curve = CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutCubic,
-                );
-                // Discover slides in from left, home slides out to right — feels like same continuous page
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(-1, 0),
-                    end: Offset.zero,
-                  ).animate(curve),
-                  child: child,
-                );
-              },
-              transitionDuration: const Duration(milliseconds: 400),
-              reverseTransitionDuration: const Duration(milliseconds: 360),
-            ),
-          )
-          .then((_) {
-            _isNavigatingToDiscover = false;
-            widget.onDiscoverClose?.call();
-          });
-    }
   }
 
   void _loadSettingsSync() {
@@ -494,7 +453,7 @@ class HomeScreenState extends State<HomeScreen>
         );
       }
 
-      // Page 0: Time/Weather + Search
+      // Page 0: Double Stacked Time/Weather Widget
       if (prefs.getBool('show_time_weather') ?? true) {
         loadedItems.add(
           LauncherItem(
@@ -505,24 +464,11 @@ class HomeScreenState extends State<HomeScreen>
             x: 0,
             y: 0,
             spanX: 4,
-            spanY: 1,
+            spanY: 2,
             page: 0,
           ),
         );
       }
-      loadedItems.add(
-        LauncherItem(
-          id: 'search_default',
-          type: 'search_widget',
-          packageName: '',
-          label: 'Search',
-          x: 0,
-          y: 4,
-          spanX: 4,
-          spanY: 1,
-          page: 0,
-        ),
-      );
 
       // Page 1: 4 real user apps from the actual device, placed in a clean
       // left-to-right row. Excludes dock apps and system-only packages.
@@ -1113,10 +1059,8 @@ class HomeScreenState extends State<HomeScreen>
                                   child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
-                                      if (_isDragging ||
-                                          (_editingWidgetId != null &&
-                                              pageIndex ==
-                                                  _currentWorkspacePage))
+                                      if (_editingWidgetId != null &&
+                                          pageIndex == _currentWorkspacePage)
                                         Positioned.fill(
                                           child: WorkspaceResizeGridOverlay(
                                             columns: _columns,
@@ -1535,6 +1479,7 @@ class HomeScreenState extends State<HomeScreen>
                                                   milliseconds: 150,
                                                 ),
                                                 onDragStarted: () {
+                                                  _hideContextMenu();
                                                   setState(
                                                     () => _isDragging = true,
                                                   );
@@ -1555,6 +1500,7 @@ class HomeScreenState extends State<HomeScreen>
                                                     () => _isDragging = false,
                                                   );
                                                   widget.onDragEnded?.call();
+                                                  _showItemContextMenuAtItem(item);
                                                 },
                                                 feedback: Material(
                                                   color: Colors.transparent,
@@ -1575,6 +1521,7 @@ class HomeScreenState extends State<HomeScreen>
                                                     const SizedBox.shrink(),
                                                 child: GestureDetector(
                                                   onTap: () {
+                                                    _hideContextMenu();
                                                     if (item.type == 'app') {
                                                       final bounds = _measureItemIconBounds(item.id);
                                                       AppLockService.launchApp(
@@ -1585,7 +1532,7 @@ class HomeScreenState extends State<HomeScreen>
                                                     }
                                                   },
                                                   onLongPress: () =>
-                                                      _showItemContextMenu(
+                                                      _showItemContextMenuAtItem(
                                                         item,
                                                       ),
                                                   child: _buildItemContent(
@@ -1671,61 +1618,6 @@ class HomeScreenState extends State<HomeScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Discover dot (outlined)
-                        GestureDetector(
-                          onTap: () {
-                            if (!_isNavigatingToDiscover) {
-                              _isNavigatingToDiscover = true;
-                              Navigator.of(context)
-                                  .push(
-                                    PageRouteBuilder(
-                                      opaque: true,
-                                      pageBuilder: (_, _, _) =>
-                                          const DiscoverNewsPage(),
-                                      transitionsBuilder:
-                                          (
-                                            _,
-                                            animation,
-                                            _,
-                                            child,
-                                          ) => SlideTransition(
-                                            position:
-                                                Tween<Offset>(
-                                                  begin: const Offset(-1, 0),
-                                                  end: Offset.zero,
-                                                ).animate(
-                                                  CurvedAnimation(
-                                                    parent: animation,
-                                                    curve: Curves.easeOutCubic,
-                                                  ),
-                                                ),
-                                            child: child,
-                                          ),
-                                      transitionDuration: const Duration(
-                                        milliseconds: 400,
-                                      ),
-                                      reverseTransitionDuration: const Duration(
-                                        milliseconds: 360,
-                                      ),
-                                    ),
-                                  )
-                                  .then((_) => _isNavigatingToDiscover = false);
-                            }
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white60,
-                                width: 1.5,
-                              ),
-                              color: Colors.transparent,
-                            ),
-                          ),
-                        ),
                         // Workspace pill dots
                         ...List.generate(_totalPages, (index) {
                           final isActive = _currentWorkspacePage == index;
@@ -1745,174 +1637,155 @@ class HomeScreenState extends State<HomeScreen>
                         }),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
 
-                    // Persistent Remove Zone — only visible while dragging
-                    if (_isDragging)
-                      DragTarget<Map<String, dynamic>>(
-                        onAcceptWithDetails: (details) {
-                          final id = details.data['id'] as String?;
-                          if (id != null) {
-                            final item = _items.firstWhere((i) => i.id == id);
-                            _removeItem(item);
-                          }
-                          setState(() => _isDragging = false);
-                          widget.onDragEnded?.call();
-                        },
-                        builder: (context, candidateData, rejectedData) {
-                          final isHovered = candidateData.isNotEmpty;
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(vertical: 16),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: isHovered
-                                  ? Colors.red.withValues(alpha: 0.85)
-                                  : Colors.black.withValues(alpha: 0.5),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.delete_outline,
-                              color: isHovered ? Colors.white : Colors.white70,
-                              size: 32,
-                            ),
-                          );
-                        },
-                      ),
-
-                    // ── Search Bar Removed (Now a Grid Widget) ─────────────────
-
-                    // App Dock
-                    Container(
-                      height: 90,
+                    // ── App Dock (Apps on top, Search Pill below - Pixel Launcher style) ──
+                    Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      margin: const EdgeInsets.only(bottom: 16),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final cellWidth = constraints.maxWidth / 4;
-                          final dockItems = _items
-                              .where((i) => i.page == -1)
-                              .toList();
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Dock Apps Row
+                          SizedBox(
+                            height: 76,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final cellWidth = constraints.maxWidth / 4;
+                                final dockItems = _items
+                                    .where((i) => i.page == -1)
+                                    .toList();
 
-                          return Stack(
-                            children: [
-                              for (int x = 0; x < 4; x++)
-                                Positioned(
-                                  left: x * cellWidth,
-                                  top: 0,
-                                  width: cellWidth,
-                                  height: 90,
-                                  child: DragTarget<Map<String, dynamic>>(
-                                    onWillAcceptWithDetails: (details) =>
-                                        _dockItemAt(x) == null &&
-                                        _canAcceptDockDrop(details.data, x),
-                                    onAcceptWithDetails: (details) {
-                                      _acceptDockDrop(details.data, x);
-                                    },
-                                    builder:
-                                        (context, candidateData, rejectedData) {
-                                          return Container(
-                                            margin: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              border: Border.all(
-                                                color: candidateData.isNotEmpty
-                                                    ? Theme.of(context)
-                                                          .colorScheme
-                                                          .primary
-                                                          .withValues(
-                                                            alpha: 0.5,
-                                                          )
-                                                    : Colors.transparent,
-                                                width: 2,
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                  ),
-                                ),
+                                return Stack(
+                                  children: [
+                                    for (int x = 0; x < 4; x++)
+                                      Positioned(
+                                        left: x * cellWidth,
+                                        top: 0,
+                                        width: cellWidth,
+                                        height: 76,
+                                        child: DragTarget<Map<String, dynamic>>(
+                                          onWillAcceptWithDetails: (details) =>
+                                              _dockItemAt(x) == null &&
+                                              _canAcceptDockDrop(details.data, x),
+                                          onAcceptWithDetails: (details) {
+                                            _acceptDockDrop(details.data, x);
+                                          },
+                                          builder:
+                                              (context, candidateData, rejectedData) {
+                                                return Container(
+                                                  margin: const EdgeInsets.all(6),
+                                                  decoration: BoxDecoration(
+                                                    borderRadius:
+                                                        BorderRadius.circular(16),
+                                                    border: Border.all(
+                                                      color: candidateData.isNotEmpty
+                                                          ? Theme.of(context)
+                                                                .colorScheme
+                                                                .primary
+                                                                .withValues(
+                                                                  alpha: 0.5,
+                                                                )
+                                                          : Colors.transparent,
+                                                      width: 2,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                        ),
+                                      ),
 
-                              ...dockItems.map((item) {
-                                return Positioned(
-                                  key: ValueKey('dock_item_${item.id}'),
-                                  left: item.x * cellWidth,
-                                  top: 0,
-                                  width: cellWidth,
-                                  height: 90,
-                                  child: DragTarget<Map<String, dynamic>>(
-                                    onWillAcceptWithDetails: (details) =>
-                                        _canAcceptDockDrop(
-                                          details.data,
-                                          item.x,
-                                        ),
-                                    onAcceptWithDetails: (details) =>
-                                        _acceptDockDrop(details.data, item.x),
-                                    builder: (context, candidateData, _) =>
-                                        LongPressDraggable<
-                                          Map<String, dynamic>
-                                        >(
-                                          data: item.toJson(),
-                                          delay: const Duration(
-                                            milliseconds: 150,
-                                          ),
-                                          onDragStarted: () {
-                                            setState(() => _isDragging = true);
-                                            if (item.type == 'app') {
-                                              widget.onDragStarted?.call(
-                                                item.packageName,
-                                              );
-                                            }
-                                          },
-                                          onDragEnd: (_) {
-                                            setState(() => _isDragging = false);
-                                            widget.onDragEnded?.call();
-                                          },
-                                          onDraggableCanceled: (_, _) {
-                                            setState(() => _isDragging = false);
-                                            widget.onDragEnded?.call();
-                                          },
-                                          feedback: Material(
-                                            color: Colors.transparent,
-                                            child: Opacity(
-                                              opacity: 0.7,
-                                              child: _buildItemContent(
-                                                item,
-                                                cellWidth,
-                                                90,
-                                                isFeedback: true,
+                                    ...dockItems.map((item) {
+                                      return Positioned(
+                                        key: ValueKey('dock_item_${item.id}'),
+                                        left: item.x * cellWidth,
+                                        top: 0,
+                                        width: cellWidth,
+                                        height: 76,
+                                        child: DragTarget<Map<String, dynamic>>(
+                                          onWillAcceptWithDetails: (details) =>
+                                              _canAcceptDockDrop(
+                                                details.data,
+                                                item.x,
                                               ),
-                                            ),
-                                          ),
-                                          childWhenDragging:
-                                              const SizedBox.shrink(),
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              final bounds = _measureItemIconBounds(item.id);
-                                              AppLockService.launchApp(
-                                                context,
-                                                item.packageName,
-                                                sourceBounds: bounds,
-                                              );
-                                            },
-                                            onLongPress: () =>
-                                                _showItemContextMenu(item),
-                                            child: _buildItemContent(
-                                              item,
-                                              cellWidth,
-                                              90,
-                                            ),
-                                          ),
+                                          onAcceptWithDetails: (details) =>
+                                              _acceptDockDrop(details.data, item.x),
+                                          builder: (context, candidateData, _) =>
+                                              LongPressDraggable<
+                                                Map<String, dynamic>
+                                              >(
+                                                data: item.toJson(),
+                                                delay: const Duration(
+                                                  milliseconds: 180,
+                                                ),
+                                                onDragStarted: () {
+                                                  _hideContextMenu();
+                                                  setState(() => _isDragging = true);
+                                                  if (item.type == 'app') {
+                                                    widget.onDragStarted?.call(
+                                                      item.packageName,
+                                                    );
+                                                  }
+                                                },
+                                                onDragEnd: (_) {
+                                                  setState(() => _isDragging = false);
+                                                  widget.onDragEnded?.call();
+                                                },
+                                                onDraggableCanceled: (_, _) {
+                                                  setState(() => _isDragging = false);
+                                                  widget.onDragEnded?.call();
+                                                  _showItemContextMenuAtItem(item);
+                                                },
+                                                feedback: Material(
+                                                  color: Colors.transparent,
+                                                  child: Opacity(
+                                                    opacity: 0.75,
+                                                    child: _buildItemContent(
+                                                      item,
+                                                      cellWidth,
+                                                      76,
+                                                      isFeedback: true,
+                                                    ),
+                                                  ),
+                                                ),
+                                                childWhenDragging:
+                                                    const SizedBox.shrink(),
+                                                child: GestureDetector(
+                                                  onTap: () {
+                                                    _hideContextMenu();
+                                                    final bounds = _measureItemIconBounds(item.id);
+                                                    AppLockService.launchApp(
+                                                      context,
+                                                      item.packageName,
+                                                      sourceBounds: bounds,
+                                                    );
+                                                  },
+                                                  onLongPress: () =>
+                                                      _showItemContextMenuAtItem(item),
+                                                  child: _buildItemContent(
+                                                    item,
+                                                    cellWidth,
+                                                    76,
+                                                  ),
+                                                ),
+                                              ),
                                         ),
-                                  ),
+                                      );
+                                    }),
+                                  ],
                                 );
-                              }),
-                            ],
-                          );
-                        },
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          // Search Widget Pill in Dock
+                          SearchWidget(
+                            key: const ValueKey('dock_search_pill'),
+                            onRemove: () {},
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
@@ -1980,6 +1853,18 @@ class HomeScreenState extends State<HomeScreen>
 
         // In-page Folder Overlay (supports dragging apps directly onto home screen)
         _buildFolderOverlay(),
+
+        // Launcher3 Anchored Contextual Popup Menu
+        if (_contextMenuItem != null && _contextMenuPos != null) ...[
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _hideContextMenu,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          _buildLauncher3ContextMenu(context),
+        ],
       ],
     );
   }
@@ -2545,90 +2430,190 @@ class HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _showItemContextMenu(LauncherItem item) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return Dialog(
-          backgroundColor: Theme.of(context).colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+  void _hideContextMenu() {
+    if (_contextMenuItem != null) {
+      setState(() {
+        _contextMenuItem = null;
+        _contextMenuPos = null;
+        _contextMenuSize = null;
+      });
+    }
+  }
+
+  void _showItemContextMenuAtItem(LauncherItem item) {
+    HapticFeedback.mediumImpact();
+    final screenSize = MediaQuery.of(context).size;
+
+    double itemX = 0;
+    double itemY = 0;
+    double itemW = 80;
+    double itemH = 80;
+
+    if (item.page == -1) {
+      final dockCellW = screenSize.width / 4;
+      itemX = item.x * dockCellW;
+      itemY = screenSize.height - 180;
+      itemW = dockCellW;
+      itemH = 76;
+    } else {
+      final cellW = screenSize.width / _columns;
+      final gridH = screenSize.height - 240;
+      final cellH = gridH / _rows;
+      itemX = item.x * cellW;
+      itemY = 48 + item.y * cellH;
+      itemW = item.spanX * cellW;
+      itemH = item.spanY * cellH;
+    }
+
+    setState(() {
+      _contextMenuItem = item;
+      _contextMenuPos = Offset(itemX, itemY);
+      _contextMenuSize = Size(itemW, itemH);
+    });
+  }
+
+  Widget _buildLauncher3ContextMenu(BuildContext context) {
+    final item = _contextMenuItem!;
+    final pos = _contextMenuPos!;
+    final itemSize = _contextMenuSize ?? const Size(80, 80);
+    final screenSize = MediaQuery.of(context).size;
+    final cs = Theme.of(context).colorScheme;
+
+    const popupWidth = 190.0;
+    final left = (pos.dx + (itemSize.width - popupWidth) / 2).clamp(
+      16.0,
+      screenSize.width - popupWidth - 16.0,
+    );
+    final showAbove = pos.dy > screenSize.height * 0.45;
+    final top = showAbove
+        ? (pos.dy - 124.0).clamp(40.0, screenSize.height - 140.0)
+        : (pos.dy + itemSize.height + 8.0);
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: Material(
+        color: cs.surfaceContainerHigh,
+        elevation: 8,
+        shadowColor: Colors.black45,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: popupWidth,
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.5),
+              width: 1,
+            ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Text(
-                    item.label.isNotEmpty ? item.label : 'Item Actions',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline),
-                  title: const Text('Remove from Home'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (item.type == 'app') ...[
+                _buildPopupTile(
+                  icon: Icons.info_outline_rounded,
+                  label: 'App info',
+                  color: cs.onSurface,
                   onTap: () {
-                    Navigator.pop(context);
+                    _hideContextMenu();
+                    LauncherService.openAppInfo(item.packageName);
+                  },
+                ),
+                _buildPopupTile(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Uninstall',
+                  color: cs.error,
+                  onTap: () {
+                    _hideContextMenu();
+                    LauncherService.uninstallApp(item.packageName);
+                  },
+                ),
+                _buildPopupTile(
+                  icon: Icons.close_rounded,
+                  label: item.page == -1
+                      ? 'Remove from Dock'
+                      : 'Remove from Home',
+                  color: cs.onSurfaceVariant,
+                  onTap: () {
+                    _hideContextMenu();
                     _removeItem(item);
                   },
                 ),
-                if (item.type == 'folder') ...[
-                  ListTile(
-                    leading: const Icon(Icons.edit_outlined),
-                    title: const Text('Rename Folder'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _renameFolder(item);
-                    },
-                  ),
-                ],
-                if (item.type == 'app') ...[
-                  ListTile(
-                    leading: const Icon(Icons.share_outlined),
-                    title: const Text('Share App'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      LauncherService.shareApp(item.packageName);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.info_outline),
-                    title: const Text('App Info'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      LauncherService.openAppInfo(item.packageName);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.delete_forever,
-                      color: Colors.red,
-                    ),
-                    title: const Text(
-                      'Uninstall',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      LauncherService.uninstallApp(item.packageName);
-                    },
-                  ),
-                ],
+              ] else if (item.isAnyWidget) ...[
+                _buildPopupTile(
+                  icon: Icons.close_rounded,
+                  label: 'Remove widget',
+                  color: cs.error,
+                  onTap: () {
+                    _hideContextMenu();
+                    _removeItem(item);
+                  },
+                ),
+                _buildPopupTile(
+                  icon: Icons.aspect_ratio_rounded,
+                  label: 'Resize',
+                  color: cs.primary,
+                  onTap: () {
+                    _hideContextMenu();
+                    _beginWidgetEdit(item);
+                  },
+                ),
+              ] else if (item.type == 'folder') ...[
+                _buildPopupTile(
+                  icon: Icons.edit_outlined,
+                  label: 'Rename folder',
+                  color: cs.onSurface,
+                  onTap: () {
+                    _hideContextMenu();
+                    _renameFolder(item);
+                  },
+                ),
+                _buildPopupTile(
+                  icon: Icons.close_rounded,
+                  label: 'Remove folder',
+                  color: cs.error,
+                  onTap: () {
+                    _hideContextMenu();
+                    _removeItem(item);
+                  },
+                ),
               ],
-            ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopupTile({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -2644,6 +2629,7 @@ class HomeScreenState extends State<HomeScreen>
       delay: const Duration(milliseconds: 220),
       onDragStarted: () {
         HapticFeedback.mediumImpact();
+        _hideContextMenu();
         if (item.appWidgetId != null) {
           unawaited(
             WidgetHostController.instance.captureWidgetSnapshot(
@@ -2663,8 +2649,8 @@ class HomeScreenState extends State<HomeScreen>
       onDraggableCanceled: (_, _) {
         setState(() => _isDragging = false);
         widget.onDragEnded?.call();
-        // Long-press & release without moving -> immediately enter Lawnchair/Launcher3 4-edge resize mode
-        _beginWidgetEdit(item);
+        // Show Launcher3 popup menu on long press & release
+        _showItemContextMenuAtItem(item);
       },
       feedback: Material(
         color: Colors.transparent,
@@ -2690,15 +2676,18 @@ class HomeScreenState extends State<HomeScreen>
         ),
       ),
       childWhenDragging: const SizedBox.shrink(),
-      child: WidgetDisplay(
-        item: item,
-        cellWidth: cellWidth,
-        cellHeight: cellHeight,
-        currentPage: _currentWorkspacePage,
-        suppressInnerPointers: isEditing,
-        onRemove: () => _removeItem(item),
-        onExitEdit: () => setState(() => _editingWidgetId = null),
-        onResetSize: () => _resetWidgetSize(item),
+      child: GestureDetector(
+        onLongPress: () => _showItemContextMenuAtItem(item),
+        child: WidgetDisplay(
+          item: item,
+          cellWidth: cellWidth,
+          cellHeight: cellHeight,
+          currentPage: _currentWorkspacePage,
+          suppressInnerPointers: isEditing,
+          onRemove: () => _removeItem(item),
+          onExitEdit: () => setState(() => _editingWidgetId = null),
+          onResetSize: () => _resetWidgetSize(item),
+        ),
       ),
     );
 

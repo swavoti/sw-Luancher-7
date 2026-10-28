@@ -1,7 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:installed_apps/app_info.dart';
+import 'package:flutter/services.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_lock_service.dart';
@@ -9,6 +8,7 @@ import 'package:swavoti/screens/app_lock_screen.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
+import 'package:swavoti/screens/home_settings.dart' show AppDrawerSettingsScreen;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:ui';
@@ -73,6 +73,8 @@ class AppDrawerState extends State<AppDrawer>
   int _currentPage = 0;
   late final PageController _drawerPageController;
   DateTime? _lastLightweightAppRefresh;
+  String _drawerScrollMode = 'horizontal';
+  String? _activeAlphabetLetter;
 
   @override
   void initState() {
@@ -139,6 +141,7 @@ class AppDrawerState extends State<AppDrawer>
         }
         _frostedGlassEnabled = prefs.getBool('frosted_glass_enabled') ?? true;
         _savedWallpaperPath = prefs.getString('saved_wallpaper_path');
+        _drawerScrollMode = prefs.getString('drawer_scroll_mode') ?? 'horizontal';
       });
     }
   }
@@ -381,11 +384,37 @@ class AppDrawerState extends State<AppDrawer>
                         );
                       } else if (value == 'edit_icons') {
                         Navigator.pushNamed(context, '/edit_icons');
+                      } else if (value == 'drawer_settings') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AppDrawerSettingsScreen(
+                              onSettingsChanged: loadSettings,
+                            ),
+                          ),
+                        );
                       }
                     },
                     itemBuilder: (ctx) {
                       final cs = Theme.of(ctx).colorScheme;
                       return [
+                        PopupMenuItem(
+                          value: 'drawer_settings',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.tune_rounded,
+                                size: 20,
+                                color: cs.primary,
+                              ),
+                              const SizedBox(width: 12),
+                              const Text(
+                                'Drawer Settings',
+                                style: TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                        ),
                         PopupMenuItem(
                           value: 'app_lock',
                           child: Row(
@@ -500,7 +529,9 @@ class AppDrawerState extends State<AppDrawer>
               ? const Center(child: Text('No apps found.'))
               : _searchController.text.trim().isNotEmpty
               ? GridView.builder(
-                  physics: const BouncingScrollPhysics(),
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: ClampingScrollPhysics(),
+                  ),
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
@@ -527,170 +558,304 @@ class AppDrawerState extends State<AppDrawer>
                     );
                   },
                 )
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    final gridWidth = constraints.maxWidth - 32; // padding
-                    final cellWidth =
-                        (gridWidth - (3 * 8)) / 4; // 3 crossAxisSpacing
-                    final cellHeight = cellWidth / 0.82;
-                    final rowHeight = cellHeight + 12; // mainAxisSpacing
-                    final totalHeight =
-                        MediaQuery.sizeOf(context).height - 160;
-                    final rows = (totalHeight / rowHeight).floor().clamp(1, 10);
-                    final itemsPerPage = rows * 4;
-
-                    final gridApps = _filteredApps;
-
-                    if (gridApps.isEmpty) return const SizedBox.shrink();
-
-                    final pages = (gridApps.length / itemsPerPage).ceil();
-
-                    return Column(
-                      children: [
-                        Expanded(
-                          child: PageView.builder(
-                            controller: _drawerPageController,
-                            physics: const SmoothCarouselScrollPhysics(
-                              parent: BouncingScrollPhysics(),
-                            ),
-                            itemCount: pages,
-                              onPageChanged: (page) {
-                                _currentPage = page;
-                                _pageNotifier.value = page;
-                                _prefetchPage(gridApps, itemsPerPage, page);
-                                _prefetchPage(gridApps, itemsPerPage, page + 1);
-                                if (page > 0) {
-                                  _prefetchPage(gridApps, itemsPerPage, page - 1);
-                                }
-                              },
-                              itemBuilder: (context, pageIndex) {
-                                if (pageIndex == 0) {
-                                  WidgetsBinding.instance.addPostFrameCallback((
-                                    _,
-                                  ) {
-                                    if (mounted) {
-                                      _prefetchPage(gridApps, itemsPerPage, 0);
-                                      if (pages > 1) {
-                                        _prefetchPage(
-                                          gridApps,
-                                          itemsPerPage,
-                                          1,
-                                        );
-                                      }
-                                    }
-                                  });
-                                }
-                                final start = pageIndex * itemsPerPage;
-                                final end = (start + itemsPerPage).clamp(
-                                  0,
-                                  gridApps.length,
-                                );
-                                final pageApps = gridApps.sublist(start, end);
-
-                                return _AppDrawerGridPage(
-                                  key: ValueKey('drawer_page_$pageIndex'),
-                                  apps: pageApps,
-                                  iconShape: _iconShape,
-                                  notificationDotsEnabled:
-                                      _notificationDotsEnabled,
-                                  notifications: widget.notifications,
-                                  onCloseDrawer: widget.onClose,
-                                  onDragStarted: widget.onDragStarted,
-                                  onDragEnded: widget.onDragEnded,
-                                  iconGeneration: _iconGeneration,
-                                );
-                              },
-                            ),
-                          ),
-                        if (pages > 1)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: ValueListenableBuilder<int>(
-                              valueListenable: _pageNotifier,
-                              builder: (context, currentPage, _) {
-                                return Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: List.generate(pages, (index) {
-                                    return Container(
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: currentPage == index
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.primary
-                                            : Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurface
-                                                  .withValues(alpha: 0.2),
-                                      ),
-                                    );
-                                  }),
-                                );
-                              },
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
+              : (_drawerScrollMode == 'vertical'
+                  ? _buildVerticalAppDrawer(context)
+                  : _buildHorizontalAppDrawer(context)),
         ),
       ],
     );
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: Stack(
-        children: [
-          if (!LightweightMode.isEnabled &&
-              _frostedGlassEnabled &&
-              _savedWallpaperPath != null)
-            Positioned.fill(
-              // RepaintBoundary promotes the blurred wallpaper to its own GPU
-              // layer so it is rasterised once, cached, and never redrawn
-              // while the drawer slides — zero per-frame GPU blur cost.
-              child: RepaintBoundary(
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28, tileMode: TileMode.mirror),
-                  child: _savedWallpaperPath!.startsWith('assets/')
-                      ? Image.asset(
-                          _savedWallpaperPath!,
-                          fit: BoxFit.cover,
-                          alignment: Alignment.center,
-                          // Decode at 1/4 resolution — visually identical under
-                          // a 28px blur, costs ~6% of the GPU memory.
-                          cacheWidth: 270,
-                        )
-                      : Image.file(
-                          File(_savedWallpaperPath!),
-                          fit: BoxFit.cover,
-                          alignment: Alignment.center,
-                          cacheWidth: 270,
-                        ),
+    return ScrollConfiguration(
+      behavior: const StretchScrollBehavior(),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        child: Stack(
+          children: [
+            if (!LightweightMode.isEnabled &&
+                _frostedGlassEnabled &&
+                _savedWallpaperPath != null)
+              Positioned.fill(
+                // RepaintBoundary promotes the blurred wallpaper to its own GPU
+                // layer so it is rasterised once, cached, and never redrawn
+                // while the drawer slides — zero per-frame GPU blur cost.
+                child: RepaintBoundary(
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(
+                      sigmaX: 28,
+                      sigmaY: 28,
+                      tileMode: TileMode.mirror,
+                    ),
+                    child: _savedWallpaperPath!.startsWith('assets/')
+                        ? Image.asset(
+                            _savedWallpaperPath!,
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            cacheWidth: 270,
+                          )
+                        : Image.file(
+                            File(_savedWallpaperPath!),
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            cacheWidth: 270,
+                          ),
+                  ),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: Container(color: Theme.of(context).colorScheme.surface),
+              ),
+            if (!LightweightMode.isEnabled &&
+                _frostedGlassEnabled &&
+                _savedWallpaperPath != null)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: 0.16),
                 ),
               ),
-            )
-          else
-            Positioned.fill(
-              child: Container(color: Theme.of(context).colorScheme.surface),
-            ),
-          if (!LightweightMode.isEnabled &&
-              _frostedGlassEnabled &&
-              _savedWallpaperPath != null)
-            Positioned.fill(
-              child: ColoredBox(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surface.withValues(alpha: 0.16),
+            SafeArea(top: true, child: RepaintBoundary(child: childContent)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerticalAppDrawer(BuildContext context) {
+    final gridApps = _filteredApps;
+    if (gridApps.isEmpty) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+
+    // Precompute letter indices for A-Z fast scroll
+    final Map<String, int> letterIndices = {};
+    for (int i = 0; i < gridApps.length; i++) {
+      final name = gridApps[i].name.trim();
+      final firstChar = name.isNotEmpty ? name[0].toUpperCase() : '#';
+      final letter = RegExp(r'[A-Z]').hasMatch(firstChar) ? firstChar : '#';
+      if (!letterIndices.containsKey(letter)) {
+        letterIndices[letter] = i;
+      }
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gridWidth = constraints.maxWidth - 44;
+        final cellWidth = (gridWidth - (3 * 8)) / 4;
+        final cellHeight = cellWidth / 0.82;
+        final rowHeight = cellHeight + 12;
+
+        return Stack(
+          children: [
+            // Vertical continuous scroll grid with native Stretch Overscroll
+            ScrollConfiguration(
+              behavior: const StretchScrollBehavior(),
+              child: GridView.builder(
+                controller: widget.scrollController,
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: ClampingScrollPhysics(),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 0, 36, 28),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.82,
+                ),
+                itemCount: gridApps.length,
+                itemBuilder: (context, index) {
+                  final app = gridApps[index];
+                  final notificationCount = _notificationDotsEnabled
+                      ? (widget.notifications[app.packageName] ?? 0)
+                      : 0;
+                  return _AppDrawerItem(
+                    key: ValueKey('vert_${app.packageName}'),
+                    app: app,
+                    notificationCount: notificationCount,
+                    onCloseDrawer: widget.onClose,
+                    iconShape: _iconShape,
+                    onDragStarted: widget.onDragStarted,
+                    onDragEnded: widget.onDragEnded,
+                    iconGeneration: _iconGeneration,
+                  );
+                },
               ),
             ),
-          SafeArea(top: true, child: RepaintBoundary(child: childContent)),
-        ],
-      ),
+
+            // A-Z Alphabet Fast Scroll Rail on right edge
+            Positioned(
+              right: 2,
+              top: 0,
+              bottom: 24,
+              width: 28,
+              child: _AlphabetRail(
+                activeLetter: _activeAlphabetLetter,
+                onLetterSelected: (letter) {
+                  if (_activeAlphabetLetter != letter) {
+                    HapticFeedback.selectionClick();
+                    setState(() => _activeAlphabetLetter = letter);
+                  }
+
+                  int? targetIndex = letterIndices[letter];
+                  if (targetIndex == null) {
+                    final charCode = letter.codeUnitAt(0);
+                    int minDiff = 999;
+                    for (final key in letterIndices.keys) {
+                      final diff = (key.codeUnitAt(0) - charCode).abs();
+                      if (diff < minDiff) {
+                        minDiff = diff;
+                        targetIndex = letterIndices[key];
+                      }
+                    }
+                  }
+
+                  if (targetIndex != null && widget.scrollController.hasClients) {
+                    final row = targetIndex ~/ 4;
+                    final targetOffset = row * rowHeight;
+                    widget.scrollController.jumpTo(
+                      targetOffset.clamp(
+                        0.0,
+                        widget.scrollController.position.maxScrollExtent,
+                      ),
+                    );
+                  }
+                },
+                onLetterReleased: () {
+                  setState(() => _activeAlphabetLetter = null);
+                },
+              ),
+            ),
+
+            // Floating Active Letter Bubble in Center
+            if (_activeAlphabetLetter != null)
+              Center(
+                child: Material(
+                  color: cs.primary,
+                  shape: const CircleBorder(),
+                  elevation: 8,
+                  shadowColor: Colors.black45,
+                  child: SizedBox(
+                    width: 68,
+                    height: 68,
+                    child: Center(
+                      child: Text(
+                        _activeAlphabetLetter!,
+                        style: TextStyle(
+                          color: cs.onPrimary,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHorizontalAppDrawer(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gridWidth = constraints.maxWidth - 32;
+        final cellWidth = (gridWidth - (3 * 8)) / 4;
+        final cellHeight = cellWidth / 0.82;
+        final rowHeight = cellHeight + 12;
+        final totalHeight = MediaQuery.sizeOf(context).height - 160;
+        final rows = (totalHeight / rowHeight).floor().clamp(1, 10);
+        final itemsPerPage = rows * 4;
+
+        final gridApps = _filteredApps;
+        if (gridApps.isEmpty) return const SizedBox.shrink();
+
+        final pages = (gridApps.length / itemsPerPage).ceil();
+
+        return Column(
+          children: [
+            Expanded(
+              child: ScrollConfiguration(
+                behavior: const StretchScrollBehavior(),
+                child: PageView.builder(
+                  controller: _drawerPageController,
+                  physics: const SmoothCarouselScrollPhysics(
+                    parent: ClampingScrollPhysics(),
+                  ),
+                  itemCount: pages,
+                  onPageChanged: (page) {
+                    _currentPage = page;
+                    _pageNotifier.value = page;
+                    _prefetchPage(gridApps, itemsPerPage, page);
+                    _prefetchPage(gridApps, itemsPerPage, page + 1);
+                    if (page > 0) {
+                      _prefetchPage(gridApps, itemsPerPage, page - 1);
+                    }
+                  },
+                  itemBuilder: (context, pageIndex) {
+                    if (pageIndex == 0) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          _prefetchPage(gridApps, itemsPerPage, 0);
+                          if (pages > 1) {
+                            _prefetchPage(gridApps, itemsPerPage, 1);
+                          }
+                        }
+                      });
+                    }
+                    final start = pageIndex * itemsPerPage;
+                    final end = (start + itemsPerPage).clamp(
+                      0,
+                      gridApps.length,
+                    );
+                    final pageApps = gridApps.sublist(start, end);
+
+                    return _AppDrawerGridPage(
+                      key: ValueKey('drawer_page_$pageIndex'),
+                      apps: pageApps,
+                      iconShape: _iconShape,
+                      notificationDotsEnabled: _notificationDotsEnabled,
+                      notifications: widget.notifications,
+                      onCloseDrawer: widget.onClose,
+                      onDragStarted: widget.onDragStarted,
+                      onDragEnded: widget.onDragEnded,
+                      iconGeneration: _iconGeneration,
+                    );
+                  },
+                ),
+              ),
+            ),
+            if (pages > 1)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _pageNotifier,
+                  builder: (context, currentPage, _) {
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(pages, (index) {
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: currentPage == index
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.2),
+                          ),
+                        );
+                      }),
+                    );
+                  },
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1196,4 +1361,118 @@ class SmoothCarouselScrollPhysics extends PageScrollPhysics {
         stiffness: 100.0,
         damping: 14.2,
       );
+}
+
+// ─── A–Z Fast Scroll Alphabet Rail ──────────────────────────────────────────
+
+class _AlphabetRail extends StatelessWidget {
+  final String? activeLetter;
+  final ValueChanged<String> onLetterSelected;
+  final VoidCallback onLetterReleased;
+
+  const _AlphabetRail({
+    required this.activeLetter,
+    required this.onLetterSelected,
+    required this.onLetterReleased,
+  });
+
+  static const List<String> _letters = [
+    '#',
+    'A',
+    'B',
+    'C',
+    'D',
+    'E',
+    'F',
+    'G',
+    'H',
+    'I',
+    'J',
+    'K',
+    'L',
+    'M',
+    'N',
+    'O',
+    'P',
+    'Q',
+    'R',
+    'S',
+    'T',
+    'U',
+    'V',
+    'W',
+    'X',
+    'Y',
+    'Z',
+  ];
+
+  void _handleTouch(Offset localPos, double height) {
+    final itemHeight = height / _letters.length;
+    final index =
+        (localPos.dy / itemHeight).floor().clamp(0, _letters.length - 1);
+    onLetterSelected(_letters[index]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragStart: (d) =>
+              _handleTouch(d.localPosition, constraints.maxHeight),
+          onVerticalDragUpdate: (d) =>
+              _handleTouch(d.localPosition, constraints.maxHeight),
+          onVerticalDragEnd: (_) => onLetterReleased(),
+          onVerticalDragCancel: onLetterReleased,
+          onTapDown: (d) =>
+              _handleTouch(d.localPosition, constraints.maxHeight),
+          onTapUp: (_) => onLetterReleased(),
+          onTapCancel: onLetterReleased,
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _letters.map((letter) {
+                final isSelected = activeLetter == letter;
+                return Text(
+                  letter,
+                  style: TextStyle(
+                    fontSize: 8.0,
+                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                    color: isSelected
+                        ? cs.primary
+                        : cs.onSurfaceVariant.withValues(alpha: 0.75),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class StretchScrollBehavior extends MaterialScrollBehavior {
+  const StretchScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return StretchingOverscrollIndicator(
+      axisDirection: details.direction,
+      child: child,
+    );
+  }
 }

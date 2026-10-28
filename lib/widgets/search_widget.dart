@@ -12,7 +12,7 @@ class SearchWidget extends StatefulWidget {
 }
 
 class _SearchWidgetState extends State<SearchWidget> {
-  String _style = 'normal';
+  String _style = 'pill';
   String? _browserPackage;
 
   @override
@@ -25,7 +25,7 @@ class _SearchWidgetState extends State<SearchWidget> {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _style = prefs.getString('search_bar_style') ?? 'normal';
+        _style = prefs.getString('search_bar_style') ?? 'pill';
         _browserPackage = prefs.getString('search_browser_package');
       });
     }
