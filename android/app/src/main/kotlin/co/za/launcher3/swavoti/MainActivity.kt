@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs
+import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
@@ -80,6 +81,10 @@ class MainActivity : FlutterActivity() {
     private var homeSnapshotShield: HomeSnapshotShieldView? = null
     private val mainUiHandler = Handler(Looper.getMainLooper())
     private var pendingResumeShieldRelease: Runnable? = null
+
+    override fun getRenderMode(): RenderMode {
+        return RenderMode.texture
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

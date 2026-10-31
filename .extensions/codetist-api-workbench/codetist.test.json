@@ -1,0 +1,12 @@
+{
+  "openNewWindow": true,
+  "runtime": "codetist-ext-sandbox-transnode",
+  "extension": "api-workbench",
+  "entry": "ui/index.tsx",
+  "checks": [
+    "manifest",
+    "shortcuts",
+    "webview-bundle",
+    "permissions"
+  ]
+}

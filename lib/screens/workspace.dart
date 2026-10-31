@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:soft_edge_blur/soft_edge_blur.dart';
 import 'package:flutter/material.dart';
 import 'package:swavoti/services/launcher_service.dart';
@@ -62,7 +63,9 @@ class WorkspaceState extends State<Workspace>
     try {
       _notificationSubscription = LauncherService.notificationsStream.listen(
         (data) {
-          if (mounted) setState(() => _notifications = data);
+          if (mounted && !mapEquals(_notifications, data)) {
+            setState(() => _notifications = data);
+          }
         },
         onError: (e) {},
         cancelOnError: false,
@@ -115,17 +118,24 @@ class WorkspaceState extends State<Workspace>
     setState(() => _drawerOpen = false);
   }
 
+  bool _isItemDragging = false;
+
   void _onDragStarted(String packageName) {
-    // Launcher3 handles contextual actions on long press before drag
+    if (!_isItemDragging) {
+      setState(() => _isItemDragging = true);
+    }
   }
 
   void _onDragEnded() {
-    // Drag ended
+    if (_isItemDragging) {
+      setState(() => _isItemDragging = false);
+    }
   }
 
   // ── Finger-tracking gesture handlers ─────────────────────────────────────
 
   void _onVerticalDragStart(DragStartDetails details) {
+    if (_isItemDragging) return;
     _appDrawerKey.currentState?.prefetchFirstPage();
     _homeScreenKey.currentState?.setExternalOverlayOpen(true);
     _dragStartY = details.globalPosition.dy;
@@ -134,7 +144,7 @@ class WorkspaceState extends State<Workspace>
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
-    if (_dragStartY == null || _dragStartExtent == null) return;
+    if (_isItemDragging || _dragStartY == null || _dragStartExtent == null) return;
     final screenHeight = MediaQuery.of(context).size.height;
     final dy = details.globalPosition.dy - _dragStartY!;
     final newExtent = (_dragStartExtent! - dy / screenHeight).clamp(0.0, 1.0);
@@ -231,16 +241,18 @@ class WorkspaceState extends State<Workspace>
               },
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onVerticalDragStart: _onVerticalDragStart,
-                onVerticalDragUpdate: (details) {
-                  final dy = details.primaryDelta ?? 0;
-                  if (dy > 8 && _drawerController.value < 0.05) {
-                    LauncherService.expandNotifications();
-                    return;
-                  }
-                  _onVerticalDragUpdate(details);
-                },
-                onVerticalDragEnd: _onVerticalDragEnd,
+                onVerticalDragStart: _isItemDragging ? null : _onVerticalDragStart,
+                onVerticalDragUpdate: _isItemDragging
+                    ? null
+                    : (details) {
+                        final dy = details.primaryDelta ?? 0;
+                        if (dy > 8 && _drawerController.value < 0.05) {
+                          LauncherService.expandNotifications();
+                          return;
+                        }
+                        _onVerticalDragUpdate(details);
+                      },
+                onVerticalDragEnd: _isItemDragging ? null : _onVerticalDragEnd,
                 child: HomeScreen(
                   key: _homeScreenKey,
                   prefs: widget.prefs,

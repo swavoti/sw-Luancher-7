@@ -277,7 +277,7 @@ class NotificationDotService : NotificationListenerService() {
             refreshMedia(forceEmitIfPlaying = true)
         }
 
-        override fun onAudioInfoChanged(info: MediaController.PlaybackInfo) {
+        override fun onAudioInfoChanged(info: MediaController.PlaybackInfo?) {
             refreshMedia()
         }
     }

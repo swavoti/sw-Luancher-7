@@ -547,8 +547,13 @@ class HomeScreenState extends State<HomeScreen>
       }
     }
 
+    final hadLegacySearch = loadedItems.any((i) => i.type == 'search_widget');
+    if (hadLegacySearch) {
+      loadedItems.removeWhere((i) => i.type == 'search_widget');
+    }
+
     _items = loadedItems;
-    if (migratedTimeWidget) {
+    if (migratedTimeWidget || hadLegacySearch) {
       _saveItems();
     }
   }
@@ -1032,7 +1037,6 @@ class HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    _scheduleHomeSceneSync();
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
     return Stack(
@@ -1081,6 +1085,7 @@ class HomeScreenState extends State<HomeScreen>
                                   _currentWorkspacePage = index;
                                   _editingWidgetId = null;
                                 });
+                                _scheduleHomeSceneSync();
                               },
                               itemBuilder: (context, index) {
                                 final pageIndex = index;
@@ -1540,36 +1545,28 @@ class HomeScreenState extends State<HomeScreen>
                                                   ),
                                                   onDragStarted: () {
                                                     _hideContextMenu();
-                                                    _showItemContextMenuAtItem(
-                                                      item,
-                                                    );
                                                     setState(
                                                       () => _isDragging = true,
                                                     );
-                                                    if (item.type == 'app') {
-                                                      widget.onDragStarted
-                                                          ?.call(
-                                                            item.packageName,
-                                                          );
-                                                    }
+                                                    widget.onDragStarted?.call(
+                                                      item.type == 'app'
+                                                          ? item.packageName
+                                                          : '',
+                                                    );
                                                   },
                                                   onDragEnd: (details) {
                                                     setState(
                                                       () => _isDragging = false,
                                                     );
-                                                    if (details.wasAccepted) {
-                                                      _hideContextMenu();
-                                                    }
+                                                    _hideContextMenu();
                                                     widget.onDragEnded?.call();
                                                   },
                                                   onDraggableCanceled: (_, _) {
                                                     setState(
                                                       () => _isDragging = false,
                                                     );
+                                                    _hideContextMenu();
                                                     widget.onDragEnded?.call();
-                                                    _showItemContextMenuAtItem(
-                                                      item,
-                                                    );
                                                   },
                                                   feedback: Material(
                                                     color: Colors.transparent,
@@ -1710,7 +1707,7 @@ class HomeScreenState extends State<HomeScreen>
                     ),
 
                     // ── Pill Dot Page Indicators ──────────────────────────────
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 18),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1733,7 +1730,7 @@ class HomeScreenState extends State<HomeScreen>
                         }),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
 
                     // ── App Dock (Apps on top, Search Pill below - Pixel Launcher style) ──
                     Padding(
@@ -1743,7 +1740,7 @@ class HomeScreenState extends State<HomeScreen>
                         children: [
                           // Dock Apps Row
                           SizedBox(
-                            height: 70,
+                            height: 84,
                             child: LayoutBuilder(
                               builder: (context, constraints) {
                                 final cellWidth = constraints.maxWidth / 4;
@@ -1758,7 +1755,7 @@ class HomeScreenState extends State<HomeScreen>
                                         left: x * cellWidth,
                                         top: 0,
                                         width: cellWidth,
-                                        height: 70,
+                                        height: 84,
                                         child: DragTarget<Map<String, dynamic>>(
                                           onWillAcceptWithDetails: (details) =>
                                               _dockItemAt(x) == null &&
@@ -1809,7 +1806,7 @@ class HomeScreenState extends State<HomeScreen>
                                         left: item.x * cellWidth,
                                         top: 0,
                                         width: cellWidth,
-                                        height: 70,
+                                        height: 84,
                                         child: DragTarget<Map<String, dynamic>>(
                                           onWillAcceptWithDetails: (details) =>
                                               _canAcceptDockDrop(
@@ -1830,35 +1827,29 @@ class HomeScreenState extends State<HomeScreen>
                                                   milliseconds: 180,
                                                 ),
                                                 onDragStarted: () {
-                                                  _showItemContextMenuAtItem(
-                                                    item,
-                                                  );
+                                                  _hideContextMenu();
                                                   setState(
                                                     () => _isDragging = true,
                                                   );
-                                                  if (item.type == 'app') {
-                                                    widget.onDragStarted?.call(
-                                                      item.packageName,
-                                                    );
-                                                  }
+                                                  widget.onDragStarted?.call(
+                                                    item.type == 'app'
+                                                        ? item.packageName
+                                                        : '',
+                                                  );
                                                 },
                                                 onDragEnd: (details) {
                                                   setState(
                                                     () => _isDragging = false,
                                                   );
-                                                  if (details.wasAccepted) {
-                                                    _hideContextMenu();
-                                                  }
+                                                  _hideContextMenu();
                                                   widget.onDragEnded?.call();
                                                 },
                                                 onDraggableCanceled: (_, _) {
                                                   setState(
                                                     () => _isDragging = false,
                                                   );
+                                                  _hideContextMenu();
                                                   widget.onDragEnded?.call();
-                                                  _showItemContextMenuAtItem(
-                                                    item,
-                                                  );
                                                 },
                                                 feedback: Material(
                                                   color: Colors.transparent,
@@ -1867,7 +1858,7 @@ class HomeScreenState extends State<HomeScreen>
                                                     child: _buildItemContent(
                                                       item,
                                                       cellWidth,
-                                                      70,
+                                                      84,
                                                       isFeedback: true,
                                                     ),
                                                   ),
@@ -1894,7 +1885,7 @@ class HomeScreenState extends State<HomeScreen>
                                                   child: _buildItemContent(
                                                     item,
                                                     cellWidth,
-                                                    70,
+                                                    84,
                                                   ),
                                                 ),
                                               ),
@@ -1906,7 +1897,7 @@ class HomeScreenState extends State<HomeScreen>
                               },
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 14),
                           // Search Widget Pill in Dock
                           SearchWidget(
                             key: const ValueKey('dock_search_pill'),
@@ -1915,7 +1906,7 @@ class HomeScreenState extends State<HomeScreen>
                         ],
                       ),
                     ),
-                    SizedBox(height: 12 + MediaQuery.paddingOf(context).bottom),
+                    SizedBox(height: 10 + MediaQuery.paddingOf(context).bottom),
                   ],
                 ),
               ),
@@ -2433,12 +2424,14 @@ class HomeScreenState extends State<HomeScreen>
         },
         delay: const Duration(milliseconds: 150),
         onDragStarted: () {
+          _hideContextMenu();
           setState(() {
             _isDragging = true;
           });
           widget.onDragStarted?.call(pkg);
         },
         onDragEnd: (_) {
+          _hideContextMenu();
           setState(() {
             _isDragging = false;
             _openedFolderItem = null;
@@ -2446,6 +2439,7 @@ class HomeScreenState extends State<HomeScreen>
           widget.onDragEnded?.call();
         },
         onDraggableCanceled: (_, _) {
+          _hideContextMenu();
           setState(() {
             _isDragging = false;
             _openedFolderItem = null;
@@ -2818,7 +2812,6 @@ class HomeScreenState extends State<HomeScreen>
       delay: const Duration(milliseconds: 220),
       onDragStarted: () {
         _hideContextMenu();
-        _showItemContextMenuAtItem(item);
         if (item.appWidgetId != null) {
           unawaited(
             WidgetHostController.instance.captureWidgetSnapshot(
@@ -2830,16 +2823,16 @@ class HomeScreenState extends State<HomeScreen>
           _isDragging = true;
           _editingWidgetId = null;
         });
+        widget.onDragStarted?.call('');
       },
       onDragEnd: (details) {
         setState(() => _isDragging = false);
-        if (details.wasAccepted) {
-          _hideContextMenu();
-        }
+        _hideContextMenu();
         widget.onDragEnded?.call();
       },
       onDraggableCanceled: (_, _) {
         setState(() => _isDragging = false);
+        _hideContextMenu();
         widget.onDragEnded?.call();
       },
       feedback: Material(

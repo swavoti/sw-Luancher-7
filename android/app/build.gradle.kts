@@ -15,9 +15,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "co.za.launcher3.swavoti"
     compileSdk = flutter.compileSdkVersion
-    val preinstalledNdk = System.getenv("ANDROID_NDK_ROOT")?.let { file(it).name }
-        ?: System.getenv("ANDROID_NDK_HOME")?.let { file(it).name }
-    ndkVersion = preinstalledNdk ?: flutter.ndkVersion
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

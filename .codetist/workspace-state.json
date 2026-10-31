@@ -10,51 +10,20 @@
     "/web/index.html",
     "/web/icons/Icon-192.png",
     "/linux/runner/my_application.cc",
-    "/__codetist-git-commit__/a54fa0d",
-    "/lib/services/launcher_service.dart",
     "/__codetist-git-commit__/c6700aa",
-    "/analysis_options.yaml"
+    "/lib/services/launcher_service.dart",
+    "/.dart_tool/package_config.json",
+    "/.dart_tool/package_graph.json",
+    "/.github/workflows/build_release.yml",
+    "/.dart_tool/version",
+    "/.codetist/workspace-state.json",
+    "/__codetist-extension-webview__/codetist-api-workbench/ui%2Findex.tsx"
   ],
-  "activeFilePath": "/lib/services/launcher_service.dart",
+  "activeFilePath": "/__codetist-extension-webview__/codetist-api-workbench/ui%2Findex.tsx",
   "extensionTabs": {
     "github-theme": {
       "id": "github-theme",
       "name": "github-theme",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "web-live-preview": {
-      "id": "web-live-preview",
-      "name": "web-live-preview",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-debugger": {
-      "id": "codetist-debugger",
-      "name": "codetist-debugger",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "synthwave-theme": {
-      "id": "synthwave-theme",
-      "name": "synthwave-theme",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-github-dark-theme": {
-      "id": "codetist-github-dark-theme",
-      "name": "codetist-github-dark-theme",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-native-fault-analyzer-skills": {
-      "id": "codetist-native-fault-analyzer-skills",
-      "name": "codetist-native-fault-analyzer-skills",
       "displayName": "monokai light",
       "version": "1.0.0",
       "debuggerContributions": []
@@ -73,48 +42,20 @@
       "version": "1.0.0",
       "debuggerContributions": []
     },
-    "codetist-nextjs-on-cloudflare-skills": {
-      "id": "codetist-nextjs-on-cloudflare-skills",
-      "name": "codetist-nextjs-on-cloudflare-skills",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-env-len": {
-      "id": "codetist-env-len",
-      "name": "codetist-env-len",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-pkg-lens": {
-      "id": "codetist-pkg-lens",
-      "name": "codetist-pkg-lens",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-preview-ext": {
-      "id": "codetist-preview-ext",
-      "name": "codetist-preview-ext",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-debug-issues-7-files": {
-      "id": "codetist-debug-issues-7-files",
-      "name": "codetist-debug-issues-7-files",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
     "codetist-themes": {
       "id": "codetist-themes",
       "name": "codetist-themes",
       "displayName": "monokai light",
       "version": "1.0.0",
       "debuggerContributions": []
+    },
+    "codetist-api-workbench": {
+      "id": "codetist-api-workbench",
+      "name": "codetist-api-workbench",
+      "displayName": "API Workbench",
+      "version": "1.0.0",
+      "debuggerContributions": []
     }
   },
-  "updatedAt": 1793290488737
+  "updatedAt": 1793308141575
 }

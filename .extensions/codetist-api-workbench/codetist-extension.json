@@ -1,0 +1,17 @@
+{
+  "name": "api-workbench",
+  "displayName": "API Workbench",
+  "description": "Send individual HTTP requests to localhost development APIs and inspect real responses.",
+  "publisher": "swavoti",
+  "type": "plugin",
+  "main": "index.js",
+  "repository": "https://github.com/Codetist-Swavoti-extensions-util/codetist-api-workbench",
+  "version": "1.0.0",
+  "icon": "icon.png",
+  "ui": {
+    "entry": "ui/index.tsx"
+  },
+  "webview": {
+    "entry": "ui/index.tsx"
+  }
+}

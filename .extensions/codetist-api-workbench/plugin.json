@@ -1,0 +1,44 @@
+{
+  "name": "api-workbench",
+  "displayName": "API Workbench",
+  "version": "1.0.0",
+  "type": "plugin",
+  "description": "Send individual HTTP requests to localhost development APIs and inspect real responses.",
+  "author": "Codetist",
+  "icon": "icon.png",
+  "ui": {
+    "entry": "ui/index.tsx"
+  },
+  "webview": {
+    "entry": "ui/index.tsx"
+  },
+  "contributes": {
+    "shortcuts": [
+      {
+        "id": "api-workbench",
+        "name": "API",
+        "label": "API",
+        "icon": "icon.png",
+        "entry": "ui/index.tsx",
+        "target": "ui/index.tsx",
+        "tooltip": "Send requests to localhost development APIs",
+        "description": "A local-only HTTP request workbench"
+      }
+    ]
+  },
+  "shortcuts": [
+    {
+      "id": "api-workbench",
+      "name": "API",
+      "label": "API",
+      "icon": "icon.png",
+      "entry": "ui/index.tsx",
+      "target": "ui/index.tsx",
+      "tooltip": "Send requests to localhost development APIs",
+      "description": "A local-only HTTP request workbench"
+    }
+  ],
+  "permissions": [
+    "network:localhost"
+  ]
+}
