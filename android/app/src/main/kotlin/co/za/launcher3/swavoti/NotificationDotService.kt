@@ -276,10 +276,6 @@ class NotificationDotService : NotificationListenerService() {
         override fun onSessionDestroyed() {
             refreshMedia(forceEmitIfPlaying = true)
         }
-
-        override fun onAudioInfoChanged(info: MediaController.PlaybackInfo?) {
-            refreshMedia()
-        }
     }
 
     override fun onCreate() {
