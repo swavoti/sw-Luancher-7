@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 
 import "package:swavoti/services/launcher_service.dart";
 import 'package:flutter/foundation.dart';
@@ -8,9 +7,6 @@ import 'package:flutter/widgets.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:installed_apps/installed_apps.dart';
-import 'package:installed_apps/app_info.dart';
-import 'package:installed_apps/platform_type.dart';
-import 'package:installed_apps/app_category.dart';
 
 class AppDatabaseService {
   static Database? _database;

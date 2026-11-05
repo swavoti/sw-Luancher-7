@@ -2053,8 +2053,14 @@ class HomeScreenState extends State<HomeScreen>
     } else if (item.type == 'folder') {
       return GestureDetector(
         onTap: () {
+          final renderObject = _itemIconKeys[item.id]?.currentContext?.findRenderObject();
+          final pos = renderObject is RenderBox
+              ? renderObject.localToGlobal(Offset.zero)
+              : null;
           setState(() {
             _openedFolderItem = item;
+            _openedFolderPos = pos;
+            _openedFolderPageIndex = 0;
           });
         },
         child: Container(
@@ -2062,76 +2068,21 @@ class HomeScreenState extends State<HomeScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
+              KeyedSubtree(
                 key: isFeedback ? null : _getIconKey(item.id),
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                padding: const EdgeInsets.all(8),
-                alignment: Alignment.center,
-                child: Builder(
-                  builder: (context) {
-                    final apps = (item.folderApps ?? []).take(4).toList();
-                    if (apps.isEmpty) {
-                      return Icon(
-                        Icons.folder,
-                        color: Theme.of(context).colorScheme.primary,
-                      );
-                    }
-                    if (apps.length == 1) {
-                      final pkg = apps[0];
-                      final cachedApp = widget.appCache[pkg];
-                      Widget buildIcon(AppInfo app) =>
-                          _buildHomeAppIcon(app, 32);
-                      if (cachedApp != null) return buildIcon(cachedApp);
-                      return FutureBuilder<AppInfo?>(
-                        future: _getAppInfo(pkg),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData || snapshot.data == null) {
-                            return const SizedBox.shrink();
-                          }
-                          return buildIcon(snapshot.data!);
-                        },
-                      );
-                    }
-                    return Center(
-                      child: GridView.builder(
-                        physics: const NeverScrollableScrollPhysics(),
-                        shrinkWrap: true,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 4,
-                              crossAxisSpacing: 4,
-                            ),
-                        itemCount: apps.length,
-                        itemBuilder: (context, index) {
-                          final pkg = apps[index];
-                          final cachedApp = widget.appCache[pkg];
-
-                          Widget buildIcon(AppInfo app) =>
-                              _buildHomeAppIcon(app, 18);
-
-                          if (cachedApp != null) return buildIcon(cachedApp);
-
-                          return FutureBuilder<AppInfo?>(
-                            future: _getAppInfo(pkg),
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData || snapshot.data == null) {
-                                return const SizedBox.shrink();
-                              }
-                              return buildIcon(snapshot.data!);
-                            },
-                          );
-                        },
-                      ),
-                    );
-                  },
+                child: IconShapeClipper(
+                  shape: _iconShape,
+                  size: 56,
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.85),
+                    alignment: Alignment.center,
+                    child: _buildFolderPreviewGrid(item),
+                  ),
                 ),
               ),
               const SizedBox(height: 4),
