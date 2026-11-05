@@ -1,0 +1,42 @@
+{
+  "name": "Cloud Fog",
+  "type": "light",
+  "colors": {
+    "editor.background": "#F8F9FA",
+    "editor.foreground": "#212529",
+    "editor.lineHighlightBackground": "#E9ECEF",
+    "editorCursor.foreground": "#1C7ED6",
+    
+    "sideBar.background": "#E9ECEF",
+    "sideBar.foreground": "#495057",
+    "sideBar.border": "#DEE2E6",
+    
+    "activityBar.background": "#DEE2E6",
+    "activityBar.foreground": "#212529",
+    
+    "tab.activeBackground": "#F8F9FA",
+    "tab.inactiveBackground": "#E9ECEF",
+    "tab.activeBorderTop": "#1C7ED6"
+  },
+  "tokenColors": [
+    {
+      "scope": ["keyword", "storage", "modifier"],
+      "settings": {
+        "foreground": "#D9480F",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "scope": ["string", "string.template"],
+      "settings": {
+        "foreground": "#087F5B"
+      }
+    },
+    {
+      "scope": ["entity.name.function", "support.function"],
+      "settings": {
+        "foreground": "#1C7ED6"
+      }
+    }
+  ]
+}

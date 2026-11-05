@@ -1328,6 +1328,29 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "openGoogleLens" -> {
+                    try {
+                        val lensIntent = packageManager.getLaunchIntentForPackage("com.google.ar.lens")
+                        if (lensIntent != null) {
+                            lensIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(lensIntent)
+                        } else {
+                            val intent = Intent().apply {
+                                setComponent(ComponentName("com.google.android.googlequicksearchbox", "com.google.android.apps.search.lens.LensActivity"))
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        }
+                    } catch (_: Exception) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("googleapp://lens")).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

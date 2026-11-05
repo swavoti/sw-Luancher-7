@@ -498,7 +498,7 @@ class WidgetHostController extends ChangeNotifier {
   }) async {
     if (item.type == 'time_weather_widget') {
       return WidgetCapabilities(
-        configurable: false,
+        configurable: true,
         resizeHorizontal: true,
         resizeVertical: true,
         defaultSpanX: 2.clamp(1, columns),
@@ -507,9 +507,9 @@ class WidgetHostController extends ChangeNotifier {
     }
     if (item.type == 'search_widget') {
       return WidgetCapabilities(
-        configurable: false,
+        configurable: true,
         resizeHorizontal: true,
-        resizeVertical: true,
+        resizeVertical: false,
         defaultSpanX: columns.clamp(1, 4),
         defaultSpanY: 1,
       );

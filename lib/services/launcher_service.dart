@@ -3,8 +3,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:typed_data';
-import 'dart:ui';
-
+import 'dart:ui'; 
 class MediaPlaybackInfo {
   final String packageName;
   final String title;
@@ -444,6 +443,14 @@ class LauncherService {
       await _systemChannel.invokeMethod('openGoogleVoiceSearch');
     } catch (e) {
       print('Error opening voice search: $e');
+    }
+  }
+
+  static Future<void> openGoogleLens() async {
+    try {
+      await _systemChannel.invokeMethod('openGoogleLens');
+    } catch (e) {
+      print('Error opening Google Lens: $e');
     }
   }
 

@@ -1,0 +1,17 @@
+{
+  "name": "swavoti-cloud-fog",
+  "displayName": "Swavoti Cloud Fog",
+  "version": "1.0.0",
+  "publisher": "Codetist",
+  "type": "theme",
+  "contributes": {
+    "themes": [
+      {
+        "id": "cloud-fog",
+        "label": "Cloud Fog",
+        "type": "light",
+        "path": "./theme.json"
+      }
+    ]
+  }
+}

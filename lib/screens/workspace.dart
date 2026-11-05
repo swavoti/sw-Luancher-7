@@ -213,7 +213,13 @@ class WorkspaceState extends State<Workspace>
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (_drawerOpen) _closeDrawer();
+        if (_drawerOpen) {
+          _closeDrawer();
+          return;
+        }
+        if (_homeScreenKey.currentState?.handleBackPress() == true) {
+          return;
+        }
       },
       child: Scaffold(
         backgroundColor: Colors.transparent,

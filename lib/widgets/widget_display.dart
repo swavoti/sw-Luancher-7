@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:swavoti/screens/search_settings.dart';
+import 'package:swavoti/screens/weather_page.dart';
+import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
 import 'package:swavoti/widgets/widget_host.dart';
@@ -133,6 +136,7 @@ class WidgetDisplay extends StatelessWidget {
   final VoidCallback onResetSize;
   final bool Function(WidgetResizeEdge edge, int stepDelta)? onResizeStep;
   final VoidCallback? onResizeCommit;
+  final VoidCallback? onConfigure;
 
   const WidgetDisplay({
     super.key,
@@ -149,6 +153,7 @@ class WidgetDisplay extends StatelessWidget {
     this.capabilities = const WidgetCapabilities(),
     this.onResizeStep,
     this.onResizeCommit,
+    this.onConfigure,
   });
 
   @override
@@ -208,6 +213,7 @@ class WidgetDisplay extends StatelessWidget {
         onResetSize: onResetSize,
         onResizeStep: onResizeStep,
         onResizeCommit: onResizeCommit,
+        onConfigure: onConfigure,
         child: content,
       );
     }
@@ -396,9 +402,17 @@ class _HostedAndroidWidgetSurfaceState
   }
 }
 
-/// Lawnchair / AOSP Launcher3 4-edge interactive widget resize frame with
-/// unrestricted width & height handles, live `spanX × spanY` pill, and
-/// floating action bar (Configure, Reset Size, Remove, Done).
+/// Lawnchair / AOSP Launcher3 interactive widget resize frame identical to
+/// modern Android (Android 12/13/14+ Material You).
+///
+/// Features:
+/// - Smooth rounded rectangular outline stroke matching widget shape
+/// - Circular solid dot handles centered directly on the border stroke midpoints
+///   (shown dynamically based on horizontal/vertical resizability)
+/// - Material You squircle reconfigure FAB (with pencil icon) positioned at
+///   the bottom-right corner for reconfigurable and custom widgets (identical to AOSP)
+/// - Generous touch targets for responsive drag gestures
+/// - Clean, decluttered design matching stock AOSP Launcher3
 class Launcher3ResizeFrame extends StatefulWidget {
   final LauncherItem item;
   final Widget child;
@@ -410,6 +424,7 @@ class Launcher3ResizeFrame extends StatefulWidget {
   final VoidCallback onResetSize;
   final bool Function(WidgetResizeEdge edge, int stepDelta)? onResizeStep;
   final VoidCallback? onResizeCommit;
+  final VoidCallback? onConfigure;
 
   const Launcher3ResizeFrame({
     super.key,
@@ -423,6 +438,7 @@ class Launcher3ResizeFrame extends StatefulWidget {
     required this.onResetSize,
     this.onResizeStep,
     this.onResizeCommit,
+    this.onConfigure,
   });
 
   @override
@@ -444,17 +460,17 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
   void _onEdgeDragUpdate(WidgetResizeEdge edge, double primaryDelta) {
     final stepSize =
         (edge == WidgetResizeEdge.left || edge == WidgetResizeEdge.right)
-        ? widget.cellWidth
-        : widget.cellHeight;
+            ? widget.cellWidth
+            : widget.cellHeight;
     if (stepSize <= 8) return;
 
     _dragAccum += primaryDelta;
-    final threshold = stepSize * 0.48;
+    final threshold = stepSize * 0.44;
 
     while (_dragAccum >= threshold) {
       final applied = widget.onResizeStep?.call(edge, 1) ?? false;
       if (!applied) {
-        _dragAccum = threshold * 0.4;
+        _dragAccum = threshold * 0.35;
         break;
       }
       HapticFeedback.selectionClick();
@@ -464,7 +480,7 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
     while (_dragAccum <= -threshold) {
       final applied = widget.onResizeStep?.call(edge, -1) ?? false;
       if (!applied) {
-        _dragAccum = -threshold * 0.4;
+        _dragAccum = -threshold * 0.35;
         break;
       }
       HapticFeedback.selectionClick();
@@ -491,254 +507,266 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
     widget.onResizeCommit?.call();
   }
 
+  void _handleDefaultConfigure(BuildContext context) {
+    widget.onExitEdit();
+    if (widget.item.type == 'search_widget') {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SearchSettingsScreen()),
+      );
+    } else if (widget.item.type == 'time_weather_widget') {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const WeatherPage()),
+      );
+    } else if (widget.item.appWidgetId != null) {
+      unawaited(LauncherService.configureWidget(widget.item.appWidgetId!));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
+    // Material You system dynamic accent color
+    final accentColor = cs.primary;
+    // Contrast check for pen icon
+    final penIconColor = accentColor.computeLuminance() > 0.45
+        ? const Color(0xFF191C1E)
+        : cs.onPrimary;
+
+    // Resizability flags: fallback to both resizable if unconfigured
+    final rawCanH = widget.capabilities.resizeHorizontal;
+    final rawCanV = widget.capabilities.resizeVertical;
+    final canResizeH = rawCanH || (!rawCanH && !rawCanV);
+    final canResizeV = rawCanV || (!rawCanH && !rawCanV);
+
+    final showReconfigure = widget.capabilities.configurable ||
+        widget.item.type == 'search_widget' ||
+        widget.item.type == 'time_weather_widget' ||
+        widget.item.appWidgetId != null ||
+        widget.onConfigure != null;
+
+    const frameOffset = 10.0;
+    const strokeWidth = 2.0;
+    const cornerRadius = 24.0;
+    const touchTarget = 48.0;
+
+    // Center the touch target directly over the stroke line:
+    // stroke line center is at (-frameOffset + strokeWidth / 2) = -9.0.
+    const handleTouchOffset = (-frameOffset + strokeWidth / 2) - (touchTarget / 2);
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Positioned.fill(child: widget.child),
 
-        // Clean exterior outline border (positioned outside widget bounds)
+        // Rounded rectangular outline frame (AOSP Launcher3 widget_resize_frame)
         Positioned(
-          left: -4,
-          top: -4,
-          right: -4,
-          bottom: -4,
+          left: -frameOffset,
+          top: -frameOffset,
+          right: -frameOffset,
+          bottom: -frameOffset,
           child: IgnorePointer(
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(cornerRadius),
                 border: Border.all(
-                  color: cs.primary,
-                  width: 1.5,
+                  color: accentColor,
+                  width: strokeWidth,
                 ),
               ),
             ),
           ),
         ),
 
-        // Remove 'X' button on top-right of outline
-        Positioned(
-          top: -12,
-          right: -12,
-          child: Material(
-            color: cs.error,
-            shape: const CircleBorder(),
-            elevation: 4,
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: widget.onRemove,
-              child: Padding(
-                padding: const EdgeInsets.all(5),
-                child: Icon(
-                  Icons.close_rounded,
-                  size: 16,
-                  color: cs.onError,
+        // TOP Handle (shown when vertically resizable)
+        if (canResizeV)
+          Positioned(
+            top: handleTouchOffset,
+            left: 0,
+            right: 0,
+            height: touchTarget,
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragStart: (_) =>
+                    _onEdgeDragStart(WidgetResizeEdge.top),
+                onVerticalDragUpdate: (d) =>
+                    _onEdgeDragUpdate(WidgetResizeEdge.top, d.primaryDelta ?? 0),
+                onVerticalDragEnd: (_) => _onEdgeDragEnd(),
+                onVerticalDragCancel: _onEdgeDragEnd,
+                child: SizedBox(
+                  width: touchTarget,
+                  height: touchTarget,
+                  child: Center(
+                    child: _HandleDot(
+                      active: _activeEdge == WidgetResizeEdge.top,
+                      color: accentColor,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
 
-        // Live Span Dimension Pill Badge (e.g. "2 × 2") & Done check
-        Positioned(
-          bottom: -12,
-          right: -8,
-          child: GestureDetector(
-            onTap: widget.onExitEdit,
+        // BOTTOM Handle (shown when vertically resizable)
+        if (canResizeV)
+          Positioned(
+            bottom: handleTouchOffset,
+            left: 0,
+            right: 0,
+            height: touchTarget,
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragStart: (_) =>
+                    _onEdgeDragStart(WidgetResizeEdge.bottom),
+                onVerticalDragUpdate: (d) => _onEdgeDragUpdate(
+                  WidgetResizeEdge.bottom,
+                  d.primaryDelta ?? 0,
+                ),
+                onVerticalDragEnd: (_) => _onEdgeDragEnd(),
+                onVerticalDragCancel: _onEdgeDragEnd,
+                child: SizedBox(
+                  width: touchTarget,
+                  height: touchTarget,
+                  child: Center(
+                    child: _HandleDot(
+                      active: _activeEdge == WidgetResizeEdge.bottom,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // LEFT Handle (shown when horizontally resizable)
+        if (canResizeH)
+          Positioned(
+            left: handleTouchOffset,
+            top: 0,
+            bottom: 0,
+            width: touchTarget,
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragStart: (_) =>
+                    _onEdgeDragStart(WidgetResizeEdge.left),
+                onHorizontalDragUpdate: (d) =>
+                    _onEdgeDragUpdate(WidgetResizeEdge.left, d.primaryDelta ?? 0),
+                onHorizontalDragEnd: (_) => _onEdgeDragEnd(),
+                onHorizontalDragCancel: _onEdgeDragEnd,
+                child: SizedBox(
+                  width: touchTarget,
+                  height: touchTarget,
+                  child: Center(
+                    child: _HandleDot(
+                      active: _activeEdge == WidgetResizeEdge.left,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // RIGHT Handle (shown when horizontally resizable)
+        if (canResizeH)
+          Positioned(
+            right: handleTouchOffset,
+            top: 0,
+            bottom: 0,
+            width: touchTarget,
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragStart: (_) =>
+                    _onEdgeDragStart(WidgetResizeEdge.right),
+                onHorizontalDragUpdate: (d) => _onEdgeDragUpdate(
+                  WidgetResizeEdge.right,
+                  d.primaryDelta ?? 0,
+                ),
+                onHorizontalDragEnd: (_) => _onEdgeDragEnd(),
+                onHorizontalDragCancel: _onEdgeDragEnd,
+                child: SizedBox(
+                  width: touchTarget,
+                  height: touchTarget,
+                  child: Center(
+                    child: _HandleDot(
+                      active: _activeEdge == WidgetResizeEdge.right,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        // RECONFIGURE BUTTON (The Pen / Pencil FAB at bottom-right corner)
+        // Matches AOSP Launcher3 `widget_reconfigure_button`
+        if (showReconfigure)
+          Positioned(
+            right: -6,
+            bottom: -6,
             child: Material(
-              color: cs.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
+              color: accentColor,
+              borderRadius: BorderRadius.circular(16),
               elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${widget.item.spanX} × ${widget.item.spanY}',
-                      style: TextStyle(
-                        color: cs.onPrimaryContainer,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                      ),
+              shadowColor: Colors.black.withValues(alpha: 0.35),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  if (widget.onConfigure != null) {
+                    widget.onConfigure!();
+                  } else {
+                    _handleDefaultConfigure(context);
+                  }
+                },
+                child: SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: Center(
+                    child: Icon(
+                      Icons.edit_rounded,
+                      size: 20,
+                      color: penIconColor,
                     ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.check_rounded,
-                      size: 14,
-                      color: cs.onPrimaryContainer,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // TOP Edge Handle
-        Positioned(
-          top: -12,
-          left: 0,
-          right: 0,
-          height: 26,
-          child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: (_) =>
-                  _onEdgeDragStart(WidgetResizeEdge.top),
-              onVerticalDragUpdate: (d) =>
-                  _onEdgeDragUpdate(WidgetResizeEdge.top, d.primaryDelta ?? 0),
-              onVerticalDragEnd: (_) => _onEdgeDragEnd(),
-              onVerticalDragCancel: _onEdgeDragEnd,
-              child: SizedBox(
-                width: 48,
-                height: 26,
-                child: Center(
-                  child: _EdgePillVisual(
-                    horizontal: true,
-                    active: _activeEdge == WidgetResizeEdge.top,
                   ),
                 ),
               ),
             ),
           ),
-        ),
-
-        // BOTTOM Edge Handle
-        Positioned(
-          bottom: -12,
-          left: 0,
-          right: 0,
-          height: 26,
-          child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: (_) =>
-                  _onEdgeDragStart(WidgetResizeEdge.bottom),
-              onVerticalDragUpdate: (d) => _onEdgeDragUpdate(
-                WidgetResizeEdge.bottom,
-                d.primaryDelta ?? 0,
-              ),
-              onVerticalDragEnd: (_) => _onEdgeDragEnd(),
-              onVerticalDragCancel: _onEdgeDragEnd,
-              child: SizedBox(
-                width: 48,
-                height: 26,
-                child: Center(
-                  child: _EdgePillVisual(
-                    horizontal: true,
-                    active: _activeEdge == WidgetResizeEdge.bottom,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // LEFT Edge Handle
-        Positioned(
-          left: -12,
-          top: 0,
-          bottom: 0,
-          width: 26,
-          child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragStart: (_) =>
-                  _onEdgeDragStart(WidgetResizeEdge.left),
-              onHorizontalDragUpdate: (d) =>
-                  _onEdgeDragUpdate(WidgetResizeEdge.left, d.primaryDelta ?? 0),
-              onHorizontalDragEnd: (_) => _onEdgeDragEnd(),
-              onHorizontalDragCancel: _onEdgeDragEnd,
-              child: SizedBox(
-                width: 26,
-                height: 48,
-                child: Center(
-                  child: _EdgePillVisual(
-                    horizontal: false,
-                    active: _activeEdge == WidgetResizeEdge.left,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // RIGHT Edge Handle
-        Positioned(
-          right: -12,
-          top: 0,
-          bottom: 0,
-          width: 26,
-          child: Center(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragStart: (_) =>
-                  _onEdgeDragStart(WidgetResizeEdge.right),
-              onHorizontalDragUpdate: (d) => _onEdgeDragUpdate(
-                WidgetResizeEdge.right,
-                d.primaryDelta ?? 0,
-              ),
-              onHorizontalDragEnd: (_) => _onEdgeDragEnd(),
-              onHorizontalDragCancel: _onEdgeDragEnd,
-              child: SizedBox(
-                width: 26,
-                height: 48,
-                child: Center(
-                  child: _EdgePillVisual(
-                    horizontal: false,
-                    active: _activeEdge == WidgetResizeEdge.right,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
 }
 
-class _EdgePillVisual extends StatelessWidget {
-  final bool horizontal;
+/// Circular dot handle matching Launcher3 AOSP resize handles.
+class _HandleDot extends StatelessWidget {
   final bool active;
+  final Color color;
 
-  const _EdgePillVisual({required this.horizontal, required this.active});
+  const _HandleDot({required this.active, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final mainLen = active ? 26.0 : 22.0;
-    final crossLen = active ? 9.0 : 7.0;
-
+    final size = active ? 16.0 : 13.5;
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 110),
-      width: horizontal ? mainLen : crossLen,
-      height: horizontal ? crossLen : mainLen,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: cs.primary,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: cs.surface, width: 1.5),
+        color: color,
+        shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: cs.primary.withValues(alpha: active ? 0.55 : 0.32),
-            blurRadius: active ? 10 : 5,
+            color: Colors.black.withValues(alpha: active ? 0.35 : 0.22),
+            blurRadius: active ? 6 : 3,
+            offset: const Offset(0, 1),
           ),
         ],
-      ),
-      child: Center(
-        child: Container(
-          width: horizontal ? 10 : 3,
-          height: horizontal ? 3 : 10,
-          decoration: BoxDecoration(
-            color: cs.onPrimary.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
       ),
     );
   }

@@ -18,6 +18,8 @@ class AppDatabaseService {
   static final Map<String, Uint8List> _iconCache = {};
   static final Map<String, MemoryImage> _memoryImageCache = {};
   static final Map<String, Uint8List?> _monochromeCache = {};
+  // Stable Future references so FutureBuilder widgets don't restart on rebuild
+  static final Map<String, Future<Uint8List?>> _iconFutureCache = {};
   static bool _lightweightMode = false;
   static int get _maxIconCacheBytes => _lightweightMode ? 128 << 20 : 256 << 20;
   static int _iconCacheBytes = 0;
@@ -44,6 +46,7 @@ class AppDatabaseService {
     _iconCache.clear();
     _memoryImageCache.clear();
     _monochromeCache.clear();
+    _iconFutureCache.clear();
     _iconCacheBytes = 0;
   }
 
@@ -259,6 +262,14 @@ class AppDatabaseService {
     _memoryImageCache.remove(packageName);
   }
 
+  /// Returns a stable [Future] for the same package so that [FutureBuilder]
+  /// widgets do not restart when the parent widget rebuilds.
+  static Future<Uint8List?> stableIconFuture(String packageName) {
+    final cached = getCachedIcon(packageName);
+    if (cached != null) return Future.value(cached);
+    return _iconFutureCache.putIfAbsent(packageName, () => loadIcon(packageName));
+  }
+
   static Future<Uint8List?> loadIcon(String packageName) {
     final cached = getCachedIcon(packageName);
     if (cached != null) return Future.value(cached);
@@ -417,6 +428,7 @@ class AppDatabaseService {
     _iconCacheGeneration++;
     _iconCache.clear();
     _memoryImageCache.clear();
+    _iconFutureCache.clear();
     _iconCacheBytes = 0;
     _inflight.clear();
     try {

@@ -14,12 +14,9 @@
     "/lib/services/launcher_service.dart",
     "/.dart_tool/package_config.json",
     "/.dart_tool/package_graph.json",
-    "/.github/workflows/build_release.yml",
-    "/.dart_tool/version",
-    "/.codetist/workspace-state.json",
-    "/__codetist-extension-webview__/codetist-api-workbench/ui%2Findex.tsx"
+    "/.github/workflows/build_release.yml"
   ],
-  "activeFilePath": "/__codetist-extension-webview__/codetist-api-workbench/ui%2Findex.tsx",
+  "activeFilePath": "/web/icons/Icon-192.png",
   "extensionTabs": {
     "github-theme": {
       "id": "github-theme",
@@ -55,7 +52,37 @@
       "displayName": "API Workbench",
       "version": "1.0.0",
       "debuggerContributions": []
+    },
+    "github.Cloud-Fog-theme-": {
+      "id": "github.Cloud-Fog-theme-",
+      "name": "Cloud-Fog-theme-",
+      "namespace": "Codetist-Swavoti-extensions-util",
+      "displayName": "Cloud Fog Theme ",
+      "description": "Cloud Fog Theme  for Codetist.",
+      "version": "0.1.0",
+      "downloadCount": 1,
+      "installs": 1,
+      "averageRating": 5,
+      "reviewCount": 0,
+      "previewImageUrl": null,
+      "contributorName": "swavoti",
+      "publisher": "swavoti",
+      "publisherDisplayName": "Swavoti",
+      "isVerified": true,
+      "iconUrl": "https://codetist.swavoti.co.za/api/extension?from=codetist&action=icon&name=Cloud-Fog-theme-",
+      "vsixUrl": "https://codetist.swavoti.co.za/api/extension?from=codetist&action=download&name=Cloud-Fog-theme-",
+      "publishedDate": "2026-10-27T07:11:41.541Z",
+      "updatedAt": "2026-10-27T07:11:41.541Z",
+      "tags": [
+        "theme"
+      ],
+      "categories": [
+        "Themes"
+      ],
+      "isCustomGithub": true,
+      "defaultBranch": "main",
+      "extensionType": "theme"
     }
   },
-  "updatedAt": 1793308141575
+  "updatedAt": 1793734999819
 }
