@@ -78,6 +78,7 @@ class MainActivity : FlutterActivity() {
     )
     private val iconBytesCache = android.util.LruCache<String, ByteArray>(384)
     private lateinit var iconPackManager: IconPackManager
+    private val mainUiHandler = Handler(Looper.getMainLooper())
     private var pendingSubActivityReload = false
 
     override fun getRenderMode(): RenderMode {
