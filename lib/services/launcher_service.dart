@@ -184,7 +184,7 @@ class LauncherService {
             .toList();
       }
     } catch (e) {
-      print('Error preloading widgets: $e');
+      debugPrint('Error preloading widgets: $e');
     }
   }
 
@@ -225,7 +225,7 @@ class LauncherService {
         return packs.map((p) => Map<String, dynamic>.from(p as Map)).toList();
       }
     } catch (e) {
-      print('Error fetching icon packs: $e');
+      debugPrint('Error fetching icon packs: $e');
     }
     return [];
   }
@@ -248,7 +248,7 @@ class LauncherService {
         (key, value) => MapEntry(key as String, value as Uint8List?),
       );
     } catch (e) {
-      print('Error fetching OS icons batch: $e');
+      debugPrint('Error fetching OS icons batch: $e');
       return const <String, Uint8List?>{};
     }
   }
@@ -263,7 +263,7 @@ class LauncherService {
         'iconPackPackage': iconPackPackage,
       });
     } catch (e) {
-      print('Error fetching themed icon: $e');
+      debugPrint('Error fetching themed icon: $e');
       return null;
     }
   }
@@ -274,7 +274,7 @@ class LauncherService {
         'packageName': packageName,
       });
     } catch (e) {
-      print('Error fetching OS icon: $e');
+      debugPrint('Error fetching OS icon: $e');
       return null;
     }
   }
@@ -285,7 +285,7 @@ class LauncherService {
         'packageName': packageName,
       });
     } catch (e) {
-      print('Error fetching monochrome icon: $e');
+      debugPrint('Error fetching monochrome icon: $e');
       return null;
     }
   }
@@ -296,7 +296,7 @@ class LauncherService {
         'packageName': packageName,
       });
     } catch (e) {
-      print('Error uninstalling app: $e');
+      debugPrint('Error uninstalling app: $e');
     }
   }
 
@@ -328,7 +328,7 @@ class LauncherService {
         },
       });
     } catch (e) {
-      print('Error starting app: $e');
+      debugPrint('Error starting app: $e');
     }
   }
 
@@ -343,7 +343,7 @@ class LauncherService {
         'isCleanHome': isCleanHome,
         'isSubRouteOpen': isSubRouteOpen,
         'iconShape': iconShape,
-        if (targets != null) 'targets': targets,
+        'targets': ?targets,
       });
     } catch (_) {}
   }
@@ -360,7 +360,7 @@ class LauncherService {
         'packageName': packageName,
       });
     } catch (e) {
-      print('Error opening app info: $e');
+      debugPrint('Error opening app info: $e');
     }
   }
 
@@ -368,7 +368,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('changeWallpaper');
     } catch (e) {
-      print('Error changing wallpaper: $e');
+      debugPrint('Error changing wallpaper: $e');
     }
   }
 
@@ -376,7 +376,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('launchGoogleWeather');
     } catch (e) {
-      print('Error launching weather: $e');
+      debugPrint('Error launching weather: $e');
     }
   }
 
@@ -397,7 +397,7 @@ class LauncherService {
         'packageName': packageName,
       });
     } catch (e) {
-      print('Error sharing app: $e');
+      debugPrint('Error sharing app: $e');
     }
   }
 
@@ -409,7 +409,7 @@ class LauncherService {
       });
       return success ?? false;
     } catch (e) {
-      print('Error setting wallpaper: $e');
+      debugPrint('Error setting wallpaper: $e');
       return false;
     }
   }
@@ -418,7 +418,7 @@ class LauncherService {
     try {
       _systemChannel.invokeMethod('setWallpaperOffset', {'offset': offset});
     } catch (e) {
-      print('Error setting wallpaper offset: $e');
+      debugPrint('Error setting wallpaper offset: $e');
     }
   }
 
@@ -426,7 +426,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('openGoogleDiscover');
     } catch (e) {
-      print('Error opening Google Discover: $e');
+      debugPrint('Error opening Google Discover: $e');
     }
   }
 
@@ -434,7 +434,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('expandNotifications');
     } catch (e) {
-      print('Error expanding notifications: $e');
+      debugPrint('Error expanding notifications: $e');
     }
   }
 
@@ -442,7 +442,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('openGoogleVoiceSearch');
     } catch (e) {
-      print('Error opening voice search: $e');
+      debugPrint('Error opening voice search: $e');
     }
   }
 
@@ -450,7 +450,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('openGoogleLens');
     } catch (e) {
-      print('Error opening Google Lens: $e');
+      debugPrint('Error opening Google Lens: $e');
     }
   }
 
@@ -458,7 +458,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('openGoogleAiMode');
     } catch (e) {
-      print('Error opening Google AI mode: $e');
+      debugPrint('Error opening Google AI mode: $e');
     }
   }
 
@@ -472,7 +472,7 @@ class LauncherService {
         'packageName': packageName,
       });
     } catch (e) {
-      print('Error opening URL: $e');
+      debugPrint('Error opening URL: $e');
     }
   }
 
@@ -487,7 +487,7 @@ class LauncherService {
             .toList();
       }
     } catch (e) {
-      print('Error getting installed browsers: $e');
+      debugPrint('Error getting installed browsers: $e');
     }
     return [];
   }
@@ -496,7 +496,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('openNotificationSettings');
     } catch (e) {
-      print('Error opening Notification Settings: $e');
+      debugPrint('Error opening Notification Settings: $e');
     }
   }
 
@@ -522,7 +522,7 @@ class LauncherService {
   static Future<bool> controlMedia(String action, {int? positionMs}) async {
     return await _systemChannel.invokeMethod<bool>('controlMedia', {
           'action': action,
-          if (positionMs != null) 'positionMs': positionMs,
+          'positionMs': ?positionMs,
         }) ??
         false;
   }
@@ -620,7 +620,7 @@ class LauncherService {
     try {
       return await _systemChannel.invokeMethod<bool>('playLocalTrack', {
             'trackId': trackId,
-            if (queueIds != null) 'queueIds': queueIds,
+            'queueIds': ?queueIds,
           }) ??
           false;
     } catch (e) {
@@ -702,7 +702,7 @@ class LauncherService {
     try {
       await _systemChannel.invokeMethod('openDefaultLauncherSettings');
     } catch (e) {
-      print('Error opening default launcher settings: $e');
+      debugPrint('Error opening default launcher settings: $e');
     }
   }
 
@@ -720,7 +720,7 @@ class LauncherService {
         return _cachedWidgets!;
       }
     } catch (e) {
-      print('Error getting widgets: $e');
+      debugPrint('Error getting widgets: $e');
     }
     return [];
   }
@@ -730,7 +730,7 @@ class LauncherService {
       final int? id = await _widgetChannel.invokeMethod('allocateWidgetId');
       return id ?? -1;
     } catch (e) {
-      print('Error allocating widget ID: $e');
+      debugPrint('Error allocating widget ID: $e');
       return -1;
     }
   }
@@ -748,7 +748,7 @@ class LauncherService {
       });
       return success ?? false;
     } catch (e) {
-      print('Error binding widget: $e');
+      debugPrint('Error binding widget: $e');
       return false;
     }
   }
@@ -759,7 +759,7 @@ class LauncherService {
         'appWidgetId': appWidgetId,
       });
     } catch (e) {
-      print('Error deleting widget ID: $e');
+      debugPrint('Error deleting widget ID: $e');
     }
   }
 
@@ -773,7 +773,7 @@ class LauncherService {
       );
       return result ?? const {};
     } catch (e) {
-      print('Error checking widget capabilities: $e');
+      debugPrint('Error checking widget capabilities: $e');
       return const {};
     }
   }
@@ -785,7 +785,7 @@ class LauncherService {
           }) ??
           false;
     } catch (e) {
-      print('Error opening widget configuration: $e');
+      debugPrint('Error opening widget configuration: $e');
       return false;
     }
   }

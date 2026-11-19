@@ -8,6 +8,47 @@ class SearchWidget extends StatefulWidget {
 
   const SearchWidget({super.key, required this.onRemove});
 
+  static final ValueNotifier<int> configRevision = ValueNotifier<int>(0);
+  static bool isVisible = true;
+  static String colorVariant = 'surface_high';
+
+  static void syncFromPrefs(SharedPreferences prefs) {
+    isVisible = prefs.getBool('show_dock_search_bar') ?? true;
+    colorVariant = prefs.getString('search_bar_color_variant') ?? 'surface_high';
+  }
+
+  static Future<void> setVisible(bool visible) async {
+    isVisible = visible;
+    configRevision.value++;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('show_dock_search_bar', visible);
+  }
+
+  static Future<void> setColorVariant(String variant) async {
+    colorVariant = variant;
+    configRevision.value++;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('search_bar_color_variant', variant);
+  }
+
+  static Color resolveBackgroundColor(ColorScheme cs, String variant) {
+    switch (variant) {
+      case 'surface_highest':
+        return cs.surfaceContainerHighest;
+      case 'primary_container':
+        return cs.primaryContainer;
+      case 'secondary_container':
+        return cs.secondaryContainer;
+      case 'tertiary_container':
+        return cs.tertiaryContainer;
+      case 'inverse_surface':
+        return cs.inverseSurface;
+      case 'surface_high':
+      default:
+        return cs.surfaceContainerHigh;
+    }
+  }
+
   @override
   State<SearchWidget> createState() => _SearchWidgetState();
 }
@@ -23,6 +64,7 @@ class _SearchWidgetState extends State<SearchWidget> {
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    SearchWidget.syncFromPrefs(prefs);
     if (mounted) {
       setState(() {
         _browserPackage = prefs.getString('search_browser_package');
@@ -40,50 +82,39 @@ class _SearchWidgetState extends State<SearchWidget> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Dark teal/slate background matching the Google Pixel search bar
-    final barBg = isDark
-        ? const Color(0xFF132024)
-        : cs.surfaceContainerHigh;
-    final borderColor = isDark
-        ? const Color(0xFF263C42)
-        : cs.outlineVariant.withValues(alpha: 0.4);
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
+    return ValueListenableBuilder<int>(
+      valueListenable: SearchWidget.configRevision,
+      builder: (context, _, _) {
+        final barColor = SearchWidget.resolveBackgroundColor(
+          cs,
+          SearchWidget.colorVariant,
+        );
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _onSearchTap,
           child: Container(
-            height: 52,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
+            height: 46,
+            margin: const EdgeInsets.symmetric(horizontal: 6),
             decoration: BoxDecoration(
-              color: barBg,
-              borderRadius: BorderRadius.circular(26),
+              color: barColor,
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: borderColor,
+                color: cs.outlineVariant.withValues(alpha: 0.25),
                 width: 1.0,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
                 // Authentic Google 'G' Logo
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: _onSearchTap,
-                  child: const GoogleGLogo(size: 24),
+                  child: const GoogleGLogo(size: 22),
                 ),
 
-                // Center Spacer (Empty pill space matching screenshot)
+                // Center Spacer
                 const Expanded(
                   child: SizedBox.expand(),
                 ),
@@ -96,13 +127,13 @@ class _SearchWidgetState extends State<SearchWidget> {
                     customBorder: const CircleBorder(),
                     onTap: LauncherService.openGoogleVoiceSearch,
                     child: const Padding(
-                      padding: EdgeInsets.all(7),
-                      child: GoogleMicLogo(size: 21),
+                      padding: EdgeInsets.all(6),
+                      child: GoogleMicLogo(size: 20),
                     ),
                   ),
                 ),
 
-                const SizedBox(width: 4),
+                const SizedBox(width: 2),
 
                 // Google Lens Camera
                 Material(
@@ -112,8 +143,8 @@ class _SearchWidgetState extends State<SearchWidget> {
                     customBorder: const CircleBorder(),
                     onTap: LauncherService.openGoogleLens,
                     child: const Padding(
-                      padding: EdgeInsets.all(7),
-                      child: GoogleLensLogo(size: 22),
+                      padding: EdgeInsets.all(6),
+                      child: GoogleLensLogo(size: 20),
                     ),
                   ),
                 ),

@@ -1,88 +1,18 @@
 {
   "openFilePaths": [
-    "/lib/screens/app_lock_screen.dart",
-    "/lib/screens/discover_news.dart",
-    "/lib/screens/search_settings.dart",
-    "/lib/screens/wallpaper_page.dart",
-    "/lib/widgets/weather_icon.dart",
-    "/.codetist-settings.json",
-    "/.codetist-ignore-sw",
-    "/web/index.html",
-    "/web/icons/Icon-192.png",
-    "/linux/runner/my_application.cc",
-    "/__codetist-git-commit__/c6700aa",
-    "/lib/services/launcher_service.dart",
-    "/.dart_tool/package_config.json",
-    "/.dart_tool/package_graph.json",
-    "/.github/workflows/build_release.yml"
+    "/lib/screens/home_screen.dart",
+    "/assets/icon/app_icon.png",
+    "/__codetist-settings__"
   ],
-  "activeFilePath": "/web/icons/Icon-192.png",
+  "activeFilePath": "/__codetist-settings__",
   "extensionTabs": {
-    "github-theme": {
-      "id": "github-theme",
-      "name": "github-theme",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "Paper-Silk-warm-theme": {
-      "id": "Paper-Silk-warm-theme",
-      "name": "Paper-Silk-warm-theme",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "Cloud-Fog-theme-": {
-      "id": "Cloud-Fog-theme-",
-      "name": "Cloud-Fog-theme-",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
-    "codetist-themes": {
-      "id": "codetist-themes",
-      "name": "codetist-themes",
-      "displayName": "monokai light",
-      "version": "1.0.0",
-      "debuggerContributions": []
-    },
     "codetist-api-workbench": {
       "id": "codetist-api-workbench",
       "name": "codetist-api-workbench",
       "displayName": "API Workbench",
       "version": "1.0.0",
       "debuggerContributions": []
-    },
-    "github.Cloud-Fog-theme-": {
-      "id": "github.Cloud-Fog-theme-",
-      "name": "Cloud-Fog-theme-",
-      "namespace": "Codetist-Swavoti-extensions-util",
-      "displayName": "Cloud Fog Theme ",
-      "description": "Cloud Fog Theme  for Codetist.",
-      "version": "0.1.0",
-      "downloadCount": 1,
-      "installs": 1,
-      "averageRating": 5,
-      "reviewCount": 0,
-      "previewImageUrl": null,
-      "contributorName": "swavoti",
-      "publisher": "swavoti",
-      "publisherDisplayName": "Swavoti",
-      "isVerified": true,
-      "iconUrl": "https://codetist.swavoti.co.za/api/extension?from=codetist&action=icon&name=Cloud-Fog-theme-",
-      "vsixUrl": "https://codetist.swavoti.co.za/api/extension?from=codetist&action=download&name=Cloud-Fog-theme-",
-      "publishedDate": "2026-10-27T07:11:41.541Z",
-      "updatedAt": "2026-10-27T07:11:41.541Z",
-      "tags": [
-        "theme"
-      ],
-      "categories": [
-        "Themes"
-      ],
-      "isCustomGithub": true,
-      "defaultBranch": "main",
-      "extensionType": "theme"
     }
   },
-  "updatedAt": 1793734999819
+  "updatedAt": 1794944659140
 }

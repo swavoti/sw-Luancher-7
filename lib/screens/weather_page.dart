@@ -815,55 +815,114 @@ class _WarningsSection extends StatelessWidget {
 
   const _WarningsSection({required this.alerts});
 
+  void _openWarningsPage(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WeatherWarningsPage(alerts: alerts),
+      ),
+    );
+  }
+
+  Color _accentFor(WeatherAlertSeverity severity, ColorScheme cs) {
+    switch (severity) {
+      case WeatherAlertSeverity.extreme:
+      case WeatherAlertSeverity.severe:
+        return cs.error;
+      case WeatherAlertSeverity.moderate:
+        return cs.tertiary;
+      case WeatherAlertSeverity.minor:
+        return cs.secondary;
+      case WeatherAlertSeverity.info:
+        return cs.primary;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     if (alerts.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-        child: Row(
-          children: [
-            Icon(Icons.verified_rounded, size: 16, color: cs.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'No active weather warnings',
-                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-          child: Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, size: 16, color: cs.error),
-              const SizedBox(width: 8),
-              Text(
-                'WEATHER WARNINGS · ${alerts.length}',
-                style: TextStyle(
-                  color: cs.onSurfaceVariant,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.2,
+    final visibleAlerts = alerts.take(2).toList();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final alert in visibleAlerts)
+            InkWell(
+              onTap: () => _openWarningsPage(context),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 16,
+                      color: _accentFor(alert.severity, cs),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        alert.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _accentFor(alert.severity, cs),
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          decorationColor: _accentFor(alert.severity, cs),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: _accentFor(alert.severity, cs),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-        for (final alert in alerts)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: _AlertCard(alert: alert),
-          ),
-      ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class WeatherWarningsPage extends StatelessWidget {
+  final List<WeatherAlert> alerts;
+
+  const WeatherWarningsPage({super.key, required this.alerts});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Weather Warnings (${alerts.length})'),
+      ),
+      body: alerts.isEmpty
+          ? Center(
+              child: Text(
+                'No active weather warnings',
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 15),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: alerts.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) => _AlertCard(alert: alerts[index]),
+            ),
     );
   }
 }

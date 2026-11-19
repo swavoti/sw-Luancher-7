@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/widgets/widget_host.dart';
@@ -216,7 +217,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
             style: TextStyle(fontSize: 16, color: cs.onSurface),
             decoration: InputDecoration(
               hintText: 'Search widgets',
-              hintStyle: TextStyle(color: cs.onSurfaceVariant.withOpacity(0.7)),
+              hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
               prefixIcon: Icon(
                 Icons.search_rounded,
                 color: cs.onSurfaceVariant,
@@ -233,7 +234,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                     )
                   : null,
               filled: true,
-              fillColor: cs.surfaceContainerHighest.withOpacity(0.6),
+              fillColor: cs.surfaceContainerHighest.withValues(alpha: 0.6),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 12,
@@ -265,7 +266,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                       Icon(
                         Icons.search_off_rounded,
                         size: 48,
-                        color: cs.onSurfaceVariant.withOpacity(0.4),
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.4),
                       ),
                       const SizedBox(height: 12),
                       Text(
@@ -280,7 +281,7 @@ class _WidgetBottomSheetState extends State<WidgetBottomSheet> {
                 )
               : ListView.builder(
                   physics: const ClampingScrollPhysics(),
-                  cacheExtent: 400,
+                  scrollCacheExtent: const ScrollCacheExtent.pixels(400),
                   padding: const EdgeInsets.only(bottom: 32),
                   itemCount: rows.length,
                   itemBuilder: (context, index) {
@@ -491,7 +492,7 @@ class _DraggableWidgetRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withValues(alpha: 0.2),
                         blurRadius: 16,
                         offset: const Offset(0, 4),
                       ),
@@ -511,7 +512,7 @@ class _DraggableWidgetRow extends StatelessWidget {
             thickness: 1,
             indent: 16,
             endIndent: 16,
-            color: cs.outlineVariant.withOpacity(0.4),
+            color: cs.outlineVariant.withValues(alpha: 0.4),
           ),
       ],
     );
@@ -562,7 +563,7 @@ class _WidgetRow extends StatelessWidget {
                   : Icon(
                       Icons.crop_square_rounded,
                       size: 32,
-                      color: cs.onSurfaceVariant.withOpacity(0.5),
+                      color: cs.onSurfaceVariant.withValues(alpha: 0.5),
                     ),
             ),
             const SizedBox(width: 14),

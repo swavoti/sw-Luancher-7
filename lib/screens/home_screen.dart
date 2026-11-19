@@ -52,6 +52,7 @@ class HomeScreenState extends State<HomeScreen>
   LauncherItem? _openedFolderItem;
   Offset? _openedFolderPos;
   int _openedFolderPageIndex = 0;
+  PageController? _folderPageController;
   Offset? _dragStartPos;
 
   // Launcher3 contextual popup menu state
@@ -376,6 +377,7 @@ class HomeScreenState extends State<HomeScreen>
     _workspaceController.removeListener(_onWorkspaceScroll);
     _pageIndexNotifier.dispose();
     _workspaceController.dispose();
+    _folderPageController?.dispose();
     super.dispose();
   }
 
@@ -397,6 +399,7 @@ class HomeScreenState extends State<HomeScreen>
   void _loadSettingsSync() {
     _iconShape = widget.prefs.getString('icon_shape') ?? 'Circle';
     _columns = (widget.prefs.getInt('grid_columns') ?? 4).clamp(3, 6);
+    SearchWidget.syncFromPrefs(widget.prefs);
   }
 
   Future<void> _reloadSettings() async {
@@ -1232,6 +1235,9 @@ class HomeScreenState extends State<HomeScreen>
                                               },
                                               onAcceptWithDetails: (details) {
                                                 final data = details.data;
+                                                if (!_isDragging && data['id'] != null) {
+                                                  return;
+                                                }
                                                 final spanX =
                                                     (data['spanX'] as int? ?? 1)
                                                         .clamp(1, _columns);
@@ -1577,18 +1583,28 @@ class HomeScreenState extends State<HomeScreen>
                                                     }
                                                   },
                                                   onDragEnd: (details) {
+                                                    // A plain long-press release also ends the
+                                                    // drag. Only tear the menu down if the user
+                                                    // actually dragged the icon.
+                                                    final wasDragging = _isDragging;
                                                     setState(
                                                       () => _isDragging = false,
                                                     );
                                                     _dragStartPos = null;
-                                                    _hideContextMenu();
+                                                    if (wasDragging) {
+                                                      _hideContextMenu();
+                                                    }
                                                     widget.onDragEnded?.call();
                                                   },
                                                   onDraggableCanceled: (_, _) {
+                                                    final wasDragging = _isDragging;
                                                     setState(
                                                       () => _isDragging = false,
                                                     );
                                                     _dragStartPos = null;
+                                                    if (wasDragging) {
+                                                      _hideContextMenu();
+                                                    }
                                                     widget.onDragEnded?.call();
                                                   },
                                                   feedback: Material(
@@ -1877,18 +1893,27 @@ class HomeScreenState extends State<HomeScreen>
                                                   }
                                                 },
                                                 onDragEnd: (details) {
+                                                  // Keep the menu alive on a pure
+                                                  // long-press release (no movement).
+                                                  final wasDragging = _isDragging;
                                                   setState(
                                                     () => _isDragging = false,
                                                   );
                                                   _dragStartPos = null;
-                                                  _hideContextMenu();
+                                                  if (wasDragging) {
+                                                    _hideContextMenu();
+                                                  }
                                                   widget.onDragEnded?.call();
                                                 },
                                                 onDraggableCanceled: (_, _) {
+                                                  final wasDragging = _isDragging;
                                                   setState(
                                                     () => _isDragging = false,
                                                   );
                                                   _dragStartPos = null;
+                                                  if (wasDragging) {
+                                                    _hideContextMenu();
+                                                  }
                                                   widget.onDragEnded?.call();
                                                 },
                                                 feedback: Material(
@@ -1937,11 +1962,21 @@ class HomeScreenState extends State<HomeScreen>
                               },
                             ),
                           ),
-                          const SizedBox(height: 14),
-                          // Search Widget Pill in Dock
-                          SearchWidget(
-                            key: const ValueKey('dock_search_pill'),
-                            onRemove: () {},
+                          // Search Widget in Dock (respects live SearchSettings)
+                          ValueListenableBuilder<int>(
+                            valueListenable: SearchWidget.configRevision,
+                            builder: (context, _, _) {
+                              if (!SearchWidget.isVisible) {
+                                return const SizedBox.shrink();
+                              }
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 14),
+                                child: SearchWidget(
+                                  key: const ValueKey('dock_search_pill'),
+                                  onRemove: () {},
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -2013,7 +2048,8 @@ class HomeScreenState extends State<HomeScreen>
         ),
 
         // In-page Folder Overlay (supports dragging apps directly onto home screen)
-        _buildFolderOverlay(),
+        if (_openedFolderItem != null)
+          Positioned.fill(child: _buildFolderOverlay()),
 
         // Launcher3 Anchored Contextual Popup Menu
         if (_contextMenuItem != null && _contextMenuPos != null) ...[
@@ -2057,6 +2093,8 @@ class HomeScreenState extends State<HomeScreen>
           final pos = renderObject is RenderBox
               ? renderObject.localToGlobal(Offset.zero)
               : null;
+          _folderPageController?.dispose();
+          _folderPageController = PageController(initialPage: 0);
           setState(() {
             _openedFolderItem = item;
             _openedFolderPos = pos;
@@ -2461,7 +2499,7 @@ class HomeScreenState extends State<HomeScreen>
                           Expanded(
                             child: PageView.builder(
                               itemCount: pageCount,
-                              controller:
+                              controller: _folderPageController ??=
                                   PageController(initialPage: currentPage),
                               onPageChanged: (idx) {
                                 setState(() {
@@ -2820,11 +2858,6 @@ class HomeScreenState extends State<HomeScreen>
         : item.type == 'folder'
             ? 'Folder (${item.folderApps?.length ?? 0} apps)'
             : 'Widget';
-    final leadingIcon = item.type == 'app'
-        ? Icons.apps_rounded
-        : item.type == 'folder'
-            ? Icons.folder_rounded
-            : Icons.widgets_rounded;
     final actions = <Widget>[
       if (item.type == 'app') ...[
         _buildPopupTile(
@@ -2919,12 +2952,12 @@ class HomeScreenState extends State<HomeScreen>
             color: cs.surfaceContainerHigh,
             elevation: 12,
             shadowColor: Colors.black54,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(28),
+            clipBehavior: Clip.antiAlias,
             child: Container(
               width: popupWidth,
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(28),
                 border: Border.all(
                   color: cs.outlineVariant.withValues(alpha: 0.35),
                   width: 1,
@@ -2935,22 +2968,11 @@ class HomeScreenState extends State<HomeScreen>
                 children: [
                   // Header badge
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
                     child: Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: cs.primaryContainer,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            leadingIcon,
-                            color: cs.onPrimaryContainer,
-                            size: 15,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+                        _buildContextMenuLeadingIcon(item, cs),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2980,18 +3002,113 @@ class HomeScreenState extends State<HomeScreen>
                       ],
                     ),
                   ),
-                  Divider(
-                    height: 1,
-                    thickness: 1,
-                    color: cs.outlineVariant.withValues(alpha: 0.25),
-                  ),
-                  const SizedBox(height: 4),
-                  ...actions,
+                  for (final action in actions) ...[
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: cs.outlineVariant.withValues(alpha: 0.45),
+                    ),
+                    action,
+                  ],
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildContextMenuLeadingIcon(LauncherItem item, ColorScheme cs) {
+    if (item.type == 'search_widget') {
+      return Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: const GoogleGLogo(size: 18),
+      );
+    }
+    if (item.type == 'time_weather_widget') {
+      return Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: cs.primaryContainer,
+          shape: BoxShape.circle,
+        ),
+        alignment: Alignment.center,
+        child: Icon(
+          Icons.wb_sunny_rounded,
+          color: cs.onPrimaryContainer,
+          size: 17,
+        ),
+      );
+    }
+    if (item.type == 'folder') {
+      return SizedBox(
+        width: 30,
+        height: 30,
+        child: IconShapeClipper(
+          shape: _iconShape,
+          size: 30,
+          child: Container(
+            width: 30,
+            height: 30,
+            color: cs.surfaceContainerHighest,
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.folder_rounded,
+              color: cs.primary,
+              size: 18,
+            ),
+          ),
+        ),
+      );
+    }
+    if (item.packageName.isNotEmpty) {
+      final cachedApp = widget.appCache[item.packageName];
+      if (cachedApp != null) {
+        return _buildHomeAppIcon(cachedApp, 30);
+      }
+      return FutureBuilder<AppInfo?>(
+        future: _getAppInfo(item.packageName),
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data != null) {
+            return _buildHomeAppIcon(snapshot.data!, 30);
+          }
+          return Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: cs.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              item.isAnyWidget ? Icons.widgets_rounded : Icons.apps_rounded,
+              color: cs.onPrimaryContainer,
+              size: 16,
+            ),
+          );
+        },
+      );
+    }
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: cs.primaryContainer,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.widgets_rounded,
+        color: cs.onPrimaryContainer,
+        size: 16,
       ),
     );
   }
@@ -3004,9 +3121,9 @@ class HomeScreenState extends State<HomeScreen>
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         child: Row(
           children: [
             Icon(icon, size: 20, color: color),
@@ -3065,9 +3182,12 @@ class HomeScreenState extends State<HomeScreen>
         }
       },
       onDragEnd: (details) {
+        final wasDragging = _isDragging;
         setState(() => _isDragging = false);
         _dragStartPos = null;
-        _hideContextMenu();
+        if (wasDragging) {
+          _hideContextMenu();
+        }
         widget.onDragEnded?.call();
       },
       onDraggableCanceled: (_, _) {

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/screens/news_detail_from_disc.dart';
@@ -294,7 +295,6 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -454,7 +454,8 @@ class _DiscoverNewsPageState extends State<DiscoverNewsPage> {
                                   parent: BouncingScrollPhysics(),
                                 ),
                                 padding: const EdgeInsets.only(bottom: 32),
-                                cacheExtent: 1500,
+                                scrollCacheExtent:
+                                    const ScrollCacheExtent.pixels(1500),
                                 itemCount: _articles.length,
                                 itemBuilder: (context, index) {
                                   final article = _articles[index];
@@ -541,7 +542,7 @@ class _NewsPostItem extends StatelessWidget {
                             width: 16,
                             height: 16,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
+                            errorBuilder: (_, _, __) =>
                                 const SizedBox.shrink(),
                           ),
                         ),
@@ -602,7 +603,7 @@ class _NewsPostItem extends StatelessWidget {
                             fit: BoxFit.cover,
                             cacheWidth: 800,
                             gaplessPlayback: true,
-                            errorBuilder: (_, __, ___) =>
+                            errorBuilder: (_, _, __) =>
                                 const SizedBox.shrink(),
                           ),
                         ),

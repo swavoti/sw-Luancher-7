@@ -40,8 +40,9 @@ class WeatherIconPainter extends CustomPainter {
       } else {
         _drawSun(canvas, size);
       }
-      if (code == 1)
+      if (code == 1) {
         _drawCloud(canvas, size, offset: const Offset(10, 10), scale: 0.7);
+      }
     } else if (code == 2 || code == 3) {
       _drawCloud(canvas, size, offset: const Offset(5, 5));
       _drawCloud(

@@ -13,7 +13,16 @@ class SearchSettingsScreen extends StatefulWidget {
 
 class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   bool _showSearchWidget = true;
-  String _searchBarStyle = 'normal';
+  String _colorVariant = 'surface_high';
+
+  static const _colorOptions = <({String key, String label})>[
+    (key: 'surface_high', label: 'Surface High'),
+    (key: 'surface_highest', label: 'Surface Highest'),
+    (key: 'primary_container', label: 'Primary'),
+    (key: 'secondary_container', label: 'Secondary'),
+    (key: 'tertiary_container', label: 'Tertiary'),
+    (key: 'inverse_surface', label: 'Inverse'),
+  ];
 
   @override
   void initState() {
@@ -23,51 +32,28 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedItems = prefs.getStringList('launcher_items') ?? [];
-
-    bool hasSearchWidget = false;
-    for (final jsonStr in savedItems) {
-      if (jsonStr.contains('"type":"search_widget"')) {
-        hasSearchWidget = true;
-        break;
-      }
-    }
+    SearchWidget.syncFromPrefs(prefs);
 
     if (mounted) {
       setState(() {
-        _showSearchWidget = hasSearchWidget;
-        _searchBarStyle = prefs.getString('search_bar_style') ?? 'normal';
+        _showSearchWidget = SearchWidget.isVisible;
+        _colorVariant = SearchWidget.colorVariant;
       });
     }
   }
 
   Future<void> _toggleSearchWidget(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedItems = prefs.getStringList('launcher_items') ?? [];
-
-    if (value) {
-      if (!savedItems.any(
-        (jsonStr) => jsonStr.contains('"type":"search_widget"'),
-      )) {
-        savedItems.add(
-          '{"id":"search_default","type":"search_widget","packageName":"","className":null,"appWidgetId":null,"x":0,"y":0,"spanX":4,"spanY":1,"page":0,"label":"Search"}',
-        );
-        await prefs.setStringList('launcher_items', savedItems);
-      }
-    } else {
-      savedItems.removeWhere(
-        (jsonStr) => jsonStr.contains('"type":"search_widget"'),
-      );
-      await prefs.setStringList('launcher_items', savedItems);
+    await SearchWidget.setVisible(value);
+    if (mounted) {
+      setState(() => _showSearchWidget = value);
     }
-
-    setState(() => _showSearchWidget = value);
   }
 
-  Future<void> _setStyle(String style) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('search_bar_style', style);
-    setState(() => _searchBarStyle = style);
+  Future<void> _setColorVariant(String variant) async {
+    await SearchWidget.setColorVariant(variant);
+    if (mounted) {
+      setState(() => _colorVariant = variant);
+    }
   }
 
   @override
@@ -112,33 +98,40 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
           const Divider(),
 
           ListTile(
-            title: const Text('Bar Style'),
-            subtitle: Text(_searchBarStyle.toUpperCase()),
+            title: const Text('Color Variant'),
+            subtitle: const Text('Material 3 dynamic color style'),
           ),
-          Row(
-            children: [
-              Expanded(
-                child: RadioListTile<String>(
-                  title: const Text('Normal'),
-                  value: 'normal',
-                  groupValue: _searchBarStyle,
-                  onChanged: (val) {
-                    if (val != null) _setStyle(val);
-                  },
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: _colorOptions.map((opt) {
+              final cs = Theme.of(context).colorScheme;
+              final swatchColor = SearchWidget.resolveBackgroundColor(
+                cs,
+                opt.key,
+              );
+              final selected = _colorVariant == opt.key;
+              return ChoiceChip(
+                selected: selected,
+                onSelected: (_) => _setColorVariant(opt.key),
+                avatar: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: swatchColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: cs.outline.withValues(alpha: 0.5),
+                      width: 1,
+                    ),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: RadioListTile<String>(
-                  title: const Text('Pill'),
-                  value: 'pill',
-                  groupValue: _searchBarStyle,
-                  onChanged: (val) {
-                    if (val != null) _setStyle(val);
-                  },
-                ),
-              ),
-            ],
+                label: Text(opt.label),
+              );
+            }).toList(),
           ),
+          const SizedBox(height: 8),
           const Divider(),
 
           ListTile(

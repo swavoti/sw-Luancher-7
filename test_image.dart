@@ -1,7 +1,8 @@
 import 'package:image/image.dart' as img;
 
+import 'dart:io';
+
 void main() {
-  print(img.encodeJpg != null);
-  print(img.encodePng != null);
-  // print(img.encodeWebP != null);
+  stdout.writeln('encodeJpg: ${img.encodeJpg}');
+  stdout.writeln('encodePng: ${img.encodePng}');
 }

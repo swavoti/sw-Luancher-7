@@ -6,7 +6,6 @@ import 'package:swavoti/widgets/widget_host.dart';
 void main() {
   testWidgets('Launcher3ResizeFrame renders handles and pen button for search widget', (tester) async {
     bool configured = false;
-    bool exited = false;
 
     final searchItem = LauncherItem(
       id: 'test_search',
@@ -41,7 +40,7 @@ void main() {
                   defaultSpanY: 1,
                 ),
                 onRemove: () {},
-                onExitEdit: () => exited = true,
+                onExitEdit: () {},
                 onResetSize: () {},
                 onConfigure: () => configured = true,
                 child: Container(

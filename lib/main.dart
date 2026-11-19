@@ -9,6 +9,7 @@ import 'package:swavoti/screens/edit_icons_page.dart';
 import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
 import 'package:swavoti/screens/welcome_screen.dart';
+import 'package:swavoti/screens/gesture_demo_page.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
@@ -233,14 +234,17 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           );
         }
 
+        final isGestureDemoRoute =
+            PlatformDispatcher.instance.defaultRouteName == '/gesture_demo';
+
         return MaterialApp(
           title: 'Go Launcher 7',
-          initialRoute: '/',
           navigatorObservers: [
             UnfocusOnPageCloseObserver(),
             launcherRouteObserver,
           ],
           routes: {
+            '/gesture_demo': (context) => const GestureDemoPage(),
             '/settings': (context) =>
                 HomeSettings(onSettingsChanged: _refreshAfterSettingsChanged),
             '/wallpaper': (context) => WallpaperPage(
@@ -276,8 +280,10 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
               },
             ),
           ),
-          home: _welcomeCompleted
-              ? PopScope(
+          home: isGestureDemoRoute
+              ? const GestureDemoPage()
+              : _welcomeCompleted
+                  ? PopScope(
                   canPop: false,
                   child: Workspace(
                     key: _workspaceKey,

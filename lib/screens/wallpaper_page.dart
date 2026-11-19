@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -92,7 +93,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
         });
       }
     } catch (e) {
-      print('Error loading wallpapers: $e');
+      debugPrint('Error loading wallpapers: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -578,6 +579,9 @@ class _WallpaperPageState extends State<WallpaperPage> {
 
   // ─── Home Screen Mockup Overlay ──────────────────────────────────────────
 
+  // Full home-screen mockup overlay. Retained as a visual reference for the
+  // wallpaper preview composition and intentionally not mounted right now.
+  // ignore: unused_element
   Widget _buildHomeScreenOverlay() {
     final page0Items = _homeItems.where((i) => i.page == 0).toList();
     final dockApps = _homeItems
