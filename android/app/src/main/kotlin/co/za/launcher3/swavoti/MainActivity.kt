@@ -91,6 +91,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         iconPackManager = IconPackManager(this)
         NotificationDotService.ensureGlobalLegacyReceiver(this)
+        LauncherKeepAliveService.start(this)
 
         // Dedicated 1x1 transparent SurfaceView providing a real hardware SurfaceControl leash
         // for Android 12–16 GestureNavContract so SystemUI/Quickstep never aborts the handoff.
@@ -174,6 +175,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        LauncherKeepAliveService.start(this)
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
         LauncherSceneStore.homeResumeEpoch.incrementAndGet()
         LauncherSceneStore.activeForegroundPackage = packageName

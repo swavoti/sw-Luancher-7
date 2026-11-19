@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:installed_apps/installed_apps.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/app_lock_service.dart';
@@ -8,6 +10,7 @@ import 'package:swavoti/screens/app_lock_screen.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
+import 'package:swavoti/widgets/search_widget.dart' show GoogleGLogo;
 import 'package:swavoti/screens/home_settings.dart' show AppDrawerSettingsScreen;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
@@ -77,6 +80,8 @@ class AppDrawerState extends State<AppDrawer>
   String? _activeAlphabetLetter;
   Timer? _searchBarLongPressTimer;
   Offset? _searchBarDownPos;
+  Timer? _suggestionDebounce;
+  List<String> _webSuggestions = [];
 
   @override
   void initState() {
@@ -121,6 +126,7 @@ class AppDrawerState extends State<AppDrawer>
   @override
   void dispose() {
     _searchBarLongPressTimer?.cancel();
+    _suggestionDebounce?.cancel();
     _searchController.dispose();
     _pageNotifier.dispose();
     _drawerPageController.dispose();
@@ -346,9 +352,44 @@ class AppDrawerState extends State<AppDrawer>
   }
 
   void _filterApps() {
+    final query = _searchController.text.trim();
     setState(() {
       _filteredApps = _filterBySearch(_apps);
+      if (query.isEmpty) {
+        _webSuggestions = [];
+      }
     });
+    _suggestionDebounce?.cancel();
+    if (query.isEmpty) return;
+    _suggestionDebounce = Timer(const Duration(milliseconds: 180), () {
+      _fetchGoogleSuggestions(query);
+    });
+  }
+
+  Future<void> _fetchGoogleSuggestions(String query) async {
+    try {
+      final uri = Uri.parse(
+        'https://suggestqueries.google.com/complete/search'
+        '?client=firefox&q=${Uri.encodeQueryComponent(query)}',
+      );
+      final res = await http.get(uri).timeout(const Duration(seconds: 4));
+      if (!mounted || _searchController.text.trim() != query) return;
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        if (decoded is List && decoded.length > 1 && decoded[1] is List) {
+          final raw = (decoded[1] as List)
+              .map((e) => e.toString().trim())
+              .where(
+                (s) => s.isNotEmpty && s.toLowerCase() != query.toLowerCase(),
+              )
+              .take(5)
+              .toList();
+          setState(() => _webSuggestions = raw);
+        }
+      }
+    } catch (_) {
+      // Offline or rate-limited: direct query row still renders cleanly.
+    }
   }
 
   void _prefetchPage(List<AppInfo> apps, int itemsPerPage, int pageIndex) {
@@ -467,109 +508,16 @@ class AppDrawerState extends State<AppDrawer>
                 ),
               ),
               const SizedBox(height: 14),
-              if (_searchController.text.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () {
-                      LauncherService.openUrlInBrowser(
-                        'https://www.google.com/search?q=${Uri.encodeComponent(_searchController.text)}',
-                        null,
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.travel_explore,
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Text(
-                              'Search "${_searchController.text}" in Web',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w500,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Icon(
-                            Icons.arrow_forward_ios,
-                            size: 14,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
         Expanded(
           child: _isLoading
               ? const SizedBox.shrink()
+              : _searchController.text.trim().isNotEmpty
+              ? _buildSearchResultsBody(context)
               : _filteredApps.isEmpty
               ? const Center(child: Text('No apps found.'))
-              : _searchController.text.trim().isNotEmpty
-              ? GridView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: ClampingScrollPhysics(),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 0.82,
-                      ),
-                  itemCount: _filteredApps.length,
-                  itemBuilder: (context, index) {
-                    final app = _filteredApps[index];
-                    final notificationCount = _notificationDotsEnabled
-                        ? (widget.notifications[app.packageName] ?? 0)
-                        : 0;
-                    return _AppDrawerItem(
-                      key: ValueKey('search_${app.packageName}'),
-                      app: app,
-                      notificationCount: notificationCount,
-                      onCloseDrawer: widget.onClose,
-                      iconShape: _iconShape,
-                      onDragStarted: widget.onDragStarted,
-                      onDragEnded: widget.onDragEnded,
-                      iconGeneration: _iconGeneration,
-                    );
-                  },
-                )
               : (_drawerScrollMode == 'vertical'
                   ? _buildVerticalAppDrawer(context)
                   : _buildHorizontalAppDrawer(context)),
@@ -631,6 +579,125 @@ class AppDrawerState extends State<AppDrawer>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildSearchResultsBody(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final query = _searchController.text.trim();
+    final allQueries = <String>[query, ..._webSuggestions];
+
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: ClampingScrollPhysics(),
+      ),
+      slivers: [
+        // Inline text-only Google search + suggestions (no cards/boxes)
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+          sliver: SliverList.builder(
+            itemCount: allQueries.length,
+            itemBuilder: (context, index) {
+              final suggestion = allQueries[index];
+              final isDirectQuery = index == 0;
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  LauncherService.openUrlInBrowser(
+                    'https://www.google.com/search?q=${Uri.encodeComponent(suggestion)}',
+                    null,
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 11,
+                  ),
+                  child: Row(
+                    children: [
+                      isDirectQuery
+                          ? GoogleGLogo(
+                              size: 16,
+                              color: cs.onSurfaceVariant,
+                            )
+                          : Icon(
+                              Icons.search_rounded,
+                              size: 17,
+                              color: cs.onSurfaceVariant,
+                            ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          suggestion,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: isDirectQuery
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () {
+                          _searchController.text = suggestion;
+                          _searchController.selection =
+                              TextSelection.collapsed(
+                            offset: suggestion.length,
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.turn_slight_left_rounded,
+                            size: 18,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+
+        // Matching installed apps directly under the suggestions
+        if (_filteredApps.isNotEmpty)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+            sliver: SliverGrid.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.82,
+              ),
+              itemCount: _filteredApps.length,
+              itemBuilder: (context, index) {
+                final app = _filteredApps[index];
+                final notificationCount = _notificationDotsEnabled
+                    ? (widget.notifications[app.packageName] ?? 0)
+                    : 0;
+                return _AppDrawerItem(
+                  key: ValueKey('search_${app.packageName}'),
+                  app: app,
+                  notificationCount: notificationCount,
+                  onCloseDrawer: widget.onClose,
+                  iconShape: _iconShape,
+                  onDragStarted: widget.onDragStarted,
+                  onDragEnded: widget.onDragEnded,
+                  iconGeneration: _iconGeneration,
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 
