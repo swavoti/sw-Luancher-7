@@ -366,32 +366,32 @@ class _AppWidgetHeader extends StatelessWidget {
               children: [
                 if (icon != null)
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     child: Image.memory(
                       icon,
-                      width: 40,
-                      height: 40,
+                      width: 50,
+                      height: 50,
                       fit: BoxFit.cover,
-                      cacheWidth: 64,
+                      cacheWidth: 100,
                       gaplessPlayback: true,
-                      filterQuality: FilterQuality.low,
+                      filterQuality: FilterQuality.medium,
                     ),
                   )
                 else
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 50,
+                    height: 50,
                     decoration: BoxDecoration(
                       color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
                       Icons.widgets_rounded,
                       color: cs.onPrimaryContainer,
-                      size: 22,
+                      size: 26,
                     ),
                   ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     name,
@@ -402,15 +402,6 @@ class _AppWidgetHeader extends StatelessWidget {
                     ),
                   ),
                 ),
-                Text(
-                  '$count',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(width: 8),
                 Icon(
                   expanded
                       ? Icons.keyboard_arrow_up_rounded

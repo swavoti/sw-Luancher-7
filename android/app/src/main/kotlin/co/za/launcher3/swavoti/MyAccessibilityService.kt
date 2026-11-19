@@ -329,15 +329,16 @@ class MyAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Verify within 95ms (while Z-layer 31 is still mid-spring) that MIUI didn't intercept
-        // the startActivity call; if MainActivity hasn't resumed yet, trigger GLOBAL_ACTION_HOME.
+        // Verify within 280ms (while Z-layer 31 is still holding the home scene) that the OEM
+        // didn't block the startActivity call; avoids double-firing GLOBAL_ACTION_HOME at 95ms
+        // on top of an already-running direct activity switch.
         mainHandler.postDelayed({
             if (LauncherSceneStore.homeResumeEpoch.get() == epochBefore &&
                 LauncherSceneStore.activeForegroundPackage != packageName
             ) {
                 performGlobalAction(GLOBAL_ACTION_HOME)
             }
-        }, 95L)
+        }, 280L)
     }
 
     private fun getRealDisplaySize(): Pair<Int, Int> {

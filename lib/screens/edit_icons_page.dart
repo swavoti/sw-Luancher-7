@@ -1,7 +1,7 @@
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/app_database_service.dart';
@@ -19,6 +19,62 @@ class EditIconsPage extends StatefulWidget {
     this.homeScreenScreenshot,
     this.onSettingsApplied,
   });
+
+  static List<String>? _cachedPreviewPackages;
+  static List<Uint8List?>? _cachedSystemPreviewIcons;
+  static Future<void>? _prefetchFuture;
+
+  /// Prefetches the 4 preview app icons into RAM so opening Edit App Icons is instant.
+  static Future<void> prefetchPreviewIcons() {
+    if (_cachedPreviewPackages != null && _cachedSystemPreviewIcons != null) {
+      return Future.value();
+    }
+    return _prefetchFuture ??= _doPrefetch();
+  }
+
+  static Future<void> _doPrefetch() async {
+    try {
+      final cachedApps = await AppDatabaseService.getAppMetadata();
+      List<String> packages;
+      if (cachedApps.isNotEmpty) {
+        cachedApps.sort((a, b) => a.name.compareTo(b.name));
+        packages = cachedApps
+            .where((app) => app.packageName != 'co.za.launcher3.swavoti')
+            .take(4)
+            .map((app) => app.packageName)
+            .toList();
+      } else {
+        final apps = await InstalledApps.getInstalledApps(
+          excludeSystemApps: false,
+          excludeNonLaunchableApps: true,
+          withIcon: false,
+        );
+        apps.sort((a, b) => a.name.compareTo(b.name));
+        packages = apps
+            .where((app) => app.packageName != 'co.za.launcher3.swavoti')
+            .take(4)
+            .map((app) => app.packageName)
+            .toList();
+      }
+
+      final icons = await Future.wait(
+        packages.map((pkg) async {
+          final cached = AppDatabaseService.getCachedIcon(pkg);
+          if (cached != null) return cached;
+          final fromDb = await AppDatabaseService.loadIcon(pkg);
+          if (fromDb != null) return fromDb;
+          final info = await InstalledApps.getAppInfo(pkg);
+          return info?.icon;
+        }),
+      );
+      _cachedPreviewPackages = packages;
+      _cachedSystemPreviewIcons = icons;
+    } catch (e) {
+      debugPrint('EditIconsPage: prefetch failed: $e');
+    } finally {
+      _prefetchFuture = null;
+    }
+  }
 
   @override
   State<EditIconsPage> createState() => _EditIconsPageState();
@@ -83,28 +139,32 @@ class _EditIconsPageState extends State<EditIconsPage> {
 
   Future<void> _loadPreviewIcons() async {
     try {
-      final apps = await InstalledApps.getInstalledApps(
-        excludeSystemApps: false,
-        excludeNonLaunchableApps: true,
-        withIcon: false,
-      );
-      apps.sort((a, b) => a.name.compareTo(b.name));
-      final packages = apps
-          .where((app) => app.packageName != 'co.za.launcher3.swavoti')
-          .take(4)
-          .map((app) => app.packageName)
-          .toList();
-      final icons = await Future.wait(
-        packages.map((packageName) async {
-          final info = await InstalledApps.getAppInfo(packageName);
-          return info?.icon;
-        }),
-      );
+      if (EditIconsPage._cachedPreviewPackages != null &&
+          EditIconsPage._cachedSystemPreviewIcons != null) {
+        if (mounted) {
+          setState(() {
+            _previewPackages = List.of(EditIconsPage._cachedPreviewPackages!);
+            _systemPreviewIcons =
+                List.of(EditIconsPage._cachedSystemPreviewIcons!);
+            _previewIcons = List.of(EditIconsPage._cachedSystemPreviewIcons!);
+            _isLoadingPreview = false;
+          });
+        }
+        if (_selectedIconPack.isNotEmpty) {
+          await _loadPreviewForPack(_selectedIconPack);
+        }
+        _loadMonochromeIcons();
+        return;
+      }
+
+      await EditIconsPage.prefetchPreviewIcons();
       if (!mounted) return;
+      final packages = EditIconsPage._cachedPreviewPackages ?? [];
+      final icons = EditIconsPage._cachedSystemPreviewIcons ?? [];
       setState(() {
-        _previewPackages = packages;
-        _systemPreviewIcons = icons;
-        _previewIcons = icons;
+        _previewPackages = List.of(packages);
+        _systemPreviewIcons = List.of(icons);
+        _previewIcons = List.of(icons);
         _isLoadingPreview = false;
       });
       if (_selectedIconPack.isNotEmpty) {
@@ -150,6 +210,92 @@ class _EditIconsPageState extends State<EditIconsPage> {
     if (mounted) setState(() => _selectedShape = shape);
   }
 
+  Future<void> _selectIconShape() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: cs.outlineVariant,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Text(
+                    'Icon shape',
+                    style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                for (final shape in _shapes)
+                  ListTile(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    leading: IconShapeClipper(
+                      shape: shape,
+                      size: 36,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        color: shape == _selectedShape
+                            ? cs.primary
+                            : cs.primaryContainer,
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.apps_rounded,
+                          size: 18,
+                          color: shape == _selectedShape
+                              ? cs.onPrimary
+                              : cs.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      shape,
+                      style: TextStyle(
+                        fontWeight: shape == _selectedShape
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                    trailing: shape == _selectedShape
+                        ? Icon(Icons.check_rounded, color: cs.primary)
+                        : null,
+                    onTap: () => Navigator.pop(ctx, shape),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selected != null && mounted) {
+      await _saveShape(selected);
+    }
+  }
+
   Future<void> _selectIconPack() async {
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -179,7 +325,13 @@ class _EditIconsPageState extends State<EditIconsPage> {
       AppDatabaseService.currentIconPack = _selectedIconPack;
       await AppDatabaseService.clearIconCache();
       await widget.onSettingsApplied?.call();
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context, true);
+        } else {
+          SystemNavigator.pop();
+        }
+      }
     } catch (e) {
       debugPrint('EditIconsPage: failed to apply icon settings: $e');
       if (mounted) {
@@ -311,24 +463,29 @@ class _EditIconsPageState extends State<EditIconsPage> {
                   'Icon shape',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
-                const SizedBox(height: 8),
-                DropdownButton<String>(
-                  value: _selectedShape,
-                  isExpanded: true,
-                  underline: const Divider(height: 1),
-                  items: _shapes
-                      .map(
-                        (shape) => DropdownMenuItem(
-                          value: shape,
-                          child: Text(shape),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (shape) {
-                    if (shape != null) _saveShape(shape);
-                  },
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: IconShapeClipper(
+                    shape: _selectedShape,
+                    size: 40,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      color: colors.primaryContainer,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.apps_rounded,
+                        size: 20,
+                        color: colors.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                  title: Text(_selectedShape),
+                  subtitle: const Text('Tap to choose icon shape'),
+                  trailing: const Icon(Icons.arrow_drop_down),
+                  onTap: _selectIconShape,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
                 Text(
                   'Icon pack',
                   style: Theme.of(context).textTheme.titleSmall,

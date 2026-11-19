@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+    <path
+        android:fillColor="@color/widget_surface"
+        android:pathData="M24,8 L176,8 A24,24 0 0,1 200,32 L200,168 A24,24 0 0,1 176,192 L24,192 A24,24 0 0,1 0,168 L0,32 A24,24 0 0,1 24,8 Z" />
+    <!-- Top time pill -->
+    <path
+        android:fillColor="@color/widget_accent_container"
+        android:pathData="M24,22 L128,22 A10,10 0 0,1 128,42 L24,42 A10,10 0 0,1 24,22 Z" />
+    <!-- 2x2 app slots -->
+    <path
+        android:fillColor="@color/widget_surface_variant"
+        android:pathData="M28,56 L84,56 A14,14 0 0,1 98,70 L98,104 A14,14 0 0,1 84,118 L28,118 A14,14 0 0,1 14,104 L14,70 A14,14 0 0,1 28,56 Z" />
+    <path
+        android:fillColor="@color/widget_surface_variant"
+        android:pathData="M116,56 L172,56 A14,14 0 0,1 186,70 L186,104 A14,14 0 0,1 172,118 L116,118 A14,14 0 0,1 102,104 L102,70 A14,14 0 0,1 116,56 Z" />
+    <path
+        android:fillColor="@color/widget_surface_variant"
+        android:pathData="M28,128 L84,128 A14,14 0 0,1 98,142 L98,176 A14,14 0 0,1 84,190 L28,190 A14,14 0 0,1 14,176 L14,142 A14,14 0 0,1 28,128 Z" />
+    <path
+        android:fillColor="@color/widget_surface_variant"
+        android:pathData="M116,128 L172,128 A14,14 0 0,1 186,142 L186,176 A14,14 0 0,1 172,190 L116,190 A14,14 0 0,1 102,176 L102,142 A14,14 0 0,1 116,128 Z" />
+</vector>

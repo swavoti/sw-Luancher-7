@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+    <!-- Rounded thick hour hand pointing to 12 -->
+    <path
+        android:fillColor="@color/widget_on_surface"
+        android:pathData="M94,54 A6,6 0 0,1 106,54 L106,104 A6,6 0 0,1 94,104 Z" />
+</vector>

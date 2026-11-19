@@ -446,6 +446,30 @@ class LauncherService {
     }
   }
 
+  static Future<void> openWeatherActivity() async {
+    try {
+      await _systemChannel.invokeMethod('openWeatherActivity');
+    } catch (e) {
+      debugPrint('Error opening WeatherActivity: $e');
+    }
+  }
+
+  static Future<void> openHomeSettingsActivity() async {
+    try {
+      await _systemChannel.invokeMethod('openHomeSettingsActivity');
+    } catch (e) {
+      debugPrint('Error opening HomeSettingsActivity: $e');
+    }
+  }
+
+  static Future<void> openEditIconsActivity() async {
+    try {
+      await _systemChannel.invokeMethod('openEditIconsActivity');
+    } catch (e) {
+      debugPrint('Error opening EditIconsActivity: $e');
+    }
+  }
+
   static Future<void> openGoogleLens() async {
     try {
       await _systemChannel.invokeMethod('openGoogleLens');

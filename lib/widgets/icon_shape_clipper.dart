@@ -33,43 +33,19 @@ class IconShapeClipper extends StatelessWidget {
       );
     }
     if (shape == 'Teardrop') {
-      return ClipPath(
-        clipper: _TeardropClipper(),
+      final r = Radius.circular(size * 0.5);
+      final tip = Radius.circular(size * 0.14);
+      return ClipRRect(
+        borderRadius: BorderRadius.only(
+          topLeft: r,
+          topRight: r,
+          bottomLeft: r,
+          bottomRight: tip,
+        ),
         child: SizedBox(width: size, height: size, child: child),
       );
     }
     // Default — no clip
     return SizedBox(width: size, height: size, child: child);
   }
-}
-
-class _TeardropClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final r = size.width * 0.45;
-    final path = Path();
-    path.moveTo(size.width * 0.5, 0);
-    path.cubicTo(
-      size.width * 0.95,
-      0,
-      size.width,
-      size.height * 0.05,
-      size.width,
-      r,
-    );
-    path.arcToPoint(Offset(0, r), radius: Radius.circular(r), clockwise: false);
-    path.cubicTo(
-      0,
-      size.height * 0.05,
-      size.width * 0.05,
-      0,
-      size.width * 0.5,
-      0,
-    );
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(_TeardropClipper old) => false;
 }

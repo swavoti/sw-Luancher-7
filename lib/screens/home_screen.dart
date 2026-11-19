@@ -13,7 +13,6 @@ import 'package:swavoti/widgets/widget_host.dart';
 import 'package:swavoti/widgets/widget_display.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/screens/search_settings.dart';
-import 'package:swavoti/screens/weather_page.dart';
 import 'package:swavoti/main.dart' show launcherRouteObserver;
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
@@ -80,6 +79,8 @@ class HomeScreenState extends State<HomeScreen>
   // Always 3 workspace pages minimum
   static const int _minPages = 3;
   int _currentWorkspacePage = 0;
+  double _lastSentWallpaperOffset = -1.0;
+  int _lastWallpaperOffsetMs = 0;
   late final ValueNotifier<int> _pageIndexNotifier;
   late final PageController _workspaceController;
 
@@ -388,10 +389,19 @@ class HomeScreenState extends State<HomeScreen>
   void _onWorkspaceScroll() {
     if (!_workspaceController.hasClients) return;
 
-    // Calculate and apply parallax wallpaper offset without rebuilding widget tree
+    // Smooth, throttled native Android wallpaper parallax (no MethodChannel flood)
     final page = _workspaceController.page ?? 0.0;
     if (_totalPages > 1) {
-      final wallpaperOffset = page / (_totalPages - 1);
+      final wallpaperOffset = (page / (_totalPages - 1)).clamp(0.0, 1.0);
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final isEdge = wallpaperOffset <= 0.001 || wallpaperOffset >= 0.999;
+      if (!isEdge &&
+          ((wallpaperOffset - _lastSentWallpaperOffset).abs() < 0.004 ||
+              (nowMs - _lastWallpaperOffsetMs) < 16)) {
+        return;
+      }
+      _lastSentWallpaperOffset = wallpaperOffset;
+      _lastWallpaperOffsetMs = nowMs;
       LauncherService.setWallpaperOffset(wallpaperOffset);
     }
   }
@@ -699,37 +709,6 @@ class HomeScreenState extends State<HomeScreen>
     return FutureBuilder<Uint8List?>(
       future: AppDatabaseService.stableIconFuture(app.packageName),
       builder: (context, snapshot) => buildIcon(snapshot.data ?? app.icon),
-    );
-  }
-
-  // Replaced bottom sheet with animated scaling overview
-
-  Widget _buildMenuButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: 88,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
-          children: [
-            Icon(icon, size: 28, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1054,40 +1033,51 @@ class HomeScreenState extends State<HomeScreen>
       children: [
         // The Workspace
         GestureDetector(
-          onLongPress: () => setState(() {
-            _editingWidgetId = null;
-            _isWorkspaceOverviewMode = true;
-          }),
+          onLongPressStart: (details) {
+            HapticFeedback.mediumImpact();
+            setState(() {
+              _editingWidgetId = null;
+              _isWorkspaceOverviewMode = false;
+              _contextMenuItem = LauncherItem(
+                id: '__home_menu__',
+                type: 'home_menu',
+                packageName: '',
+                x: 0,
+                y: 0,
+                page: _currentWorkspacePage,
+                label: 'Home',
+              );
+              _contextMenuPos = details.globalPosition;
+              _contextMenuSize = const Size(8, 8);
+            });
+          },
           onTap: (_isWorkspaceOverviewMode || _editingWidgetId != null)
               ? () => setState(() {
                   _isWorkspaceOverviewMode = false;
                   _editingWidgetId = null;
                 })
               : null,
-          child: AnimatedScale(
-            scale: _isWorkspaceOverviewMode ? 0.75 : 1.0,
-            duration: const Duration(milliseconds: 380),
-            curve: Curves.easeOutCubic,
-            alignment: const Alignment(0, -0.5),
-            child: RepaintBoundary(
-              key: _repaintBoundaryKey,
-              child: Container(
-                color: Colors.transparent,
+          child: RepaintBoundary(
+            key: _repaintBoundaryKey,
+            child: Container(
+              color: Colors.transparent,
                 child: Column(
                   children: [
                     SizedBox(height: statusBarHeight + 16),
-                    // Workspace Grid
+                    // Workspace Grid (edge-to-edge PageView with native Android physics)
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final cellWidth = constraints.maxWidth / _columns;
-                            final cellHeight = constraints.maxHeight / _rows;
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          const pageInset = 8.0;
+                          final cellWidth =
+                              (constraints.maxWidth - pageInset * 2) / _columns;
+                          final cellHeight = constraints.maxHeight / _rows;
 
-                            return PageView.builder(
-                              physics: const BouncingScrollPhysics(
-                                parent: AlwaysScrollableScrollPhysics(),
+                          return ScrollConfiguration(
+                            behavior: const _HomeAndroidScrollBehavior(),
+                            child: PageView.builder(
+                              physics: const PageScrollPhysics(
+                                parent: ClampingScrollPhysics(),
                               ),
                               controller: _workspaceController,
                               itemCount: _totalPages,
@@ -1107,7 +1097,11 @@ class HomeScreenState extends State<HomeScreen>
 
                                 return _WorkspaceGridPage(
                                   key: ValueKey('workspace_page_$pageIndex'),
-                                  child: Stack(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: pageInset,
+                                    ),
+                                    child: Stack(
                                     clipBehavior: Clip.none,
                                     children: [
                                       if (_editingWidgetId != null &&
@@ -1738,13 +1732,14 @@ class HomeScreenState extends State<HomeScreen>
                                         ),
                                     ],
                                   ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
                     ),
+                  ),
 
                     // ── Pill Dot Page Indicators ──────────────────────────────
                     const SizedBox(height: 18),
@@ -1987,65 +1982,6 @@ class HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-        ),
-
-        // Workspace Settings Options Menu
-        AnimatedPositioned(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          bottom: _isWorkspaceOverviewMode ? 48 : -200,
-          left: 0,
-          right: 0,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 200),
-            opacity: _isWorkspaceOverviewMode ? 1.0 : 0.0,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildMenuButton(
-                    icon: Icons.wallpaper,
-                    label: 'Wallpaper',
-                    onTap: () async {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      await Navigator.of(context).pushNamed('/wallpaper');
-                      if (mounted) widget.onSettingsChanged();
-                    },
-                  ),
-                  if (_supportsSplitScreen)
-                    _buildMenuButton(
-                      icon: Icons.splitscreen,
-                      label: 'Split Screen',
-                      onTap: () {
-                        setState(() => _isWorkspaceOverviewMode = false);
-                        _openSplitScreenPicker();
-                      },
-                    ),
-                  _buildMenuButton(
-                    icon: Icons.widgets,
-                    label: 'Widgets',
-                    onTap: () {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      _openWidgetsSheet();
-                    },
-                  ),
-                  _buildMenuButton(
-                    icon: Icons.settings,
-                    label: 'Settings',
-                    onTap: () async {
-                      setState(() => _isWorkspaceOverviewMode = false);
-                      await Navigator.of(context).pushNamed('/settings');
-                      if (!mounted) return;
-                      await _reloadSettings();
-                      widget.onSettingsChanged();
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
 
         // In-page Folder Overlay (supports dragging apps directly onto home screen)
         if (_openedFolderItem != null)
@@ -2373,30 +2309,26 @@ class HomeScreenState extends State<HomeScreen>
     const folderHeight = 420.0;
 
     // Anchor near tapped folder icon
+    final maxTop = (screenSize.height - folderHeight - 16.0).clamp(
+      48.0,
+      double.infinity,
+    );
     double top;
     if (_openedFolderPos != null) {
       if (_openedFolderPos!.dy > screenSize.height * 0.5) {
-        top = (_openedFolderPos!.dy - folderHeight + 48.0).clamp(
-          48.0,
-          screenSize.height - folderHeight - 16.0,
-        );
+        top = (_openedFolderPos!.dy - folderHeight + 48.0).clamp(48.0, maxTop);
       } else {
-        top = (_openedFolderPos!.dy - 24.0).clamp(
-          48.0,
-          screenSize.height - folderHeight - 16.0,
-        );
+        top = (_openedFolderPos!.dy - 24.0).clamp(48.0, maxTop);
       }
     } else {
-      top = ((screenSize.height - folderHeight) / 2).clamp(
-        48.0,
-        screenSize.height - folderHeight - 16.0,
-      );
+      top = ((screenSize.height - folderHeight) / 2).clamp(48.0, maxTop);
     }
 
-    final left = ((screenSize.width - folderWidth) / 2).clamp(
+    final maxLeft = (screenSize.width - folderWidth - 16.0).clamp(
       16.0,
-      screenSize.width - folderWidth - 16.0,
+      double.infinity,
     );
+    final left = ((screenSize.width - folderWidth) / 2).clamp(16.0, maxLeft);
 
     const appsPerPage = 12; // 4 columns x 3 rows
     final pageCount = ((folderApps.length - 1) ~/ appsPerPage) + 1;
@@ -2850,14 +2782,6 @@ class HomeScreenState extends State<HomeScreen>
             ? pos.dy - popupHeight - 12.0
             : pos.dy + itemSize.height + 12.0)
         .clamp(48.0, screenSize.height - popupHeight - 20.0);
-    final title = item.type == 'app'
-        ? widget.appCache[item.packageName]?.name ?? item.label
-        : item.label;
-    final subtitle = item.type == 'app'
-        ? 'App shortcut'
-        : item.type == 'folder'
-            ? 'Folder (${item.folderApps?.length ?? 0} apps)'
-            : 'Widget';
     final actions = <Widget>[
       if (item.type == 'app') ...[
         _buildPopupTile(
@@ -2880,7 +2804,7 @@ class HomeScreenState extends State<HomeScreen>
         ),
         _buildPopupTile(
           icon: Icons.close_rounded,
-          label: item.page == -1 ? 'Remove from Dock' : 'Remove from Home',
+          label: 'Remove from Home',
           color: cs.onSurfaceVariant,
           onTap: () {
             _hideContextMenu();
@@ -2889,17 +2813,8 @@ class HomeScreenState extends State<HomeScreen>
         ),
       ] else if (item.isAnyWidget) ...[
         _buildPopupTile(
-          icon: Icons.aspect_ratio_rounded,
-          label: 'Resize widget',
-          color: cs.primary,
-          onTap: () {
-            _hideContextMenu();
-            _beginWidgetEdit(item);
-          },
-        ),
-        _buildPopupTile(
           icon: Icons.close_rounded,
-          label: 'Remove widget',
+          label: 'Remove',
           color: cs.error,
           onTap: () {
             _hideContextMenu();
@@ -2923,6 +2838,45 @@ class HomeScreenState extends State<HomeScreen>
           onTap: () {
             _hideContextMenu();
             _removeItem(item);
+          },
+        ),
+      ] else if (item.type == 'home_menu') ...[
+        _buildPopupTile(
+          icon: Icons.wallpaper_rounded,
+          label: 'Wallpaper',
+          color: cs.onSurface,
+          onTap: () async {
+            _hideContextMenu();
+            await Navigator.of(context).pushNamed('/wallpaper');
+            if (mounted) widget.onSettingsChanged();
+          },
+        ),
+        _buildPopupTile(
+          icon: Icons.widgets_rounded,
+          label: 'Widgets',
+          color: cs.onSurface,
+          onTap: () {
+            _hideContextMenu();
+            _openWidgetsSheet();
+          },
+        ),
+        if (_supportsSplitScreen)
+          _buildPopupTile(
+            icon: Icons.splitscreen_rounded,
+            label: 'Split Screen',
+            color: cs.onSurface,
+            onTap: () {
+              _hideContextMenu();
+              _openSplitScreenPicker();
+            },
+          ),
+        _buildPopupTile(
+          icon: Icons.settings_rounded,
+          label: 'Home Settings',
+          color: cs.onSurface,
+          onTap: () async {
+            _hideContextMenu();
+            await LauncherService.openHomeSettingsActivity();
           },
         ),
       ],
@@ -2966,149 +2920,20 @@ class HomeScreenState extends State<HomeScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Header badge
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-                    child: Row(
-                      children: [
-                        _buildContextMenuLeadingIcon(item, cs),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: cs.onSurface,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: cs.onSurfaceVariant,
-                                  fontSize: 10,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (final action in actions) ...[
-                    Divider(
-                      height: 1,
-                      thickness: 1,
-                      color: cs.outlineVariant.withValues(alpha: 0.45),
-                    ),
-                    action,
+                  for (int i = 0; i < actions.length; i++) ...[
+                    if (i > 0)
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: cs.outlineVariant.withValues(alpha: 0.45),
+                      ),
+                    actions[i],
                   ],
                 ],
               ),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildContextMenuLeadingIcon(LauncherItem item, ColorScheme cs) {
-    if (item.type == 'search_widget') {
-      return Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
-          shape: BoxShape.circle,
-        ),
-        alignment: Alignment.center,
-        child: const GoogleGLogo(size: 18),
-      );
-    }
-    if (item.type == 'time_weather_widget') {
-      return Container(
-        width: 30,
-        height: 30,
-        decoration: BoxDecoration(
-          color: cs.primaryContainer,
-          shape: BoxShape.circle,
-        ),
-        alignment: Alignment.center,
-        child: Icon(
-          Icons.wb_sunny_rounded,
-          color: cs.onPrimaryContainer,
-          size: 17,
-        ),
-      );
-    }
-    if (item.type == 'folder') {
-      return SizedBox(
-        width: 30,
-        height: 30,
-        child: IconShapeClipper(
-          shape: _iconShape,
-          size: 30,
-          child: Container(
-            width: 30,
-            height: 30,
-            color: cs.surfaceContainerHighest,
-            alignment: Alignment.center,
-            child: Icon(
-              Icons.folder_rounded,
-              color: cs.primary,
-              size: 18,
-            ),
-          ),
-        ),
-      );
-    }
-    if (item.packageName.isNotEmpty) {
-      final cachedApp = widget.appCache[item.packageName];
-      if (cachedApp != null) {
-        return _buildHomeAppIcon(cachedApp, 30);
-      }
-      return FutureBuilder<AppInfo?>(
-        future: _getAppInfo(item.packageName),
-        builder: (context, snapshot) {
-          if (snapshot.hasData && snapshot.data != null) {
-            return _buildHomeAppIcon(snapshot.data!, 30);
-          }
-          return Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: cs.primaryContainer,
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              item.isAnyWidget ? Icons.widgets_rounded : Icons.apps_rounded,
-              color: cs.onPrimaryContainer,
-              size: 16,
-            ),
-          );
-        },
-      );
-    }
-    return Container(
-      width: 30,
-      height: 30,
-      decoration: BoxDecoration(
-        color: cs.primaryContainer,
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        Icons.widgets_rounded,
-        color: cs.onPrimaryContainer,
-        size: 16,
       ),
     );
   }
@@ -3309,9 +3134,7 @@ class HomeScreenState extends State<HomeScreen>
         MaterialPageRoute(builder: (_) => const SearchSettingsScreen()),
       );
     } else if (item.type == 'time_weather_widget') {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const WeatherPage()),
-      );
+      unawaited(LauncherService.openWeatherActivity());
     } else if (item.type == 'widget' && item.appWidgetId != null) {
       unawaited(LauncherService.configureWidget(item.appWidgetId!));
     }
@@ -3400,6 +3223,26 @@ class HomeScreenState extends State<HomeScreen>
       _saveItems();
     }
   }
+}
+
+class _HomeAndroidScrollBehavior extends ScrollBehavior {
+  const _HomeAndroidScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return StretchingOverscrollIndicator(
+      axisDirection: details.direction,
+      child: child,
+    );
+  }
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const ClampingScrollPhysics();
 }
 
 class _WorkspaceGridPage extends StatefulWidget {

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:swavoti/services/weather_service.dart';
 import 'package:swavoti/widgets/weather_icon.dart';
-import 'package:swavoti/screens/weather_page.dart';
+import 'package:swavoti/services/launcher_service.dart';
 
 class TimeWeatherWidget extends StatefulWidget {
   final VoidCallback onRemove;
@@ -139,12 +139,7 @@ class _TimeWeatherWidgetState extends State<TimeWeatherWidget> {
                       if (_weatherData != null)
                         GestureDetector(
                           onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const WeatherPage(),
-                              ),
-                            );
+                            LauncherService.openWeatherActivity();
                           },
                           child: Row(
                             mainAxisSize: MainAxisSize.min,

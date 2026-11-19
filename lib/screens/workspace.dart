@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:soft_edge_blur/soft_edge_blur.dart';
 import 'package:flutter/material.dart';
@@ -28,6 +29,7 @@ class WorkspaceState extends State<Workspace>
 
   // ── Custom drawer animation ──────────────────────────────────────────────
   late AnimationController _drawerController;
+  late AnimationController _drawerTopStretchController;
   bool _drawerOpen = false;
   double? _dragStartY;
   double? _dragStartExtent;
@@ -59,6 +61,11 @@ class WorkspaceState extends State<Workspace>
       duration: const Duration(milliseconds: 280),
       value: 0.0,
     );
+    _drawerTopStretchController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+      value: 0.0,
+    );
 
     try {
       _notificationSubscription = LauncherService.notificationsStream.listen(
@@ -88,6 +95,7 @@ class WorkspaceState extends State<Workspace>
     WidgetsBinding.instance.removeObserver(this);
     _notificationSubscription?.cancel();
     _drawerController.dispose();
+    _drawerTopStretchController.dispose();
     _drawerScrollController.dispose();
     super.dispose();
   }
@@ -95,11 +103,17 @@ class WorkspaceState extends State<Workspace>
   void _openDrawer() {
     _appDrawerKey.currentState?.prefetchFirstPage();
     _homeScreenKey.currentState?.setExternalOverlayOpen(true);
-    _drawerController.animateTo(
-      1.0,
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
-    );
+    _drawerController
+        .animateTo(
+          1.0,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+          if (mounted && _drawerOpen) {
+            _drawerTopStretchController.forward(from: 0.0);
+          }
+        });
     setState(() => _drawerOpen = true);
   }
 
@@ -169,10 +183,12 @@ class WorkspaceState extends State<Workspace>
   }
 
   void _onDrawerDragStart(DragStartDetails details) {
+    final topHeaderLimit = MediaQuery.of(context).padding.top + 96.0;
+    final inTopHeader = details.globalPosition.dy <= topHeaderLimit;
     final atTop =
         !_drawerScrollController.hasClients ||
         _drawerScrollController.position.pixels <= 0;
-    if (!atTop) return;
+    if (!inTopHeader && !atTop) return;
     _dragStartY = details.globalPosition.dy;
     _dragStartExtent = _drawerController.value;
     _drawerController.stop();
@@ -273,16 +289,29 @@ class WorkspaceState extends State<Workspace>
               ),
             ),
 
-            // ── App Drawer (finger-tracking slide) ─────────────────
+            // ── App Drawer (finger-tracking slide + Android top-hit stretch) ──
             AnimatedBuilder(
-              animation: _drawerController,
-              builder: (context, child) => Transform.translate(
-                offset: Offset(
-                  0,
-                  screenHeight * (1.0 - _drawerController.value),
-                ),
-                child: child,
-              ),
+              animation: Listenable.merge([
+                _drawerController,
+                _drawerTopStretchController,
+              ]),
+              builder: (context, child) {
+                final stretchWave =
+                    math.sin(_drawerTopStretchController.value * math.pi);
+                final scaleY = 1.0 + (0.032 * stretchWave);
+                return Transform.translate(
+                  offset: Offset(
+                    0,
+                    screenHeight * (1.0 - _drawerController.value),
+                  ),
+                  child: Transform.scale(
+                    scaleX: 1.0,
+                    scaleY: scaleY,
+                    alignment: Alignment.topCenter,
+                    child: child,
+                  ),
+                );
+              },
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onVerticalDragStart: _onDrawerDragStart,

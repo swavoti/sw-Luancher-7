@@ -49,6 +49,23 @@ class SearchWidget extends StatefulWidget {
     }
   }
 
+  static Color resolveIconColor(ColorScheme cs, String variant) {
+    switch (variant) {
+      case 'primary_container':
+        return cs.onPrimaryContainer;
+      case 'secondary_container':
+        return cs.onSecondaryContainer;
+      case 'tertiary_container':
+        return cs.onTertiaryContainer;
+      case 'inverse_surface':
+        return cs.onInverseSurface;
+      case 'surface_highest':
+      case 'surface_high':
+      default:
+        return cs.onSurfaceVariant;
+    }
+  }
+
   @override
   State<SearchWidget> createState() => _SearchWidgetState();
 }
@@ -90,6 +107,10 @@ class _SearchWidgetState extends State<SearchWidget> {
           cs,
           SearchWidget.colorVariant,
         );
+        final iconColor = SearchWidget.resolveIconColor(
+          cs,
+          SearchWidget.colorVariant,
+        );
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _onSearchTap,
@@ -107,11 +128,11 @@ class _SearchWidgetState extends State<SearchWidget> {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
-                // Authentic Google 'G' Logo
+                // Official Google 'G' Logo (M3 Dynamic Color)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: _onSearchTap,
-                  child: const GoogleGLogo(size: 22),
+                  child: GoogleGLogo(size: 21, color: iconColor),
                 ),
 
                 // Center Spacer
@@ -119,32 +140,32 @@ class _SearchWidgetState extends State<SearchWidget> {
                   child: SizedBox.expand(),
                 ),
 
-                // Google Voice Search Mic
+                // Official Google Voice Search Mic (M3 Dynamic Color)
                 Material(
                   color: Colors.transparent,
                   shape: const CircleBorder(),
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: LauncherService.openGoogleVoiceSearch,
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: GoogleMicLogo(size: 20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: GoogleMicLogo(size: 20, color: iconColor),
                     ),
                   ),
                 ),
 
                 const SizedBox(width: 2),
 
-                // Google Lens Camera
+                // Official Google Lens Camera SVG (M3 Dynamic Color)
                 Material(
                   color: Colors.transparent,
                   shape: const CircleBorder(),
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     onTap: LauncherService.openGoogleLens,
-                    child: const Padding(
-                      padding: EdgeInsets.all(6),
-                      child: GoogleLensLogo(size: 20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: GoogleLensLogo(size: 20, color: iconColor),
                     ),
                   ),
                 ),
@@ -157,278 +178,217 @@ class _SearchWidgetState extends State<SearchWidget> {
   }
 }
 
-// ─── Authentic Google 'G' Logo CustomPainter ─────────────────────────────────
+// ─── Official Google 'G' Logo Vector (M3 Dynamic Tinted) ─────────────────────
 
 class GoogleGLogo extends StatelessWidget {
   final double size;
-  const GoogleGLogo({super.key, this.size = 24});
+  final Color? color;
+
+  const GoogleGLogo({super.key, this.size = 22, this.color});
 
   @override
   Widget build(BuildContext context) {
+    final tint = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return CustomPaint(
       size: Size(size, size),
-      painter: _GoogleGPainter(),
+      painter: _GoogleGPainter(color: tint),
     );
   }
 }
 
 class _GoogleGPainter extends CustomPainter {
+  final Color color;
+
+  const _GoogleGPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final scale = size.width / 24.0;
     canvas.save();
     canvas.scale(scale, scale);
 
-    final paintBlue = Paint()
-      ..color = const Color(0xFF4285F4)
+    final paint = Paint()
+      ..color = color
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
-    final paintGreen = Paint()
-      ..color = const Color(0xFF34A853)
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-
-    final paintYellow = Paint()
-      ..color = const Color(0xFFFBBC05)
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-
-    final paintRed = Paint()
-      ..color = const Color(0xFFEA4335)
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-
-    // Blue section (Right arc + horizontal bar)
-    final pathBlue = Path()
-      ..moveTo(23.745, 12.27)
-      ..cubicTo(23.745, 11.57, 23.685, 10.87, 23.555, 10.2)
-      ..lineTo(12.0, 10.2)
-      ..lineTo(12.0, 14.71)
-      ..lineTo(18.6, 14.71)
-      ..cubicTo(18.31, 16.23, 17.46, 17.53, 16.2, 18.39)
-      ..lineTo(16.2, 21.44)
-      ..lineTo(20.08, 21.44)
-      ..cubicTo(22.35, 19.35, 23.745, 16.27, 23.745, 12.27)
+    // Official 24x24 Google 'G' glyph path
+    final path = Path()
+      ..moveTo(21.805, 10.042)
+      ..lineTo(12.24, 10.042)
+      ..lineTo(12.24, 14.088)
+      ..lineTo(17.752, 14.088)
+      ..cubicTo(17.508, 15.398, 16.758, 16.512, 15.636, 17.256)
+      ..cubicTo(14.702, 17.878, 13.524, 18.248, 12.24, 18.248)
+      ..cubicTo(9.634, 18.248, 7.428, 16.488, 6.64, 14.122)
+      ..cubicTo(6.438, 13.516, 6.324, 12.87, 6.324, 12.2)
+      ..cubicTo(6.324, 11.53, 6.438, 10.884, 6.64, 10.278)
+      ..cubicTo(7.428, 7.912, 9.634, 6.152, 12.24, 6.152)
+      ..cubicTo(13.67, 6.152, 14.952, 6.644, 15.962, 7.606)
+      ..lineTo(18.922, 4.646)
+      ..cubicTo(17.128, 2.976, 14.896, 1.96, 12.24, 1.96)
+      ..cubicTo(8.222, 1.96, 4.748, 4.264, 3.062, 7.624)
+      ..cubicTo(2.382, 8.996, 2.0, 10.554, 2.0, 12.2)
+      ..cubicTo(2.0, 13.846, 2.382, 15.404, 3.062, 16.776)
+      ..cubicTo(4.748, 20.136, 8.222, 22.44, 12.24, 22.44)
+      ..cubicTo(15.002, 22.44, 17.318, 21.524, 19.01, 19.96)
+      ..cubicTo(20.946, 18.174, 22.04, 15.54, 22.04, 12.42)
+      ..cubicTo(22.04, 11.616, 21.958, 10.816, 21.805, 10.042)
       ..close();
-    canvas.drawPath(pathBlue, paintBlue);
 
-    // Green section (Bottom arc)
-    final pathGreen = Path()
-      ..moveTo(12.0, 24.0)
-      ..cubicTo(15.24, 24.0, 17.95, 22.92, 19.93, 21.09)
-      ..lineTo(16.05, 18.04)
-      ..cubicTo(14.97, 18.76, 13.6, 19.2, 12.0, 19.2)
-      ..cubicTo(8.89, 19.2, 6.26, 17.1, 5.32, 14.27)
-      ..lineTo(1.21, 14.27)
-      ..lineTo(1.21, 17.42)
-      ..cubicTo(3.19, 21.31, 7.29, 24.0, 12.0, 24.0)
-      ..close();
-    canvas.drawPath(pathGreen, paintGreen);
-
-    // Yellow section (Bottom-left arc)
-    final pathYellow = Path()
-      ..moveTo(5.32, 14.27)
-      ..cubicTo(5.08, 13.55, 4.94, 12.78, 4.94, 12.0)
-      ..cubicTo(4.94, 11.22, 5.08, 10.45, 5.32, 9.73)
-      ..lineTo(5.32, 6.58)
-      ..lineTo(1.21, 6.58)
-      ..cubicTo(0.44, 8.11, 0.0, 9.99, 0.0, 12.0)
-      ..cubicTo(0.0, 14.01, 0.44, 15.89, 1.21, 17.42)
-      ..lineTo(5.32, 14.27)
-      ..close();
-    canvas.drawPath(pathYellow, paintYellow);
-
-    // Red section (Top arc)
-    final pathRed = Path()
-      ..moveTo(12.0, 4.75)
-      ..cubicTo(13.77, 4.75, 15.35, 5.36, 16.6, 6.55)
-      ..lineTo(20.02, 3.13)
-      ..cubicTo(17.95, 1.19, 15.24, 0.0, 12.0, 0.0)
-      ..cubicTo(7.29, 0.0, 3.19, 2.69, 1.21, 6.58)
-      ..lineTo(5.32, 9.73)
-      ..cubicTo(6.26, 6.9, 8.89, 4.75, 12.0, 4.75)
-      ..close();
-    canvas.drawPath(pathRed, paintRed);
-
+    canvas.drawPath(path, paint);
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _GoogleGPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
-// ─── Authentic Multi-colored Google Mic CustomPainter ─────────────────────────
+// ─── Official Google Mic Vector (M3 Dynamic Tinted) ──────────────────────────
 
 class GoogleMicLogo extends StatelessWidget {
   final double size;
-  const GoogleMicLogo({super.key, this.size = 21});
+  final Color? color;
+
+  const GoogleMicLogo({super.key, this.size = 20, this.color});
 
   @override
   Widget build(BuildContext context) {
+    final tint = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return CustomPaint(
       size: Size(size, size),
-      painter: _GoogleMicPainter(),
+      painter: _GoogleMicPainter(color: tint),
     );
   }
 }
 
 class _GoogleMicPainter extends CustomPainter {
+  final Color color;
+
+  const _GoogleMicPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final scale = size.width / 24.0;
     canvas.save();
     canvas.scale(scale, scale);
 
-    final bluePaint = Paint()
-      ..color = const Color(0xFF4285F4)
+    final fillPaint = Paint()
+      ..color = color
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
-    final redPaint = Paint()
-      ..color = const Color(0xFFEA4335)
+    final strokePaint = Paint()
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
+      ..strokeWidth = 2.1
       ..strokeCap = StrokeCap.round
       ..isAntiAlias = true;
 
-    final yellowPaint = Paint()
-      ..color = const Color(0xFFFBBC05)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-
-    final greenPaint = Paint()
-      ..color = const Color(0xFF34A853)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-
-    // 1. Blue Capsule Head
+    // Capsule head
     final headRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(8.5, 2.5, 7.0, 11.5),
-      const Radius.circular(3.5),
+      const Rect.fromLTWH(9.0, 2.5, 6.0, 10.5),
+      const Radius.circular(3.0),
     );
-    canvas.drawRRect(headRect, bluePaint);
+    canvas.drawRRect(headRect, fillPaint);
 
-    // 2. Red Cradle Arc
-    final cradleRect = const Rect.fromLTWH(6.0, 7.0, 12.0, 10.0);
-    canvas.drawArc(cradleRect, 0.1, pi - 0.2, false, redPaint);
+    // U-shaped cradle arc
+    const cradleRect = Rect.fromLTWH(6.0, 6.2, 12.0, 10.2);
+    canvas.drawArc(cradleRect, 0.08, pi - 0.16, false, strokePaint);
 
-    // 3. Yellow Center Stem
+    // Vertical stem
     canvas.drawLine(
-      const Offset(12.0, 17.0),
-      const Offset(12.0, 20.5),
-      yellowPaint,
-    );
-
-    // 4. Green Base Foot
-    canvas.drawLine(
-      const Offset(8.5, 20.5),
-      const Offset(15.5, 20.5),
-      greenPaint,
+      const Offset(12.0, 16.6),
+      const Offset(12.0, 21.0),
+      strokePaint,
     );
 
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _GoogleMicPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
-// ─── Authentic Multi-colored Google Lens CustomPainter ───────────────────────
+// ─── Official Google Lens SVG Vector (M3 Dynamic Tinted) ─────────────────────
 
 class GoogleLensLogo extends StatelessWidget {
   final double size;
-  const GoogleLensLogo({super.key, this.size = 22});
+  final Color? color;
+
+  const GoogleLensLogo({super.key, this.size = 20, this.color});
 
   @override
   Widget build(BuildContext context) {
+    final tint = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return CustomPaint(
       size: Size(size, size),
-      painter: _GoogleLensPainter(),
+      painter: _GoogleLensPainter(color: tint),
     );
   }
 }
 
 class _GoogleLensPainter extends CustomPainter {
+  final Color color;
+
+  const _GoogleLensPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final scale = size.width / 24.0;
     canvas.save();
     canvas.scale(scale, scale);
 
-    final strokeWidth = 2.3;
-
-    final blueStroke = Paint()
-      ..color = const Color(0xFF4285F4)
+    final strokePaint = Paint()
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
+      ..strokeWidth = 2.1
       ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
 
-    final redStroke = Paint()
-      ..color = const Color(0xFFEA4335)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-
-    final yellowStroke = Paint()
-      ..color = const Color(0xFFFBBC05)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..isAntiAlias = true;
-
-    final greenFill = Paint()
-      ..color = const Color(0xFF34A853)
+    final fillPaint = Paint()
+      ..color = color
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
-    final blueFill = Paint()
-      ..color = const Color(0xFF4285F4)
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
+    // Official Google Lens camera frame with top camera bump:
+    // Top-left up across top camera bump to top-right
+    final topFrame = Path()
+      ..moveTo(3.5, 10.0)
+      ..lineTo(3.5, 8.2)
+      ..cubicTo(3.5, 6.6, 4.8, 5.3, 6.4, 5.3)
+      ..lineTo(8.2, 5.3)
+      ..lineTo(9.4, 3.6)
+      ..cubicTo(9.7, 3.2, 10.1, 3.0, 10.6, 3.0)
+      ..lineTo(13.4, 3.0)
+      ..cubicTo(13.9, 3.0, 14.3, 3.2, 14.6, 3.6)
+      ..lineTo(15.8, 5.3)
+      ..lineTo(17.6, 5.3)
+      ..cubicTo(19.2, 5.3, 20.5, 6.6, 20.5, 8.2)
+      ..lineTo(20.5, 12.2);
+    canvas.drawPath(topFrame, strokePaint);
 
-    // 1. Blue Top-Left Corner
-    final blueCorner = Path()
-      ..moveTo(4.0, 9.5)
-      ..lineTo(4.0, 7.5)
-      ..cubicTo(4.0, 5.5, 5.5, 4.0, 7.5, 4.0)
-      ..lineTo(9.5, 4.0);
-    canvas.drawPath(blueCorner, blueStroke);
+    // Bottom-left rounded corner frame
+    final bottomLeft = Path()
+      ..moveTo(3.5, 14.2)
+      ..lineTo(3.5, 17.1)
+      ..cubicTo(3.5, 18.7, 4.8, 20.0, 6.4, 20.0)
+      ..lineTo(12.2, 20.0);
+    canvas.drawPath(bottomLeft, strokePaint);
 
-    // 2. Red Top-Right Corner
-    final redCorner = Path()
-      ..moveTo(14.5, 4.0)
-      ..lineTo(16.5, 4.0)
-      ..cubicTo(18.5, 4.0, 20.0, 5.5, 20.0, 7.5)
-      ..lineTo(20.0, 9.5);
-    canvas.drawPath(redCorner, redStroke);
+    // Center Lens circle (filled)
+    canvas.drawCircle(const Offset(12.0, 12.8), 2.7, fillPaint);
 
-    // 3. Yellow Bottom-Left Corner
-    final yellowCorner = Path()
-      ..moveTo(4.0, 14.5)
-      ..lineTo(4.0, 16.5)
-      ..cubicTo(4.0, 18.5, 5.5, 20.0, 7.5, 20.0)
-      ..lineTo(9.5, 20.0);
-    canvas.drawPath(yellowCorner, yellowStroke);
-
-    // 4. Center Blue Camera Lens Ring
-    canvas.drawCircle(const Offset(12.0, 12.0), 3.4, blueStroke);
-
-    // 5. Green Bottom-Right Flash / Shutter Dot
-    canvas.drawCircle(const Offset(17.5, 17.5), 1.9, greenFill);
-
-    // Small red dot at top right lens accent
-    canvas.drawCircle(const Offset(12.0, 12.0), 1.2, blueFill);
+    // Bottom-right Google Lens accent dot (filled)
+    canvas.drawCircle(const Offset(17.8, 18.0), 1.85, fillPaint);
 
     canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _GoogleLensPainter oldDelegate) =>
+      oldDelegate.color != color;
 }

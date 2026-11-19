@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
@@ -10,9 +11,11 @@ import 'package:swavoti/screens/home_settings.dart';
 import 'package:swavoti/screens/wallpaper_page.dart';
 import 'package:swavoti/screens/welcome_screen.dart';
 import 'package:swavoti/screens/gesture_demo_page.dart';
+import 'package:swavoti/screens/weather_page.dart';
 import 'package:swavoti/services/app_database_service.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
+import 'package:swavoti/widgets/search_widget.dart';
 
 final RouteObserver<ModalRoute<dynamic>> launcherRouteObserver =
     RouteObserver<ModalRoute<dynamic>>();
@@ -80,10 +83,13 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed) {
       final prefs = _prefs ?? await SharedPreferences.getInstance();
+      await prefs.reload();
       _prefs = prefs;
       LightweightMode.apply(
         prefs.getBool(LightweightMode.preferenceKey) ?? false,
       );
+      SearchWidget.syncFromPrefs(prefs);
+      SearchWidget.configRevision.value++;
       final savedPack = prefs.getString('icon_pack') ?? '';
       if (AppDatabaseService.currentIconPack != savedPack) {
         AppDatabaseService.currentIconPack = savedPack;
@@ -95,6 +101,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           AppDatabaseService.prefetchIcons(_appCache.keys.toList());
         }
       }
+      await _workspaceKey.currentState?.refreshLauncherSettings();
     }
   }
 
@@ -174,6 +181,9 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
     final appCache = {for (final app in cachedApps) app.packageName: app};
 
     if (mounted) setState(() => _appCache = appCache);
+    if (PlatformDispatcher.instance.defaultRouteName == '/') {
+      unawaited(EditIconsPage.prefetchPreviewIcons());
+    }
   }
 
   @override
@@ -234,8 +244,38 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           );
         }
 
-        final isGestureDemoRoute =
-            PlatformDispatcher.instance.defaultRouteName == '/gesture_demo';
+        final initialRouteName = PlatformDispatcher.instance.defaultRouteName;
+
+        Widget resolveRootHome() {
+          switch (initialRouteName) {
+            case '/gesture_demo':
+              return const GestureDemoPage();
+            case '/weather':
+              return const WeatherPage();
+            case '/settings':
+              return HomeSettings(
+                onSettingsChanged: _refreshAfterSettingsChanged,
+              );
+            case '/edit_icons':
+              return const EditIconsPage(backgroundWallpaperPath: '');
+            default:
+              return _welcomeCompleted
+                  ? PopScope(
+                      canPop: false,
+                      child: Workspace(
+                        key: _workspaceKey,
+                        prefs: prefs,
+                        appCache: _appCache,
+                      ),
+                    )
+                  : WelcomeScreen(
+                      onFinished: (enabled) {
+                        LightweightMode.apply(enabled);
+                        setState(() => _welcomeCompleted = true);
+                      },
+                    );
+          }
+        }
 
         return MaterialApp(
           title: 'Go Launcher 7',
@@ -245,6 +285,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           ],
           routes: {
             '/gesture_demo': (context) => const GestureDemoPage(),
+            '/weather': (context) => const WeatherPage(),
             '/settings': (context) =>
                 HomeSettings(onSettingsChanged: _refreshAfterSettingsChanged),
             '/wallpaper': (context) => WallpaperPage(
@@ -280,23 +321,7 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
               },
             ),
           ),
-          home: isGestureDemoRoute
-              ? const GestureDemoPage()
-              : _welcomeCompleted
-                  ? PopScope(
-                  canPop: false,
-                  child: Workspace(
-                    key: _workspaceKey,
-                    prefs: prefs,
-                    appCache: _appCache,
-                  ),
-                )
-              : WelcomeScreen(
-                  onFinished: (enabled) {
-                    LightweightMode.apply(enabled);
-                    setState(() => _welcomeCompleted = true);
-                  },
-                ),
+          home: resolveRootHome(),
           debugShowCheckedModeBanner: false,
         );
       },

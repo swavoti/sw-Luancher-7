@@ -2,4 +2,11 @@
     <string name="accessibility_service_label">Go Launcher gesture fallback</string>
     <string name="accessibility_service_description">Shows a small gesture handle over other apps. It receives app-window change events only and does not read screen contents or send data. Tap or swipe up briefly on the handle to request Home, or swipe up and hold to request Recents.</string>
     <string name="gesture_fallback_handle">Gesture fallback handle. Tap or swipe up for Home, or swipe up and hold for Recents.</string>
+
+    <string name="widget_minimalist_clock_label">Expressive Clock</string>
+    <string name="widget_minimalist_clock_desc">Minimalist Material 3 expressive analog clock with date pill</string>
+    <string name="widget_small_text_clock_label">Small Text Clock</string>
+    <string name="widget_small_text_clock_desc">Compact dynamic-color text clock with date</string>
+    <string name="widget_smart_folder_time_label">Smart Folder &amp; Screen Time</string>
+    <string name="widget_smart_folder_time_desc">Top used apps and today\'s screen time mini widget</string>
 </resources>

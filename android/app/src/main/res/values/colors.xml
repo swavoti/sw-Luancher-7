@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#1B8A4A</color>
+    <color name="widget_surface">#F0F4F6FA</color>
+    <color name="widget_surface_variant">#FFE2E7F0</color>
+    <color name="widget_on_surface">#FF1A1C1E</color>
+    <color name="widget_on_surface_muted">#FF5B606B</color>
+    <color name="widget_accent">#FF1B8A4A</color>
+    <color name="widget_on_accent">#FFFFFFFF</color>
+    <color name="widget_accent_container">#FFD3F2DC</color>
 </resources>

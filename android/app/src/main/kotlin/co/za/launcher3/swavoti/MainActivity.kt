@@ -79,6 +79,7 @@ class MainActivity : FlutterActivity() {
     private val iconBytesCache = android.util.LruCache<String, ByteArray>(384)
     private lateinit var iconPackManager: IconPackManager
     private var homeSnapshotShield: HomeSnapshotShieldView? = null
+    private var gestureContractSurfaceView: android.view.SurfaceView? = null
     private val mainUiHandler = Handler(Looper.getMainLooper())
     private var pendingResumeShieldRelease: Runnable? = null
 
@@ -90,6 +91,21 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         iconPackManager = IconPackManager(this)
         NotificationDotService.ensureGlobalLegacyReceiver(this)
+
+        // Dedicated 1x1 transparent SurfaceView providing a real hardware SurfaceControl leash
+        // for Android 12–16 GestureNavContract so SystemUI/Quickstep never aborts the handoff.
+        val contractSurface = android.view.SurfaceView(this).apply {
+            setZOrderOnTop(false)
+            holder.setFormat(android.graphics.PixelFormat.TRANSPARENT)
+            isClickable = false
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        addContentView(
+            contractSurface,
+            ViewGroup.LayoutParams(1, 1)
+        )
+        gestureContractSurfaceView = contractSurface
 
         val shield = HomeSnapshotShieldView(this)
         addContentView(
@@ -126,6 +142,7 @@ class MainActivity : FlutterActivity() {
             if (fv.visibility != View.VISIBLE) {
                 fv.visibility = View.VISIBLE
             }
+            fv.invalidate()
         }
         flutterEngine?.renderer?.restoreSurfaceProducers()
         if (resumeLifecycle) {
@@ -134,8 +151,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onPause() {
-        if (LauncherSceneStore.isCleanHomeVisible) {
-            captureHomeUiSnapshotIfReady()
+        if (LauncherSceneStore.isCleanHomeVisible || LauncherSceneStore.homeUiBitmap == null) {
+            captureHomeUiSnapshotIfReady(force = LauncherSceneStore.homeUiBitmap == null)
         }
         if (!LauncherSceneStore.isSubRouteOpen) {
             homeSnapshotShield?.armIfSnapshotAvailable()
@@ -242,7 +259,14 @@ class MainActivity : FlutterActivity() {
             pendingResumeShieldRelease = fallback
             mainUiHandler.postDelayed(fallback, 450L)
         } else {
-            finishCommit()
+            // Even when renderer.isDisplayingFlutterUi stayed true across onStop(),
+            // FlutterTextureView needs ~80ms after window focus to latch its fresh
+            // post-resume buffer before we drop HomeSnapshotShieldView / Z-layer 31.
+            val settleRunnable = Runnable {
+                finishCommit()
+            }
+            pendingResumeShieldRelease = settleRunnable
+            mainUiHandler.postDelayed(settleRunnable, 85L)
         }
     }
 
@@ -250,8 +274,8 @@ class MainActivity : FlutterActivity() {
      * Captures the live transparent RGBA Flutter UI layer directly from
      * `FlutterTextureView` into a reusable pre-allocated Bitmap (~1ms on GPU).
      */
-    private fun captureHomeUiSnapshotIfReady() {
-        if (!LauncherSceneStore.isCleanHomeVisible) return
+    private fun captureHomeUiSnapshotIfReady(force: Boolean = false) {
+        if (!force && !LauncherSceneStore.isCleanHomeVisible) return
         val tex = findFlutterTextureView(window?.decorView) ?: return
         if (!tex.isAvailable || tex.width <= 0 || tex.height <= 0) return
 
@@ -305,6 +329,15 @@ class MainActivity : FlutterActivity() {
             val callback = extras.getParcelable<Parcelable>(
                 "android.intent.extra.REMOTE_CALLBACK"
             )
+            // Extract the closing app's ComponentName directly from Android 12–16's
+            // GestureNavContract bundle so we resolve the exact return icon even
+            // when the Accessibility service is disabled.
+            val closingComponent = extras.getParcelable<ComponentName>(
+                Intent.EXTRA_COMPONENT_NAME
+            )
+            val closingPkg = closingComponent?.packageName?.takeIf { it.isNotEmpty() }
+                ?: LauncherSceneStore.activeForegroundPackage
+
             val metrics = resources.displayMetrics
             val decor = window.decorView
             val location = IntArray(2)
@@ -312,7 +345,7 @@ class MainActivity : FlutterActivity() {
             val width = decor.width.takeIf { it > 0 } ?: metrics.widthPixels
             val height = decor.height.takeIf { it > 0 } ?: metrics.heightPixels
             val resolvedTarget = LauncherSceneStore
-                .resolveReturnTarget(LauncherSceneStore.activeForegroundPackage)
+                .resolveReturnTarget(closingPkg)
                 ?.screenRect
             // Use the resolved icon bounds when available for fluid return animations,
             // or safely fall back to lastLaunchedAppRect or central bounds.
@@ -322,8 +355,17 @@ class MainActivity : FlutterActivity() {
                 location[0].toFloat() + width * 0.65f,
                 location[1].toFloat() + height * 0.55f
             )
+            val leasedSurfaceControl: Parcelable? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    gestureContractSurfaceView?.surfaceControl?.takeIf { it.isValid }
+                } catch (_: Throwable) {
+                    null
+                }
+            } else {
+                null
+            }
             val result = Bundle().apply {
-                putParcelable("gesture_nav_contract_surface_control", null)
+                putParcelable("gesture_nav_contract_surface_control", leasedSurfaceControl)
                 putParcelable("gesture_nav_contract_icon_position", iconPosition)
             }
 
@@ -1284,18 +1326,19 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "openGoogleVoiceSearch" -> {
-                    try {
-                        val intent = Intent(Intent.ACTION_VOICE_COMMAND)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                    } catch (_: Exception) {
-                        try {
-                            val intent2 = Intent("android.speech.action.VOICE_SEARCH_HANDS_FREE")
-                            intent2.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(intent2)
-                        } catch (_: Exception) {}
-                    }
-                    result.success(null)
+                    val launched = tryStartAnyIntent(
+                        listOf(
+                            Intent("android.speech.action.WEB_SEARCH").apply {
+                                setPackage("com.google.android.googlequicksearchbox")
+                            },
+                            Intent(Intent.ACTION_VOICE_COMMAND).apply {
+                                setPackage("com.google.android.googlequicksearchbox")
+                            },
+                            Intent(Intent.ACTION_VOICE_COMMAND),
+                            Intent("android.speech.action.VOICE_SEARCH_HANDS_FREE")
+                        )
+                    )
+                    result.success(launched)
                 }
                 "openGoogleAiMode" -> {
                     try {
@@ -1328,28 +1371,48 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(null)
                 }
+                "openWeatherActivity" -> {
+                    startActivity(Intent(this, WeatherActivity::class.java))
+                    result.success(true)
+                }
+                "openHomeSettingsActivity" -> {
+                    startActivity(Intent(this, HomeSettingsActivity::class.java))
+                    result.success(true)
+                }
+                "openEditIconsActivity" -> {
+                    startActivity(Intent(this, EditIconsActivity::class.java))
+                    result.success(true)
+                }
                 "openGoogleLens" -> {
-                    try {
-                        val lensIntent = packageManager.getLaunchIntentForPackage("com.google.ar.lens")
-                        if (lensIntent != null) {
-                            lensIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(lensIntent)
-                        } else {
-                            val intent = Intent().apply {
-                                setComponent(ComponentName("com.google.android.googlequicksearchbox", "com.google.android.apps.search.lens.LensActivity"))
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            startActivity(intent)
+                    val candidates = mutableListOf<Intent>()
+                    candidates.add(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("googleapp://lens")).apply {
+                            setPackage("com.google.android.googlequicksearchbox")
                         }
-                    } catch (_: Exception) {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("googleapp://lens")).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            startActivity(intent)
-                        } catch (_: Exception) {}
+                    )
+                    packageManager.getLaunchIntentForPackage("com.google.ar.lens")?.let {
+                        candidates.add(it)
                     }
-                    result.success(null)
+                    candidates.add(
+                        Intent().apply {
+                            component = ComponentName(
+                                "com.google.android.googlequicksearchbox",
+                                "com.google.android.apps.search.lens.LensExportedActivity"
+                            )
+                        }
+                    )
+                    candidates.add(
+                        Intent().apply {
+                            component = ComponentName(
+                                "com.google.android.googlequicksearchbox",
+                                "com.google.android.apps.search.lens.LensActivity"
+                            )
+                        }
+                    )
+                    candidates.add(Intent(Intent.ACTION_VIEW, Uri.parse("googleapp://lens")))
+                    candidates.add(Intent(Intent.ACTION_VIEW, Uri.parse("https://lens.google.com")))
+                    val launched = tryStartAnyIntent(candidates)
+                    result.success(launched)
                 }
                 else -> result.notImplemented()
             }
@@ -1574,5 +1637,17 @@ class MainActivity : FlutterActivity() {
         bitmap.compress(Bitmap.CompressFormat.WEBP, 80, stream)
         bitmap.recycle()
         return stream.toByteArray()
+    }
+
+    private fun tryStartAnyIntent(intents: List<Intent>): Boolean {
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return true
+            } catch (_: Throwable) {
+            }
+        }
+        return false
     }
 }

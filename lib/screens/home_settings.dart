@@ -405,7 +405,7 @@ class _AppDrawerSettingsScreenState extends State<AppDrawerSettingsScreen> {
                   subtitle: const Text('Change shapes and icon pack'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    Navigator.of(context).pushNamed('/edit_icons');
+                    LauncherService.openEditIconsActivity();
                   },
                 ),
               ],
@@ -911,7 +911,7 @@ class _AppearanceSettingsSubscreenState
                   subtitle: const Text('Change app icon shape style'),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    Navigator.of(context).pushNamed('/edit_icons');
+                    LauncherService.openEditIconsActivity();
                   },
                 ),
               ],
