@@ -78,10 +78,7 @@ class MainActivity : FlutterActivity() {
     )
     private val iconBytesCache = android.util.LruCache<String, ByteArray>(384)
     private lateinit var iconPackManager: IconPackManager
-    private var homeSnapshotShield: HomeSnapshotShieldView? = null
-    private var gestureContractSurfaceView: android.view.SurfaceView? = null
-    private val mainUiHandler = Handler(Looper.getMainLooper())
-    private var pendingResumeShieldRelease: Runnable? = null
+    private var pendingSubActivityReload = false
 
     override fun getRenderMode(): RenderMode {
         return RenderMode.texture
@@ -91,48 +88,6 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         iconPackManager = IconPackManager(this)
         NotificationDotService.ensureGlobalLegacyReceiver(this)
-        LauncherKeepAliveService.start(this)
-
-        // Dedicated 1x1 transparent SurfaceView providing a real hardware SurfaceControl leash
-        // for Android 12–16 GestureNavContract so SystemUI/Quickstep never aborts the handoff.
-        val contractSurface = android.view.SurfaceView(this).apply {
-            setZOrderOnTop(false)
-            holder.setFormat(android.graphics.PixelFormat.TRANSPARENT)
-            isClickable = false
-            isFocusable = false
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
-        addContentView(
-            contractSurface,
-            ViewGroup.LayoutParams(1, 1)
-        )
-        gestureContractSurfaceView = contractSurface
-
-        val shield = HomeSnapshotShieldView(this)
-        addContentView(
-            shield,
-            ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-        homeSnapshotShield = shield
-
-        // Pre-wake Flutter's GPU surface the instant the user touches the bottom gesture strip
-        // (~200ms before finger-up) so the Home frame is already hot in VRAM.
-        LauncherSceneStore.onHomeSwipeTouchDownCallback = {
-            mainUiHandler.post {
-                keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
-            }
-        }
-        LauncherSceneStore.onHomeSwipeCancelledCallback = {
-            mainUiHandler.post {
-                if (!hasWindowFocus()) {
-                    flutterEngine?.lifecycleChannel?.appIsInactive()
-                }
-            }
-        }
-
         fulfillGestureNavContract(intent)
     }
 
@@ -143,7 +98,6 @@ class MainActivity : FlutterActivity() {
             if (fv.visibility != View.VISIBLE) {
                 fv.visibility = View.VISIBLE
             }
-            fv.invalidate()
         }
         flutterEngine?.renderer?.restoreSurfaceProducers()
         if (resumeLifecycle) {
@@ -152,22 +106,15 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onPause() {
-        if (LauncherSceneStore.isCleanHomeVisible || LauncherSceneStore.homeUiBitmap == null) {
-            captureHomeUiSnapshotIfReady(force = LauncherSceneStore.homeUiBitmap == null)
-        }
-        if (!LauncherSceneStore.isSubRouteOpen) {
-            homeSnapshotShield?.armIfSnapshotAvailable()
-        }
         LauncherSceneStore.markHomeTransitionStarting()
         super.onPause()
-        flutterEngine?.lifecycleChannel?.appIsInactive()
     }
 
     override fun onStop() {
         super.onStop()
         // CRITICAL LAUNCHER FIX: FlutterActivity.onStop() sets FlutterView to View.GONE and
         // calls onTrimMemory(TRIM_MEMORY_BACKGROUND), which destroys FlutterTextureView's
-        // SurfaceTexture and forces a 1-2s cold GPU texture rebuild when swiping home.
+        // SurfaceTexture and forces a cold GPU texture rebuild when swiping home.
         // Restoring View.VISIBLE synchronously before the next traversal keeps the Home
         // GPU surface permanently resident in RAM/VRAM like a native stock launcher.
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
@@ -175,26 +122,23 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        LauncherKeepAliveService.start(this)
-        keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
+        val needsReload = pendingSubActivityReload
+        pendingSubActivityReload = false
+        if (needsReload) {
+            flutterEngine?.lifecycleChannel?.appIsInactive()
+        }
+        keepFlutterSurfaceAliveAndHot(resumeLifecycle = needsReload)
         LauncherSceneStore.homeResumeEpoch.incrementAndGet()
         LauncherSceneStore.activeForegroundPackage = packageName
+        LauncherSceneStore.markHomeDrawnAndReady()
         NotificationDotService.refreshCurrentMedia()
-        homeEventSink?.success("onHomeResumed")
-        if (hasWindowFocus()) {
-            schedulePostResumeFrameCommit()
-        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
-            keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
-            schedulePostResumeFrameCommit()
-        } else {
-            if (LauncherSceneStore.isCleanHomeVisible) {
-                captureHomeUiSnapshotIfReady()
-            }
+            keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
+            LauncherSceneStore.markHomeDrawnAndReady()
         }
     }
 
@@ -204,116 +148,14 @@ class MainActivity : FlutterActivity() {
         fulfillGestureNavContract(intent)
         setIntent(intent)
         super.onNewIntent(intent)
-        keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
+        keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
         LauncherSceneStore.homeResumeEpoch.incrementAndGet()
-        homeEventSink?.success("onHomeGesture")
-        if (hasWindowFocus()) {
-            schedulePostResumeFrameCommit()
-        }
+        LauncherSceneStore.markHomeDrawnAndReady()
     }
 
-    /**
-     * Releases [HomeSnapshotShieldView] and signals [LauncherSceneStore.markHomeDrawnAndReady]
-     * ONLY after `MainActivity` actually holds window focus (`hasWindowFocus() == true`, meaning
-     * Xiaomi HyperOS's 1.5s QuickStep dead-zone has ended and the window is visible on screen)
-     * AND Flutter's `FlutterTextureView` has latched a live GPU frame.
-     */
-    private fun schedulePostResumeFrameCommit() {
-        if (!hasWindowFocus()) return
-        pendingResumeShieldRelease?.let { mainUiHandler.removeCallbacks(it) }
-        var released = false
-
-        fun finishCommit() {
-            if (released) return
-            released = true
-            pendingResumeShieldRelease?.let { mainUiHandler.removeCallbacks(it) }
-            pendingResumeShieldRelease = null
-            // Wait 2 VSYNCs after window focus + UI display so SurfaceFlinger has composited
-            // MainActivity's live buffer before Z-layer 31 drops its curtain.
-            Choreographer.getInstance().postFrameCallback {
-                Choreographer.getInstance().postFrameCallback {
-                    homeSnapshotShield?.releaseShield()
-                    if (LauncherSceneStore.isCleanHomeVisible) {
-                        captureHomeUiSnapshotIfReady()
-                    }
-                    if (hasWindowFocus()) {
-                        LauncherSceneStore.markHomeDrawnAndReady()
-                    }
-                }
-            }
-        }
-
-        val renderer = flutterEngine?.renderer
-        if (renderer != null && !renderer.isDisplayingFlutterUi) {
-            val listener = object : FlutterUiDisplayListener {
-                override fun onFlutterUiDisplayed() {
-                    renderer.removeIsDisplayingFlutterUiListener(this)
-                    finishCommit()
-                }
-
-                override fun onFlutterUiNoLongerDisplayed() = Unit
-            }
-            renderer.addIsDisplayingFlutterUiListener(listener)
-            val fallback = Runnable {
-                renderer.removeIsDisplayingFlutterUiListener(listener)
-                finishCommit()
-            }
-            pendingResumeShieldRelease = fallback
-            mainUiHandler.postDelayed(fallback, 450L)
-        } else {
-            // Even when renderer.isDisplayingFlutterUi stayed true across onStop(),
-            // FlutterTextureView needs ~80ms after window focus to latch its fresh
-            // post-resume buffer before we drop HomeSnapshotShieldView / Z-layer 31.
-            val settleRunnable = Runnable {
-                finishCommit()
-            }
-            pendingResumeShieldRelease = settleRunnable
-            mainUiHandler.postDelayed(settleRunnable, 85L)
-        }
-    }
-
-    /**
-     * Captures the live transparent RGBA Flutter UI layer directly from
-     * `FlutterTextureView` into a reusable pre-allocated Bitmap (~1ms on GPU).
-     */
     private fun captureHomeUiSnapshotIfReady(force: Boolean = false) {
-        if (!force && !LauncherSceneStore.isCleanHomeVisible) return
-        val tex = findFlutterTextureView(window?.decorView) ?: return
-        if (!tex.isAvailable || tex.width <= 0 || tex.height <= 0) return
-
-        val loc = IntArray(2)
-        tex.getLocationOnScreen(loc)
-        LauncherSceneStore.updateHomeUiSnapshot(
-            sourceGetter = { existing ->
-                try {
-                    if (existing != null &&
-                        !existing.isRecycled &&
-                        existing.width == tex.width &&
-                        existing.height == tex.height
-                    ) {
-                        tex.getBitmap(existing)
-                    } else {
-                        tex.getBitmap()
-                    }
-                } catch (_: Throwable) {
-                    null
-                }
-            },
-            originX = loc[0].toFloat(),
-            originY = loc[1].toFloat()
-        )
-    }
-
-    private fun findFlutterTextureView(root: View?): TextureView? {
-        if (root == null) return null
-        if (root is TextureView) return root
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val found = findFlutterTextureView(root.getChildAt(i))
-                if (found != null) return found
-            }
-        }
-        return null
+        // No-op: extra snapshot overlay windows removed so only a single clean
+        // MainActivity window is composited by SurfaceFlinger.
     }
 
     /**
@@ -331,9 +173,6 @@ class MainActivity : FlutterActivity() {
             val callback = extras.getParcelable<Parcelable>(
                 "android.intent.extra.REMOTE_CALLBACK"
             )
-            // Extract the closing app's ComponentName directly from Android 12–16's
-            // GestureNavContract bundle so we resolve the exact return icon even
-            // when the Accessibility service is disabled.
             val closingComponent = extras.getParcelable<ComponentName>(
                 Intent.EXTRA_COMPONENT_NAME
             )
@@ -349,25 +188,14 @@ class MainActivity : FlutterActivity() {
             val resolvedTarget = LauncherSceneStore
                 .resolveReturnTarget(closingPkg)
                 ?.screenRect
-            // Use the resolved icon bounds when available for fluid return animations,
-            // or safely fall back to lastLaunchedAppRect or central bounds.
             val iconPosition = resolvedTarget ?: GoLauncherApplication.lastLaunchedAppRect ?: RectF(
                 location[0].toFloat() + width * 0.35f,
                 location[1].toFloat() + height * 0.45f,
                 location[0].toFloat() + width * 0.65f,
                 location[1].toFloat() + height * 0.55f
             )
-            val leasedSurfaceControl: Parcelable? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    gestureContractSurfaceView?.surfaceControl?.takeIf { it.isValid }
-                } catch (_: Throwable) {
-                    null
-                }
-            } else {
-                null
-            }
             val result = Bundle().apply {
-                putParcelable("gesture_nav_contract_surface_control", leasedSurfaceControl)
+                putParcelable("gesture_nav_contract_surface_control", null)
                 putParcelable("gesture_nav_contract_icon_position", iconPosition)
             }
 
@@ -1378,10 +1206,12 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "openHomeSettingsActivity" -> {
+                    pendingSubActivityReload = true
                     startActivity(Intent(this, HomeSettingsActivity::class.java))
                     result.success(true)
                 }
                 "openEditIconsActivity" -> {
+                    pendingSubActivityReload = true
                     startActivity(Intent(this, EditIconsActivity::class.java))
                     result.success(true)
                 }

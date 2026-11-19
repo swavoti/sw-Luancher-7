@@ -88,8 +88,13 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
       LightweightMode.apply(
         prefs.getBool(LightweightMode.preferenceKey) ?? false,
       );
+      final prevSearchVisible = SearchWidget.isVisible;
+      final prevSearchColor = SearchWidget.colorVariant;
       SearchWidget.syncFromPrefs(prefs);
-      SearchWidget.configRevision.value++;
+      if (prevSearchVisible != SearchWidget.isVisible ||
+          prevSearchColor != SearchWidget.colorVariant) {
+        SearchWidget.configRevision.value++;
+      }
       final savedPack = prefs.getString('icon_pack') ?? '';
       if (AppDatabaseService.currentIconPack != savedPack) {
         AppDatabaseService.currentIconPack = savedPack;
