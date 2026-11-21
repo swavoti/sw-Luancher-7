@@ -14,22 +14,4 @@
         android:hand_hour="@drawable/clock_hand_hour"
         android:hand_minute="@drawable/clock_hand_minute" />
 
-    <TextClock
-        android:id="@+id/minimalist_clock_date"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="16dp"
-        android:background="@drawable/bg_widget_accent_pill"
-        android:format12Hour="EEE d"
-        android:format24Hour="EEE d"
-        android:paddingLeft="8dp"
-        android:paddingTop="2dp"
-        android:paddingRight="8dp"
-        android:paddingBottom="2dp"
-        android:textAllCaps="true"
-        android:textColor="@color/widget_on_surface"
-        android:textSize="10sp"
-        android:textStyle="bold" />
-
 </FrameLayout>

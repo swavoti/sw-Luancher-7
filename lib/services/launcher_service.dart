@@ -161,6 +161,13 @@ class LauncherService {
     'co.za.launcher3.swavoti/notifications',
   );
   static const _mediaChannel = EventChannel('co.za.launcher3.swavoti/media');
+  static const _homeEventChannel = EventChannel(
+    'co.za.launcher3.swavoti/home_events',
+  );
+
+  static Stream<String>? _homeEventsStream;
+  static Stream<String> get homeEventsStream => _homeEventsStream ??=
+      _homeEventChannel.receiveBroadcastStream().map((e) => e.toString());
 
   static List<Map<String, dynamic>>? _cachedWidgets;
   static final ValueNotifier<List<LocalMusicTrack>> localTracksNotifier =

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:swavoti/screens/search_settings.dart';
-import 'package:swavoti/screens/weather_page.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/widgets/search_widget.dart';
 import 'package:swavoti/widgets/time_weather_widget.dart';
@@ -514,9 +513,7 @@ class _Launcher3ResizeFrameState extends State<Launcher3ResizeFrame> {
         MaterialPageRoute(builder: (_) => const SearchSettingsScreen()),
       );
     } else if (widget.item.type == 'time_weather_widget') {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const WeatherPage()),
-      );
+      unawaited(LauncherService.openWeatherActivity());
     } else if (widget.item.appWidgetId != null) {
       unawaited(LauncherService.configureWidget(widget.item.appWidgetId!));
     }

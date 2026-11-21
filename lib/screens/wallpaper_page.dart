@@ -451,7 +451,7 @@ class _WallpaperPageState extends State<WallpaperPage> {
                           ),
                         ),
                         onPressed: () {
-                          Navigator.of(context).pushNamed('/edit_icons');
+                          LauncherService.openEditIconsActivity();
                         },
                       ),
                       const SizedBox(height: 10),

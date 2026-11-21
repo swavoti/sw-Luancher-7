@@ -44,7 +44,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class HomeScreenState extends State<HomeScreen>
-    with WidgetsBindingObserver, RouteAware {
+    with WidgetsBindingObserver, RouteAware, TickerProviderStateMixin {
   List<LauncherItem> _items = [];
   bool _isDragging = false;
   bool _isWorkspaceOverviewMode = false;
@@ -61,9 +61,12 @@ class HomeScreenState extends State<HomeScreen>
   String _iconShape = 'Circle';
   final GlobalKey _repaintBoundaryKey = GlobalKey();
   final Map<String, GlobalKey> _itemIconKeys = {};
-  bool _externalOverlayOpen = false;
-  bool _routeCovered = false;
-  bool _sceneSyncScheduled = false;
+
+  // Smooth home entrance settle-in when returning from an external app
+  late final AnimationController _homeEnterController;
+  late final Animation<double> _homeEnterFade;
+  late final Animation<double> _homeEnterScale;
+  StreamSubscription<String>? _homeEventsSubscription;
 
   // Split-screen preloaded apps
   List<AppInfo> _allDeviceApps = [];
@@ -107,10 +110,26 @@ class HomeScreenState extends State<HomeScreen>
     _workspaceController = PageController(initialPage: 0);
     _workspaceController.addListener(_onWorkspaceScroll);
 
+    _homeEnterController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 190),
+      value: 1.0,
+    );
+    final curvedEnter = CurvedAnimation(
+      parent: _homeEnterController,
+      curve: Curves.easeOutCubic,
+    );
+    _homeEnterFade = Tween<double>(begin: 0.0, end: 1.0).animate(curvedEnter);
+    _homeEnterScale = Tween<double>(begin: 0.94, end: 1.0).animate(curvedEnter);
+
+    _homeEventsSubscription = LauncherService.homeEventsStream.listen((event) {
+      if (event == 'onHomeEnter' && mounted) {
+        _homeEnterController.forward(from: 0.0);
+      }
+    });
+
     // Defer any work that touches platform channels until after the first
-    // frame is fully painted. This keeps initState completely idle, which
-    // is critical for the gesture snap-back fix — the system must see a
-    // completely static layout the moment the window hand-off completes.
+    // frame is fully painted.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!LightweightMode.isEnabled) {
         unawaited(WidgetHostController.instance.getBudgetedCatalog());
@@ -123,7 +142,6 @@ class HomeScreenState extends State<HomeScreen>
       LauncherService.supportsSplitScreen().then((value) {
         if (mounted) setState(() => _supportsSplitScreen = value);
       });
-      _scheduleHomeSceneSync();
     });
   }
 
@@ -137,37 +155,12 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   @override
-  void didPushNext() {
-    _routeCovered = true;
-    unawaited(
-      LauncherService.syncHomeScene(
-        isCleanHome: false,
-        isSubRouteOpen: true,
-        iconShape: _iconShape,
-      ),
-    );
-  }
+  void didPushNext() {}
 
   @override
-  void didPopNext() {
-    _routeCovered = false;
-    _scheduleHomeSceneSync();
-  }
+  void didPopNext() {}
 
-  void setExternalOverlayOpen(bool isOpen) {
-    if (_externalOverlayOpen == isOpen) return;
-    _externalOverlayOpen = isOpen;
-    if (isOpen) {
-      unawaited(
-        LauncherService.syncHomeScene(
-          isCleanHome: false,
-          iconShape: _iconShape,
-        ),
-      );
-    } else {
-      _scheduleHomeSceneSync();
-    }
-  }
+  void setExternalOverlayOpen(bool isOpen) {}
 
   GlobalKey _getIconKey(String itemId) =>
       _itemIconKeys.putIfAbsent(itemId, () => GlobalKey());
@@ -179,72 +172,6 @@ class HomeScreenState extends State<HomeScreen>
       return renderBox.localToGlobal(Offset.zero) & renderBox.size;
     }
     return null;
-  }
-
-  bool get _isCleanHomeState =>
-      !_externalOverlayOpen &&
-      !_routeCovered &&
-      !_isDragging &&
-      !_isWorkspaceOverviewMode &&
-      _contextMenuItem == null &&
-      _openedFolderItem == null &&
-      _editingWidgetId == null;
-
-  void _scheduleHomeSceneSync() {
-    if (_sceneSyncScheduled || !mounted) return;
-    _sceneSyncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _sceneSyncScheduled = false;
-      if (!mounted) return;
-      final clean = _isCleanHomeState;
-      final targets = <Map<String, dynamic>>[];
-      final seenPackages = <String>{};
-
-      for (final item in _items) {
-        if (item.type != 'app' || item.packageName.isEmpty) continue;
-        if (item.page != -1 && item.page != _currentWorkspacePage) continue;
-        final rect = _measureItemIconBounds(item.id);
-        if (rect == null || rect.width <= 0 || rect.height <= 0) continue;
-        seenPackages.add(item.packageName);
-        targets.add({
-          'packageName': item.packageName,
-          'left': rect.left,
-          'top': rect.top,
-          'width': rect.width,
-          'height': rect.height,
-          'isFolderSlot': false,
-        });
-      }
-
-      for (final item in _items) {
-        if (item.type != 'folder') continue;
-        if (item.page != -1 && item.page != _currentWorkspacePage) continue;
-        final folderApps = item.folderApps;
-        if (folderApps == null || folderApps.isEmpty) continue;
-        final rect = _measureItemIconBounds(item.id);
-        if (rect == null || rect.width <= 0 || rect.height <= 0) continue;
-        for (final pkg in folderApps) {
-          if (pkg.isEmpty || !seenPackages.add(pkg)) continue;
-          targets.add({
-            'packageName': pkg,
-            'left': rect.left,
-            'top': rect.top,
-            'width': rect.width,
-            'height': rect.height,
-            'isFolderSlot': true,
-          });
-        }
-      }
-
-      unawaited(
-        LauncherService.syncHomeScene(
-          isCleanHome: clean,
-          isSubRouteOpen: _routeCovered,
-          iconShape: _iconShape,
-          targets: targets,
-        ),
-      );
-    });
   }
 
   @override
@@ -376,6 +303,8 @@ class HomeScreenState extends State<HomeScreen>
     launcherRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _workspaceController.removeListener(_onWorkspaceScroll);
+    _homeEventsSubscription?.cancel();
+    _homeEnterController.dispose();
     _pageIndexNotifier.dispose();
     _workspaceController.dispose();
     _folderPageController?.dispose();
@@ -1057,9 +986,13 @@ class HomeScreenState extends State<HomeScreen>
                   _editingWidgetId = null;
                 })
               : null,
-          child: RepaintBoundary(
-            key: _repaintBoundaryKey,
-            child: Container(
+          child: FadeTransition(
+            opacity: _homeEnterFade,
+            child: ScaleTransition(
+              scale: _homeEnterScale,
+              child: RepaintBoundary(
+                key: _repaintBoundaryKey,
+                child: Container(
               color: Colors.transparent,
                 child: Column(
                   children: [
@@ -1087,7 +1020,6 @@ class HomeScreenState extends State<HomeScreen>
                                 if (_editingWidgetId != null) {
                                   setState(() => _editingWidgetId = null);
                                 }
-                                _scheduleHomeSceneSync();
                               },
                               itemBuilder: (context, index) {
                                 final pageIndex = index;
@@ -1981,6 +1913,8 @@ class HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
+            ),
+            ),
           ),
 
         // In-page Folder Overlay (supports dragging apps directly onto home screen)
@@ -2247,36 +2181,38 @@ class HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildMiniFolderIcon(String pkg, double size) {
+    final cachedIcon = AppDatabaseService.getCachedIcon(pkg);
+    if (cachedIcon != null && cachedIcon.isNotEmpty) {
+      return _buildMiniIconBytesWidget(cachedIcon, size);
+    }
     final cachedApp = widget.appCache[pkg];
     if (cachedApp != null) {
-      return _buildMiniAppIconWidget(cachedApp, size);
+      return _buildHomeAppIcon(cachedApp, size);
     }
-    return FutureBuilder<AppInfo?>(
-      future: _getAppInfo(pkg),
+    return FutureBuilder<Uint8List?>(
+      future: AppDatabaseService.stableIconFuture(pkg),
       builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data != null) {
-          return _buildMiniAppIconWidget(snapshot.data!, size);
+        final bytes = snapshot.data;
+        if (bytes != null && bytes.isNotEmpty) {
+          return _buildMiniIconBytesWidget(bytes, size);
         }
         return SizedBox(width: size, height: size);
       },
     );
   }
 
-  Widget _buildMiniAppIconWidget(AppInfo app, double size) {
-    final icon = app.icon;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.22),
-        child: icon != null
-            ? Image.memory(
-                icon,
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.medium,
-              )
-            : const SizedBox.shrink(),
+  Widget _buildMiniIconBytesWidget(Uint8List icon, double size) {
+    return IconShapeClipper(
+      shape: _iconShape,
+      size: size,
+      child: Image.memory(
+        icon,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        cacheWidth: (size * 3).round(),
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
       ),
     );
   }

@@ -80,16 +80,16 @@ class MainActivity : FlutterActivity() {
     private lateinit var iconPackManager: IconPackManager
     private val mainUiHandler = Handler(Looper.getMainLooper())
     private var pendingSubActivityReload = false
+    private var wasStoppedInBackground = false
 
     override fun getRenderMode(): RenderMode {
-        return RenderMode.texture
+        return RenderMode.surface
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         iconPackManager = IconPackManager(this)
         NotificationDotService.ensureGlobalLegacyReceiver(this)
-        fulfillGestureNavContract(intent)
     }
 
     override fun shouldDispatchAppLifecycleState(): Boolean = true
@@ -107,30 +107,27 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onPause() {
-        LauncherSceneStore.markHomeTransitionStarting()
         super.onPause()
     }
 
     override fun onStop() {
+        wasStoppedInBackground = true
         super.onStop()
-        // CRITICAL LAUNCHER FIX: FlutterActivity.onStop() sets FlutterView to View.GONE and
-        // calls onTrimMemory(TRIM_MEMORY_BACKGROUND), which destroys FlutterTextureView's
-        // SurfaceTexture and forces a cold GPU texture rebuild when swiping home.
-        // Restoring View.VISIBLE synchronously before the next traversal keeps the Home
-        // GPU surface permanently resident in RAM/VRAM like a native stock launcher.
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
     }
 
     override fun onResume() {
         super.onResume()
+        LauncherKeepAliveService.stop(this)
+        val returningFromApp = wasStoppedInBackground && !pendingSubActivityReload
+        wasStoppedInBackground = false
         val needsReload = pendingSubActivityReload
         pendingSubActivityReload = false
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
-        LauncherSceneStore.homeResumeEpoch.incrementAndGet()
-        LauncherSceneStore.activeForegroundPackage = packageName
-        LauncherSceneStore.markHomeDrawnAndReady()
         NotificationDotService.refreshCurrentMedia()
-        if (needsReload) {
+        if (returningFromApp) {
+            homeEventSink?.success("onHomeEnter")
+        } else if (needsReload) {
             homeEventSink?.success("onSubActivityReturn")
         }
     }
@@ -139,19 +136,18 @@ class MainActivity : FlutterActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
-            LauncherSceneStore.markHomeDrawnAndReady()
         }
     }
 
     override fun onNewIntent(intent: Intent) {
-        // Reply to the home-gesture contract immediately so QuickStep can
-        // finish the recents animation smoothly instead of timing out.
-        fulfillGestureNavContract(intent)
         setIntent(intent)
         super.onNewIntent(intent)
+        LauncherKeepAliveService.stop(this)
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
-        LauncherSceneStore.homeResumeEpoch.incrementAndGet()
-        LauncherSceneStore.markHomeDrawnAndReady()
+        if (wasStoppedInBackground) {
+            wasStoppedInBackground = false
+            homeEventSink?.success("onHomeEnter")
+        }
     }
 
     private fun captureHomeUiSnapshotIfReady(force: Boolean = false) {
@@ -610,90 +606,26 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "syncHomeScene" -> {
-                    val isCleanHome = call.argument<Boolean>("isCleanHome") ?: true
-                    val isSubRouteOpen = call.argument<Boolean>("isSubRouteOpen") ?: false
-                    val iconShape = call.argument<String>("iconShape") ?: "Circle"
-                    val rawTargets = call.argument<List<*>>("targets")
-
-                    LauncherSceneStore.isCleanHomeVisible = isCleanHome
-                    LauncherSceneStore.isSubRouteOpen = isSubRouteOpen
-                    LauncherSceneStore.currentIconShape = iconShape
-
-                    if (rawTargets != null) {
-                        val density = resources.displayMetrics.density
-                        val decorLoc = IntArray(2)
-                        window.decorView.getLocationOnScreen(decorLoc)
-                        val updatedMap = HashMap<String, LauncherSceneStore.IconTargetSpec>()
-
-                        for (entry in rawTargets) {
-                            val map = entry as? Map<*, *> ?: continue
-                            val pkg = map["packageName"] as? String ?: continue
-                            if (pkg.isEmpty()) continue
-                            val left = (map["left"] as? Number)?.toFloat() ?: continue
-                            val top = (map["top"] as? Number)?.toFloat() ?: continue
-                            val w = (map["width"] as? Number)?.toFloat() ?: continue
-                            val h = (map["height"] as? Number)?.toFloat() ?: continue
-                            if (w <= 0f || h <= 0f) continue
-
-                            val isFolderSlot = map["isFolderSlot"] as? Boolean ?: false
-                            val sx = decorLoc[0] + left * density
-                            val sy = decorLoc[1] + top * density
-                            val sw = w * density
-                            val sh = h * density
-                            updatedMap[pkg] = LauncherSceneStore.IconTargetSpec(
-                                packageName = pkg,
-                                screenRect = RectF(sx, sy, sx + sw, sy + sh),
-                                iconShape = iconShape,
-                                isFolderSlot = isFolderSlot
-                            )
-                            LauncherSceneStore.warmAppVisualAsync(this, pkg)
-                        }
-
-                        LauncherSceneStore.visibleHomeTargets.clear()
-                        LauncherSceneStore.visibleHomeTargets.putAll(updatedMap)
-                    }
-
-                    if (isCleanHome) {
-                        Choreographer.getInstance().postFrameCallback {
-                            captureHomeUiSnapshotIfReady()
-                        }
-                        mainUiHandler.postDelayed({
-                            if (LauncherSceneStore.isCleanHomeVisible) {
-                                captureHomeUiSnapshotIfReady()
-                            }
-                        }, 220L)
-                    }
                     result.success(null)
                 }
                 "invalidateCompositorIcons" -> {
-                    LauncherSceneStore.invalidateIconVisualCache()
                     result.success(null)
                 }
                 "startApp" -> {
                     val packageName = call.argument<String>("packageName")
                     val splitScreen = call.argument<Boolean>("splitScreen") ?: false
-                    val fromDrawer = call.argument<Boolean>("fromDrawer") ?: false
                     val sourceLeft = (call.argument<Number>("sourceLeft") ?: call.argument<Number>("sourceX"))?.toFloat()
                     val sourceTop = (call.argument<Number>("sourceTop") ?: call.argument<Number>("sourceY"))?.toFloat()
                     val sourceWidth = call.argument<Number>("sourceWidth")?.toFloat()
                     val sourceHeight = call.argument<Number>("sourceHeight")?.toFloat()
 
-                    val returnLeft = call.argument<Number>("returnLeft")?.toFloat()
-                    val returnTop = call.argument<Number>("returnTop")?.toFloat()
-                    val returnWidth = call.argument<Number>("returnWidth")?.toFloat()
-                    val returnHeight = call.argument<Number>("returnHeight")?.toFloat()
-
                     if (packageName != null) {
                         try {
                             val intent = packageManager.getLaunchIntentForPackage(packageName)
                             if (intent != null) {
-                                // Abort any lingering return overlay immediately for instant tap chaining
-                                LauncherSceneStore.onAppLaunchStartedCallback?.invoke()
-
-                                if (LauncherSceneStore.isCleanHomeVisible && !fromDrawer) {
-                                    captureHomeUiSnapshotIfReady()
-                                }
-                                LauncherSceneStore.warmAppVisualAsync(this, packageName)
+                                // Start Play-Store-compliant shortService keep-alive while in foreground
+                                // so Android does not freeze the launcher while the user is in the app.
+                                LauncherKeepAliveService.start(this)
 
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                                 if (splitScreen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -723,31 +655,6 @@ class MainActivity : FlutterActivity() {
                                         absX + pxW,
                                         absY + pxH
                                     )
-
-                                    val hasExplicitReturnRect =
-                                        returnLeft != null && returnTop != null &&
-                                        returnWidth != null && returnHeight != null &&
-                                        returnWidth > 0f && returnHeight > 0f
-                                    val returnRect = if (hasExplicitReturnRect) {
-                                        val rX = decorLoc[0] + returnLeft!! * density
-                                        val rY = decorLoc[1] + returnTop!! * density
-                                        val rW = returnWidth!! * density
-                                        val rH = returnHeight!! * density
-                                        RectF(rX, rY, rX + rW, rY + rH)
-                                    } else {
-                                        RectF(
-                                            absX.toFloat(),
-                                            absY.toFloat(),
-                                            (absX + pxW).toFloat(),
-                                            (absY + pxH).toFloat()
-                                        )
-                                    }
-
-                                    LauncherSceneStore.lastLaunchedPackage = packageName
-                                    LauncherSceneStore.lastLaunchedFromDrawer = fromDrawer
-                                    LauncherSceneStore.lastLaunchedReturnIsFolder = hasExplicitReturnRect
-                                    LauncherSceneStore.lastLaunchedReturnRect = if (fromDrawer) null else returnRect
-                                    GoLauncherApplication.lastLaunchedAppRect = returnRect
 
                                     ActivityOptions.makeClipRevealAnimation(
                                         window.decorView,

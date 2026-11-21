@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission
@@ -117,6 +118,12 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
         </activity>
+
+        <service
+            android:name=".LauncherKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="shortService"
+            android:stopWithTask="true" />
 
         <service android:name=".NotificationDotService"
                  android:label="Go Launcher 7 Notification Listener"

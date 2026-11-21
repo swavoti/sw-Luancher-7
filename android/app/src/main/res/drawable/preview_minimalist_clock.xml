@@ -4,21 +4,48 @@
     android:height="200dp"
     android:viewportWidth="200"
     android:viewportHeight="200">
-    <!-- Scalloped dial -->
+
+    <!-- Outlined circle dial -->
     <path
-        android:fillColor="@color/widget_surface"
-        android:pathData="M100,8 C111,8 117,17 127,15 C137,13 146,19 152,28 C159,24 170,27 174,37 C183,42 187,52 183,62 C192,68 194,79 188,88 C195,96 194,108 187,115 C192,125 188,136 179,141 C182,151 176,162 166,164 C166,174 157,183 147,182 C144,191 133,195 124,191 C117,198 105,198 98,191 C89,195 78,191 75,182 C65,183 56,174 56,164 C46,162 40,151 43,141 C34,136 30,125 35,115 C28,108 27,96 34,88 C28,79 30,68 39,62 C35,52 39,42 48,37 C52,27 63,24 70,28 C76,19 85,13 95,15 C105,17 89,8 100,8 Z" />
+        android:fillColor="@android:color/transparent"
+        android:pathData="M100,10 A90,90 0 1,1 99.9,10 Z"
+        android:strokeWidth="4.5"
+        android:strokeColor="@color/widget_on_surface" />
+
+    <!-- 12, 3, 6, 9 ticks -->
     <path
-        android:fillColor="@color/widget_accent_container"
-        android:pathData="M100,26 A74,74 0 1,1 99.9,26 Z" />
+        android:pathData="M100,20 L100,32"
+        android:strokeWidth="4"
+        android:strokeColor="@color/widget_accent"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M180,100 L168,100"
+        android:strokeWidth="3.5"
+        android:strokeColor="@color/widget_on_surface_muted"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M100,180 L100,168"
+        android:strokeWidth="3.5"
+        android:strokeColor="@color/widget_on_surface_muted"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M20,100 L32,100"
+        android:strokeWidth="3.5"
+        android:strokeColor="@color/widget_on_surface_muted"
+        android:strokeLineCap="round" />
+
     <!-- 10:10 preview hands -->
     <path
-        android:fillColor="@color/widget_on_surface"
-        android:pathData="M62,76 L102,102 L97,108 L57,82 Z" />
+        android:pathData="M100,100 L66,76"
+        android:strokeWidth="8"
+        android:strokeColor="@color/widget_on_surface"
+        android:strokeLineCap="round" />
     <path
-        android:fillColor="@color/widget_accent"
-        android:pathData="M148,66 L101,103 L97,98 L144,61 Z" />
+        android:pathData="M100,100 L146,64"
+        android:strokeWidth="5.5"
+        android:strokeColor="@color/widget_accent"
+        android:strokeLineCap="round" />
     <path
         android:fillColor="@color/widget_on_surface"
-        android:pathData="M107,100 A7,7 0 1,1 93,100 A7,7 0 1,1 107,100 Z" />
+        android:pathData="M106,100 A6,6 0 1,1 94,100 A6,6 0 1,1 106,100 Z" />
 </vector>

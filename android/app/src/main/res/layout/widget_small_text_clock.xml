@@ -3,55 +3,45 @@
     android:id="@+id/small_text_clock_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_widget_pill"
     android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:paddingLeft="14dp"
-    android:paddingTop="8dp"
-    android:paddingRight="14dp"
-    android:paddingBottom="8dp">
+    android:orientation="vertical"
+    android:paddingLeft="8dp"
+    android:paddingTop="4dp"
+    android:paddingRight="8dp"
+    android:paddingBottom="4dp">
 
-    <ImageView
-        android:layout_width="5dp"
-        android:layout_height="28dp"
-        android:layout_marginEnd="10dp"
-        android:background="@drawable/bg_widget_accent_pill"
-        android:backgroundTint="@color/widget_accent"
-        android:contentDescription="@null" />
-
-    <LinearLayout
-        android:layout_width="0dp"
+    <TextClock
+        android:id="@+id/small_text_clock_time"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center_vertical"
-        android:orientation="vertical">
+        android:format12Hour="h:mm"
+        android:format24Hour="HH:mm"
+        android:includeFontPadding="false"
+        android:letterSpacing="-0.03"
+        android:maxLines="1"
+        android:shadowColor="#66000000"
+        android:shadowDx="0"
+        android:shadowDy="2"
+        android:shadowRadius="4"
+        android:textColor="@android:color/white"
+        android:textSize="32sp"
+        android:textStyle="bold" />
 
-        <TextClock
-            android:id="@+id/small_text_clock_time"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:format12Hour="h:mm"
-            android:format24Hour="HH:mm"
-            android:includeFontPadding="false"
-            android:letterSpacing="-0.03"
-            android:maxLines="1"
-            android:textColor="@color/widget_on_surface"
-            android:textSize="26sp"
-            android:textStyle="bold" />
-
-        <TextClock
-            android:id="@+id/small_text_clock_date"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="1dp"
-            android:format12Hour="EEE, MMM d"
-            android:format24Hour="EEE, MMM d"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:textColor="@color/widget_on_surface_muted"
-            android:textSize="11sp"
-            android:textStyle="bold" />
-
-    </LinearLayout>
+    <TextClock
+        android:id="@+id/small_text_clock_date"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:format12Hour="EEE, MMM d"
+        android:format24Hour="EEE, MMM d"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:shadowColor="#66000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3"
+        android:textColor="#E6FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
 </LinearLayout>
