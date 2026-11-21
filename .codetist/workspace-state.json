@@ -2,9 +2,17 @@
   "openFilePaths": [
     "/lib/screens/home_screen.dart",
     "/assets/icon/app_icon.png",
-    "/__codetist-settings__"
+    "/__codetist-settings__",
+    "/.github/workflows/build_release.yml",
+    "/__codetist-feedback__",
+    "/web/icons/Icon-192.png",
+    "/web/icons/Icon-512.png",
+    "/test/device_memory_info_test.dart",
+    "/lib/services/app_database_service.dart",
+    "/lib/services/launcher_service.dart",
+    "/android/app/build.gradle.kts"
   ],
-  "activeFilePath": "/__codetist-settings__",
+  "activeFilePath": "/.github/workflows/build_release.yml",
   "extensionTabs": {
     "codetist-api-workbench": {
       "id": "codetist-api-workbench",
@@ -14,5 +22,5 @@
       "debuggerContributions": []
     }
   },
-  "updatedAt": 1794944659140
+  "updatedAt": 1795220010614
 }

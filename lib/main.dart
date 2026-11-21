@@ -83,20 +83,29 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed) {
       final prefs = _prefs ?? await SharedPreferences.getInstance();
+      final prevShape = prefs.getString('icon_shape') ?? 'Circle';
+      final prevCols = prefs.getInt('grid_columns') ?? 4;
+      final prevThemed = prefs.getBool('themed_icons_enabled') ?? false;
+      final prevDynamic = prefs.getBool('dynamic_theming_enabled') ?? true;
+      final prevDrawerMode = prefs.getString('drawer_scroll_mode') ?? 'horizontal';
+      final prevDots = prefs.getBool('notification_dots_enabled') ?? false;
+      final prevWallpaper = prefs.getString('saved_wallpaper_path') ?? '';
+      final prevPack = AppDatabaseService.currentIconPack;
+      final prevSearchVisible = SearchWidget.isVisible;
+      final prevSearchColor = SearchWidget.colorVariant;
+
       await prefs.reload();
       _prefs = prefs;
       LightweightMode.apply(
         prefs.getBool(LightweightMode.preferenceKey) ?? false,
       );
-      final prevSearchVisible = SearchWidget.isVisible;
-      final prevSearchColor = SearchWidget.colorVariant;
       SearchWidget.syncFromPrefs(prefs);
       if (prevSearchVisible != SearchWidget.isVisible ||
           prevSearchColor != SearchWidget.colorVariant) {
         SearchWidget.configRevision.value++;
       }
       final savedPack = prefs.getString('icon_pack') ?? '';
-      if (AppDatabaseService.currentIconPack != savedPack) {
+      if (prevPack != savedPack) {
         AppDatabaseService.currentIconPack = savedPack;
         await AppDatabaseService.clearIconCache();
         await LauncherService.invalidateCompositorIcons();
@@ -106,7 +115,19 @@ class _SwavotiAppState extends State<SwavotiApp> with WidgetsBindingObserver {
           AppDatabaseService.prefetchIcons(_appCache.keys.toList());
         }
       }
-      await _workspaceKey.currentState?.refreshLauncherSettings();
+      final settingsChanged =
+          prevPack != savedPack ||
+          prevShape != (prefs.getString('icon_shape') ?? 'Circle') ||
+          prevCols != (prefs.getInt('grid_columns') ?? 4) ||
+          prevThemed != (prefs.getBool('themed_icons_enabled') ?? false) ||
+          prevDynamic != (prefs.getBool('dynamic_theming_enabled') ?? true) ||
+          prevDrawerMode !=
+              (prefs.getString('drawer_scroll_mode') ?? 'horizontal') ||
+          prevDots != (prefs.getBool('notification_dots_enabled') ?? false) ||
+          prevWallpaper != (prefs.getString('saved_wallpaper_path') ?? '');
+      if (settingsChanged) {
+        await _workspaceKey.currentState?.refreshLauncherSettings();
+      }
     }
   }
 

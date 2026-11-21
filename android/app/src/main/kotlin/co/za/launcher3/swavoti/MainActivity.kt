@@ -92,7 +92,7 @@ class MainActivity : FlutterActivity() {
         fulfillGestureNavContract(intent)
     }
 
-    override fun shouldDispatchAppLifecycleState(): Boolean = false
+    override fun shouldDispatchAppLifecycleState(): Boolean = true
 
     private fun keepFlutterSurfaceAliveAndHot(resumeLifecycle: Boolean) {
         findViewById<View>(FLUTTER_VIEW_ID)?.let { fv ->
@@ -125,14 +125,14 @@ class MainActivity : FlutterActivity() {
         super.onResume()
         val needsReload = pendingSubActivityReload
         pendingSubActivityReload = false
-        if (needsReload) {
-            flutterEngine?.lifecycleChannel?.appIsInactive()
-        }
-        keepFlutterSurfaceAliveAndHot(resumeLifecycle = needsReload)
+        keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
         LauncherSceneStore.homeResumeEpoch.incrementAndGet()
         LauncherSceneStore.activeForegroundPackage = packageName
         LauncherSceneStore.markHomeDrawnAndReady()
         NotificationDotService.refreshCurrentMedia()
+        if (needsReload) {
+            homeEventSink?.success("onSubActivityReturn")
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
