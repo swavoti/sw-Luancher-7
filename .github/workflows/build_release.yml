@@ -113,19 +113,6 @@ jobs:
       - name: Build release APK (universal, all ABIs)
         run: flutter build apk --release
 
-      - name: Install APK on emulator
-        if: success()
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          disable-animations: true
-          script: |
-            adb install -r build/app/outputs/flutter-apk/app-release.apk
-            adb shell pm path co.za.launcher3.swavoti
-            adb shell am start -n co.za.launcher3.swavoti/.MainActivity
-
       - name: Build signed release AAB (all ABIs)
         run: flutter build appbundle --release
 
