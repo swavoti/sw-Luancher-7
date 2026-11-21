@@ -57,10 +57,15 @@
   "agent-parallel-execution": false,
   "agent-sandbox-commands": false,
   "agent-notifications": false,
+  "agent-max-iterations": "12",
+  "agent-command-approval": "excluded",
+  "agent-auto-accept-edits": false,
+  "agent-web-access": true,
+  "agent-browser-preview": true,
+  "agent-custom-instructions": "",
   "agent-excluded-commands": [
     "rm",
     "npm install",
     "git push"
-  ],
-  "agent-command-approval": "excluded"
+  ]
 }

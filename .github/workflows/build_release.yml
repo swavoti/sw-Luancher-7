@@ -105,6 +105,36 @@ jobs:
       - name: Build signed release AAB (all ABIs)
         run: flutter build appbundle --release
 
+      - name: Verify APK is signed and structurally valid
+        run: |
+          APK_DIR=build/app/outputs/flutter-apk
+          APK="$APK_DIR/app-release.apk"
+
+          echo "== APK size =="
+          ls -lh "$APK"
+
+          echo "== Native libraries in APK =="
+          unzip -l "$APK" | grep -E '\.so$' || { echo "ERROR: no native libraries found in APK"; exit 1; }
+
+          echo "== ABI coverage =="
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            unzip -l "$APK" | grep -q "lib/$abi/libflutter.so" \
+              && echo "  ok: $abi" \
+              || echo "  MISSING: $abi"
+          done
+
+          echo "== Signing =="
+          APKSIGNER=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found"; exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK" || {
+            echo "ERROR: APK signature verification FAILED - do not ship this build"; exit 1;
+          }
+
+          echo "== Zip alignment =="
+          unzip -l "$APK" > /dev/null || { echo "ERROR: APK is a corrupt zip"; exit 1; }
+
       - name: Rename APKs and AAB with version
         run: |
           VERSION=${{ steps.tag.outputs.value }}

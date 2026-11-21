@@ -58,7 +58,11 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            // MUST stay false. Legacy (compressed) packaging shrinks the APK by
+            // tens of MB but leaves native libraries unaligned and compressed,
+            // which makes Android 14+/15 reject the file at install time with
+            // "package appears to be invalid" / "failed to extract native libraries".
+            useLegacyPackaging = false
         }
     }
 }

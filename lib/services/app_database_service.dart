@@ -13,7 +13,7 @@ class AppDatabaseService {
 
   static final Map<String, Uint8List> _iconCache = {};
   static final Map<String, MemoryImage> _memoryImageCache = {};
-  static final Map<String, Uint8List?> _monochromeCache = {};
+  static final Map<String, Uint8List> _monochromeCache = {};
   // Stable Future references so FutureBuilder widgets don't restart on rebuild
   static final Map<String, Future<Uint8List?>> _iconFutureCache = {};
   static bool _lightweightMode = false;
@@ -56,10 +56,11 @@ class AppDatabaseService {
     }
     try {
       final bytes = await LauncherService.getMonochromeIcon(packageName);
-      _monochromeCache[packageName] = bytes;
+      if (bytes != null) {
+        _monochromeCache[packageName] = bytes;
+      }
       return bytes;
     } catch (_) {
-      _monochromeCache[packageName] = null;
       return null;
     }
   }
