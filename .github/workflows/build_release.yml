@@ -26,6 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: CI Internet Speed Test
+        continue-on-error: true
+        run: |
+          if command -v pipx >/dev/null 2>&1; then
+            pipx run speedtest-cli --simple || true
+          elif command -v python3 >/dev/null 2>&1; then
+            python3 -m pip install --quiet speedtest-cli && speedtest-cli --simple || true
+          fi
+          echo "--- Cloudflare 50MB Download Check ---"
+          curl -s -o /dev/null -w "Download speed: %{speed_download} bytes/sec | Time: %{time_total}s\n" https://speed.cloudflare.com/__down?bytes=50000000 | awk '{printf "%s %s %.2f Mbps | %s %s\n", $1, $2, ($3*8)/1000000, $5, $6}'
+
       - name: Resolve release tag
         id: tag
         run: |
