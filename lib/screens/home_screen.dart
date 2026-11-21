@@ -64,13 +64,9 @@ class HomeScreenState extends State<HomeScreen>
   final GlobalKey _repaintBoundaryKey = GlobalKey();
   final Map<String, GlobalKey> _itemIconKeys = {};
 
-  // Smooth home entrance settle-in when returning from an external app
+  // Smooth home entrance blur settle-in (alpha/scale/translation run natively on RenderThread)
   late final AnimationController _homeEnterController;
-  late Animation<double> _homeEnterFade;
-  late Animation<double> _homeEnterScale;
-  late Animation<double> _homeEnterOffsetY;
   late Animation<double> _homeEnterBlur;
-  Alignment _homeEnterAlignment = Alignment.center;
   StreamSubscription<String>? _homeEventsSubscription;
 
   // Split-screen preloaded apps
@@ -125,7 +121,16 @@ class HomeScreenState extends State<HomeScreen>
     unawaited(NavigationSettingsService.instance.load());
 
     _homeEventsSubscription = LauncherService.homeEventsStream.listen((event) {
-      if (event == 'onHomeEnter' && mounted) {
+      if (!mounted) return;
+      if (event == 'onHomeLeave') {
+        _applyNavEnterSpec();
+        final spec = NavigationSettingsService.instance.effectiveSpec;
+        if (spec.duration == Duration.zero) {
+          _homeEnterController.value = 1.0;
+        } else {
+          _homeEnterController.value = 0.0;
+        }
+      } else if (event == 'onHomeEnter') {
         _applyNavEnterSpec();
         final spec = NavigationSettingsService.instance.effectiveSpec;
         if (spec.duration == Duration.zero) {
@@ -322,25 +327,10 @@ class HomeScreenState extends State<HomeScreen>
       parent: _homeEnterController,
       curve: spec.curve,
     );
-    _homeEnterFade = Tween<double>(
-      begin: spec.beginOpacity,
-      end: 1.0,
-    ).animate(curved);
-    _homeEnterScale = Tween<double>(
-      begin: spec.beginScale,
-      end: 1.0,
-    ).animate(curved);
-    _homeEnterOffsetY = Tween<double>(
-      begin: spec.beginOffsetY,
-      end: 0.0,
-    ).animate(curved);
     _homeEnterBlur = Tween<double>(
       begin: nav.effectiveBeginBlurSigma,
       end: 0.0,
     ).animate(curved);
-    _homeEnterAlignment = spec.usesIconAnchor
-        ? nav.lastLaunchAlignment
-        : Alignment.center;
   }
 
   @override
@@ -1035,24 +1025,11 @@ class HomeScreenState extends State<HomeScreen>
           child: AnimatedBuilder(
             animation: _homeEnterController,
             builder: (context, child) {
-              Widget current = child!;
               final blur = _homeEnterBlur.value;
-              if (blur > 0.05) {
-                current = ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                  child: current,
-                );
-              }
-              return Opacity(
-                opacity: _homeEnterFade.value.clamp(0.0, 1.0),
-                child: Transform.translate(
-                  offset: Offset(0, _homeEnterOffsetY.value),
-                  child: Transform.scale(
-                    scale: _homeEnterScale.value,
-                    alignment: _homeEnterAlignment,
-                    child: current,
-                  ),
-                ),
+              if (blur <= 0.05) return child!;
+              return ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                child: child,
               );
             },
             child: RepaintBoundary(

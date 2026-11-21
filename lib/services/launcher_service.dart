@@ -356,11 +356,23 @@ class LauncherService {
   static Future<void> syncNavigationSettings({
     required bool gestureNavContractEnabled,
     required bool keepLauncherWarmEnabled,
+    int durationMs = 240,
+    double beginAlpha = 0.0,
+    double beginScale = 0.93,
+    double beginOffsetY = 0.0,
+    double pivotX = 0.5,
+    double pivotY = 0.5,
   }) async {
     try {
       await _systemChannel.invokeMethod('setNavigationSettings', {
         'gestureNavContractEnabled': gestureNavContractEnabled,
         'keepLauncherWarmEnabled': keepLauncherWarmEnabled,
+        'durationMs': durationMs,
+        'beginAlpha': beginAlpha,
+        'beginScale': beginScale,
+        'beginOffsetY': beginOffsetY,
+        'pivotX': pivotX,
+        'pivotY': pivotY,
       });
     } catch (e) {
       debugPrint('Error syncing navigation settings: $e');

@@ -83,7 +83,7 @@ class MainActivity : FlutterActivity() {
     private var wasStoppedInBackground = false
 
     override fun getRenderMode(): RenderMode {
-        return RenderMode.surface
+        return RenderMode.texture
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +93,73 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun shouldDispatchAppLifecycleState(): Boolean = true
+
+    private fun getNavBoolPref(key: String, defaultValue: Boolean): Boolean {
+        return getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
+            .getBoolean(key, defaultValue)
+    }
+
+    private fun prepareNativeHomeEnterState() {
+        val fv = findViewById<View>(FLUTTER_VIEW_ID) ?: return
+        val prefs = getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
+        val durationMs = prefs.getInt("nav_duration_ms", 240)
+        fv.animate().cancel()
+        if (durationMs <= 0) {
+            fv.alpha = 1f
+            fv.scaleX = 1f
+            fv.scaleY = 1f
+            fv.translationY = 0f
+            return
+        }
+        val beginAlpha = prefs.getFloat("nav_begin_alpha", 0.0f)
+        val beginScale = prefs.getFloat("nav_begin_scale", 0.93f)
+        val beginOffsetYDp = prefs.getFloat("nav_begin_offset_y", 0.0f)
+        val pivotXRatio = prefs.getFloat("nav_pivot_x", 0.5f)
+        val pivotYRatio = prefs.getFloat("nav_pivot_y", 0.5f)
+        if (fv.width > 0 && fv.height > 0) {
+            fv.pivotX = fv.width * pivotXRatio
+            fv.pivotY = fv.height * pivotYRatio
+        }
+        fv.alpha = beginAlpha
+        fv.scaleX = beginScale
+        fv.scaleY = beginScale
+        fv.translationY = beginOffsetYDp * resources.displayMetrics.density
+    }
+
+    private fun runNativeHomeEnterAnimation() {
+        val fv = findViewById<View>(FLUTTER_VIEW_ID) ?: return
+        val prefs = getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
+        val durationMs = prefs.getInt("nav_duration_ms", 240)
+        fv.animate().cancel()
+        if (durationMs <= 0) {
+            fv.alpha = 1f
+            fv.scaleX = 1f
+            fv.scaleY = 1f
+            fv.translationY = 0f
+            return
+        }
+        val beginAlpha = prefs.getFloat("nav_begin_alpha", 0.0f)
+        val beginScale = prefs.getFloat("nav_begin_scale", 0.93f)
+        val beginOffsetYDp = prefs.getFloat("nav_begin_offset_y", 0.0f)
+        val pivotXRatio = prefs.getFloat("nav_pivot_x", 0.5f)
+        val pivotYRatio = prefs.getFloat("nav_pivot_y", 0.5f)
+        if (fv.width > 0 && fv.height > 0) {
+            fv.pivotX = fv.width * pivotXRatio
+            fv.pivotY = fv.height * pivotYRatio
+        }
+        fv.alpha = beginAlpha
+        fv.scaleX = beginScale
+        fv.scaleY = beginScale
+        fv.translationY = beginOffsetYDp * resources.displayMetrics.density
+        fv.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .translationY(0f)
+            .setDuration(durationMs.toLong())
+            .setInterpolator(android.view.animation.DecelerateInterpolator(1.8f))
+            .start()
+    }
 
     private fun keepFlutterSurfaceAliveAndHot(resumeLifecycle: Boolean) {
         findViewById<View>(FLUTTER_VIEW_ID)?.let { fv ->
@@ -106,12 +173,26 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (!pendingSubActivityReload && getNavBoolPref("keep_launcher_warm", true)) {
+            LauncherKeepAliveService.start(this)
+        }
+    }
+
     override fun onPause() {
+        if (!pendingSubActivityReload && getNavBoolPref("keep_launcher_warm", true)) {
+            LauncherKeepAliveService.start(this)
+        }
         super.onPause()
     }
 
     override fun onStop() {
         wasStoppedInBackground = true
+        if (!pendingSubActivityReload) {
+            prepareNativeHomeEnterState()
+            homeEventSink?.success("onHomeLeave")
+        }
         super.onStop()
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
     }
@@ -126,9 +207,19 @@ class MainActivity : FlutterActivity() {
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = true)
         NotificationDotService.refreshCurrentMedia()
         if (returningFromApp) {
+            runNativeHomeEnterAnimation()
             homeEventSink?.success("onHomeEnter")
-        } else if (needsReload) {
-            homeEventSink?.success("onSubActivityReturn")
+        } else {
+            findViewById<View>(FLUTTER_VIEW_ID)?.let { fv ->
+                fv.animate().cancel()
+                fv.alpha = 1f
+                fv.scaleX = 1f
+                fv.scaleY = 1f
+                fv.translationY = 0f
+            }
+            if (needsReload) {
+                homeEventSink?.success("onSubActivityReturn")
+            }
         }
     }
 
@@ -139,23 +230,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun getNavPref(key: String, defaultValue: Boolean): Boolean {
-        return getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
-            .getBoolean(key, defaultValue)
-    }
-
     override fun onNewIntent(intent: Intent) {
         setIntent(intent)
         super.onNewIntent(intent)
         LauncherKeepAliveService.stop(this)
-        if (getNavPref("gesture_nav_contract", false)) {
+        if (getNavBoolPref("gesture_nav_contract", false)) {
             fulfillGestureNavContract(intent)
         }
-        keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
-        if (wasStoppedInBackground) {
-            wasStoppedInBackground = false
-            homeEventSink?.success("onHomeEnter")
-        }
+        // Keep wasStoppedInBackground intact so onResume() runs the native
+        // entrance animation once the window is active.
     }
 
     private fun captureHomeUiSnapshotIfReady(force: Boolean = false) {
@@ -631,9 +714,9 @@ class MainActivity : FlutterActivity() {
                         try {
                             val intent = packageManager.getLaunchIntentForPackage(packageName)
                             if (intent != null) {
-                                // Start Play-Store-compliant shortService keep-alive while in foreground
-                                // when enabled in Navigation & Gestures settings.
-                                if (getNavPref("keep_launcher_warm", false)) {
+                                // Start Play-Store-compliant keep-alive while in foreground
+                                // (defaults to true so MainActivity is never killed while in an app).
+                                if (getNavBoolPref("keep_launcher_warm", true)) {
                                     LauncherKeepAliveService.start(this)
                                 }
 
@@ -711,11 +794,23 @@ class MainActivity : FlutterActivity() {
                 }
                 "setNavigationSettings" -> {
                     val contractEnabled = call.argument<Boolean>("gestureNavContractEnabled") ?: false
-                    val warmEnabled = call.argument<Boolean>("keepLauncherWarmEnabled") ?: false
+                    val warmEnabled = call.argument<Boolean>("keepLauncherWarmEnabled") ?: true
+                    val durationMs = call.argument<Number>("durationMs")?.toInt() ?: 240
+                    val beginAlpha = call.argument<Number>("beginAlpha")?.toFloat() ?: 0.0f
+                    val beginScale = call.argument<Number>("beginScale")?.toFloat() ?: 0.93f
+                    val beginOffsetY = call.argument<Number>("beginOffsetY")?.toFloat() ?: 0.0f
+                    val pivotX = call.argument<Number>("pivotX")?.toFloat() ?: 0.5f
+                    val pivotY = call.argument<Number>("pivotY")?.toFloat() ?: 0.5f
                     getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
                         .edit()
                         .putBoolean("gesture_nav_contract", contractEnabled)
                         .putBoolean("keep_launcher_warm", warmEnabled)
+                        .putInt("nav_duration_ms", durationMs)
+                        .putFloat("nav_begin_alpha", beginAlpha)
+                        .putFloat("nav_begin_scale", beginScale)
+                        .putFloat("nav_begin_offset_y", beginOffsetY)
+                        .putFloat("nav_pivot_x", pivotX)
+                        .putFloat("nav_pivot_y", pivotY)
                         .apply()
                     result.success(null)
                 }

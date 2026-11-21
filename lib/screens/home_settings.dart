@@ -1136,37 +1136,9 @@ class _NavigationGesturesSettingsSubscreenState
               padding: const EdgeInsets.only(bottom: 24),
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  child: Card(
-                    elevation: 0,
-                    color: cs.primaryContainer.withValues(alpha: 0.45),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.animation_rounded,
-                        color: cs.primary,
-                      ),
-                      title: const Text(
-                        'Interactive Navigation Style Demo',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: const Text(
-                        'Preview exact timing, blur & icon morph animations',
-                      ),
-                      trailing: FilledButton.tonal(
-                        onPressed: () => _openDemo(),
-                        child: const Text('See demo'),
-                      ),
-                      onTap: () => _openDemo(),
-                    ),
-                  ),
-                ),
-                Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
-                    'CLOSE-APP ANIMATION STYLE',
+                    'CLOSE-APP ANIMATION',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1175,51 +1147,17 @@ class _NavigationGesturesSettingsSubscreenState
                     ),
                   ),
                 ),
-                RadioGroup<CloseAppAnimationStyle>(
-                  groupValue: _nav.style,
-                  onChanged: (val) async {
-                    if (val == null) return;
-                    await _nav.setStyle(val);
-                    if (mounted) setState(() {});
-                    widget.onSettingsChanged?.call();
-                  },
-                  child: Column(
-                    children: CloseAppAnimationSpec.all.map((spec) {
-                      return RadioListTile<CloseAppAnimationStyle>(
-                        value: spec.style,
-                        title: Row(
-                          children: [
-                            Expanded(child: Text(spec.title)),
-                            if (spec.isExperimental)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: cs.tertiaryContainer,
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  'Experimental',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: cs.onTertiaryContainer,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        subtitle: Text(spec.subtitle),
-                        secondary: IconButton(
-                          tooltip: 'See demo',
-                          icon: const Icon(Icons.play_arrow_rounded),
-                          onPressed: () => _openDemo(spec.style),
-                        ),
-                      );
-                    }).toList(),
+                ListTile(
+                  leading: const Icon(Icons.animation_rounded),
+                  title: const Text('Close-app animation style'),
+                  subtitle: Text(
+                    'Current: ${_nav.effectiveSpec.title} • Tap to preview & choose',
                   ),
+                  trailing: FilledButton.tonal(
+                    onPressed: () => _openDemo(),
+                    child: const Text('See demo'),
+                  ),
+                  onTap: () => _openDemo(),
                 ),
                 const Divider(height: 24),
                 Padding(

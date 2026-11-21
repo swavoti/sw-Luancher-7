@@ -12,13 +12,13 @@ import android.os.Build
 import android.os.IBinder
 
 /**
- * Play-Store-compliant on-demand keep-alive foreground service using `shortService`.
+ * Play-Store-compliant on-demand keep-alive foreground service using `specialUse`.
  *
- * Started ONLY while `MainActivity` is in the foreground right as the user launches
- * an external app, and stopped immediately in `MainActivity.onResume()` when they
- * return home. Using `FOREGROUND_SERVICE_TYPE_SHORT_SERVICE` keeps the launcher
- * process out of Android's Cached App Freezer during app switches without needing
- * restricted foreground service declarations in Play Console.
+ * Started while `MainActivity` is still in the foreground right as the user launches
+ * or switches to an external app, and stopped immediately in `MainActivity.onResume()`
+ * when they return home. Unlike `shortService` (which Android kills after 3 minutes),
+ * `specialUse` keeps the home launcher resident across long app sessions so
+ * `MainActivity` and its Flutter engine are never evicted by the LMK/Cached Freezer.
  */
 class LauncherKeepAliveService : Service() {
 
@@ -30,13 +30,12 @@ class LauncherKeepAliveService : Service() {
         private var isRunning = false
 
         fun start(context: Context) {
-            if (isRunning) return
-            val intent = Intent(context.applicationContext, LauncherKeepAliveService::class.java)
+            val intent = Intent(context, LauncherKeepAliveService::class.java)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.applicationContext.startForegroundService(intent)
+                    context.startForegroundService(intent)
                 } else {
-                    context.applicationContext.startService(intent)
+                    context.startService(intent)
                 }
             } catch (e: Throwable) {
                 android.util.Log.w("LauncherKeepAliveService", "Could not start keep-alive service", e)
@@ -45,10 +44,9 @@ class LauncherKeepAliveService : Service() {
 
         fun stop(context: Context) {
             if (!isRunning) return
-            isRunning = false
             try {
-                context.applicationContext.stopService(
-                    Intent(context.applicationContext, LauncherKeepAliveService::class.java)
+                context.stopService(
+                    Intent(context, LauncherKeepAliveService::class.java)
                 )
             } catch (_: Throwable) {
             }
@@ -64,7 +62,7 @@ class LauncherKeepAliveService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         isRunning = true
         promoteToForeground()
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
@@ -108,6 +106,9 @@ class LauncherKeepAliveService : Service() {
             .setOngoing(true)
             .setContentIntent(contentIntent)
             .apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    setCategory(Notification.CATEGORY_SERVICE)
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_DEFERRED)
                 }
@@ -119,13 +120,14 @@ class LauncherKeepAliveService : Service() {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Throwable) {
             android.util.Log.w("LauncherKeepAliveService", "startForeground failed", e)
+            isRunning = false
             stopSelf()
         }
     }
@@ -137,9 +139,9 @@ class LauncherKeepAliveService : Service() {
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Home Screen Quick Return",
-            NotificationManager.IMPORTANCE_MIN
+            NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Temporarily keeps the home screen warm while switching apps"
+            description = "Keeps the home screen warm while switching apps"
             setShowBadge(false)
             enableLights(false)
             enableVibration(false)

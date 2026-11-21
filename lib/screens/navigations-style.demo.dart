@@ -5,9 +5,9 @@ import 'package:swavoti/services/navigation_settings_service.dart';
 
 /// Live animated demo of every close-app / return-to-home animation style.
 ///
-/// Uses [CloseAppAnimationSpec] directly from [NavigationSettingsService] so
-/// durations, curves, scale, translation, blur sigma, and icon-anchor origin
-/// match the real launcher 1:1.
+/// Styled to match [GestureDemoPage] and driven directly by
+/// [CloseAppAnimationSpec] so durations, curves, scale, translation,
+/// blur sigma, and icon-anchor origin match [HomeScreen] 1:1.
 class NavigationsStyleDemoScreen extends StatefulWidget {
   final CloseAppAnimationStyle? initialStyle;
   final bool initialBlurOverride;
@@ -29,14 +29,12 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
   late bool _simulateReturnBlur;
   bool _autoLoop = true;
 
-  // Phase 1: Mock app is open, user swipes up to close (0.0 -> 1.0)
-  // Phase 2: Home entrance animation runs with exact CloseAppAnimationSpec
   late final AnimationController _appCloseController;
   late final AnimationController _homeEnterController;
   Timer? _loopTimer;
 
-  // Target icon normalized alignment on the mock phone screen (row 1, col 2)
-  static const Alignment _demoIconAnchor = Alignment(0.32, -0.18);
+  // Target icon alignment on the simulated 4x3 home grid (row 1, col 2)
+  static const Alignment _demoIconAnchor = Alignment(0.32, 0.12);
 
   @override
   void initState() {
@@ -48,12 +46,12 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
 
     _appCloseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 240),
       value: 0.0,
     );
     _homeEnterController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 190),
+      duration: const Duration(milliseconds: 240),
       value: 1.0,
     );
 
@@ -87,18 +85,15 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
         ? const Duration(milliseconds: 1)
         : spec.duration;
 
-    // Reset to "app open" state
     _appCloseController.value = 0.0;
     _homeEnterController.value = 0.0;
 
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await Future<void>.delayed(const Duration(milliseconds: 320));
     if (!mounted) return;
 
-    // Simulate user swiping up to close the app
     await _appCloseController.forward(from: 0.0);
     if (!mounted) return;
 
-    // Trigger exact home entrance spec (mirrors onHomeEnter in HomeScreen)
     if (spec.duration == Duration.zero) {
       _homeEnterController.value = 1.0;
     } else {
@@ -107,19 +102,13 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
 
     if (!mounted) return;
     if (_autoLoop) {
-      _loopTimer = Timer(const Duration(milliseconds: 1300), _playDemoCycle);
+      _loopTimer = Timer(const Duration(milliseconds: 1200), _playDemoCycle);
     }
   }
 
   Future<void> _applySelectedStyle() async {
     await NavigationSettingsService.instance.setStyle(_selectedStyle);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Applied "${_spec.title}"'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
     Navigator.of(context).pop(_selectedStyle);
   }
 
@@ -128,175 +117,165 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
     final cs = Theme.of(context).colorScheme;
     final spec = _spec;
     final blurSigma = _effectiveBlurSigma;
+    final selectedIndex = CloseAppAnimationSpec.all.indexWhere(
+      (s) => s.style == _selectedStyle,
+    );
 
     return Scaffold(
       backgroundColor: cs.surface,
-      appBar: AppBar(
-        title: const Text('Close-App Animation Demo'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            tooltip: _autoLoop ? 'Pause loop' : 'Auto-loop',
-            icon: Icon(
-              _autoLoop ? Icons.repeat_on_rounded : Icons.repeat_rounded,
-            ),
-            onPressed: () {
-              setState(() => _autoLoop = !_autoLoop);
-              if (_autoLoop) {
-                _playDemoCycle();
-              } else {
-                _loopTimer?.cancel();
-              }
-            },
-          ),
-          IconButton(
-            tooltip: 'Replay now',
-            icon: const Icon(Icons.replay_rounded),
-            onPressed: _playDemoCycle,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Live phone preview
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 8,
-                ),
-                child: AspectRatio(
-                  aspectRatio: 9 / 18.5,
-                  child: _buildPhoneMockup(cs, spec, blurSigma),
-                ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top bar matching GestureDemoPage: indicator dots + Loop/Close
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+              child: Row(
+                children: [
+                  Row(
+                    children: List.generate(CloseAppAnimationSpec.all.length, (
+                      i,
+                    ) {
+                      final active = i == selectedIndex;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        margin: const EdgeInsets.only(right: 6),
+                        width: active ? 22 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: active
+                              ? cs.primary
+                              : cs.outlineVariant.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      );
+                    }),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: _autoLoop ? 'Pause loop' : 'Auto-loop',
+                    icon: Icon(
+                      _autoLoop
+                          ? Icons.repeat_on_rounded
+                          : Icons.repeat_rounded,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      setState(() => _autoLoop = !_autoLoop);
+                      if (_autoLoop) {
+                        _playDemoCycle();
+                      } else {
+                        _loopTimer?.cancel();
+                      }
+                    },
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
               ),
             ),
-          ),
 
-          // Spec badge bar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(14),
-              ),
+            // Header matching GestureDemoPage
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 4, 24, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          spec.title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                          ),
-                        ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Align(
+                      key: ValueKey('title_${spec.id}'),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        spec.title,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface,
+                            ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: spec.isExperimental
-                              ? cs.tertiaryContainer
-                              : cs.primaryContainer,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          spec.badge,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: spec.isExperimental
-                                ? cs.onTertiaryContainer
-                                : cs.onPrimaryContainer,
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${spec.duration.inMilliseconds}ms • '
-                    'scale ${spec.beginScale.toStringAsFixed(2)}→1.00 • '
-                    'opacity ${spec.beginOpacity.toStringAsFixed(2)}→1.00'
-                    '${spec.beginOffsetY != 0 ? ' • rise ${spec.beginOffsetY.toInt()}px' : ''}'
-                    '${blurSigma > 0 ? ' • blur ${blurSigma.toInt()}px' : ''}'
-                    '${spec.usesIconAnchor ? ' • icon-anchored' : ''}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: cs.onSurfaceVariant,
+                  const SizedBox(height: 6),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Align(
+                      key: ValueKey('desc_${spec.id}_$blurSigma'),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${spec.subtitle} '
+                        '(${spec.duration.inMilliseconds}ms'
+                        '${blurSigma > 0 ? ', ${blurSigma.toInt()}px blur' : ''})',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
 
-          // Style selector strip
-          SizedBox(
-            height: 82,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              scrollDirection: Axis.horizontal,
-              itemCount: CloseAppAnimationSpec.all.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final item = CloseAppAnimationSpec.all[index];
-                final selected = item.style == _selectedStyle;
-                return ChoiceChip(
-                  selected: selected,
-                  label: Text(item.title),
-                  onSelected: (_) {
-                    setState(() => _selectedStyle = item.style);
-                    _playDemoCycle();
-                  },
-                );
-              },
+            // Simulated Sandbox Stage matching GestureDemoPage
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: _buildSandboxStage(cs, spec, blurSigma),
+              ),
             ),
-          ),
 
-          // Bottom action bar
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+            // Style picker chips
+            SizedBox(
+              height: 52,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                scrollDirection: Axis.horizontal,
+                itemCount: CloseAppAnimationSpec.all.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final item = CloseAppAnimationSpec.all[index];
+                  final selected = item.style == _selectedStyle;
+                  return ChoiceChip(
+                    selected: selected,
+                    label: Text(item.title),
+                    onSelected: (_) {
+                      setState(() => _selectedStyle = item.style);
+                      _playDemoCycle();
+                    },
+                  );
+                },
+              ),
+            ),
+
+            // Bottom action buttons
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
               child: Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _playDemoCycle,
-                      icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('Replay'),
-                    ),
+                  OutlinedButton.icon(
+                    onPressed: _playDemoCycle,
+                    icon: const Icon(Icons.replay_rounded, size: 18),
+                    label: const Text('Replay'),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
-                    child: FilledButton.icon(
+                    child: FilledButton(
                       onPressed: _applySelectedStyle,
-                      icon: const Icon(Icons.check_rounded),
-                      label: const Text('Use This Style'),
+                      child: const Text('Apply Style'),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPhoneMockup(
+  Widget _buildSandboxStage(
     ColorScheme cs,
     CloseAppAnimationSpec spec,
     double blurSigma,
@@ -324,105 +303,89 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
 
     final closeCurved = CurvedAnimation(
       parent: _appCloseController,
-      curve: Curves.easeInCubic,
+      curve: Curves.easeOutCubic,
     );
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(
-          color: cs.outline.withValues(alpha: 0.55),
-          width: 3,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.25),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: cs.outlineVariant.withValues(alpha: 0.45),
+            width: 1.5,
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(25),
+        ),
         child: Stack(
-          fit: StackFit.expand,
           children: [
-            // Persistent wallpaper layer
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF1A237E),
-                    Color(0xFF3949AB),
-                    Color(0xFF00838F),
-                  ],
-                ),
+            // Background: Simulated Material You Home Grid driven by exact spec
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _homeEnterController,
+                builder: (context, child) {
+                  Widget current = child!;
+                  final blur = blurAnim.value;
+                  if (blur > 0.05) {
+                    current = ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                      child: current,
+                    );
+                  }
+                  return Opacity(
+                    opacity: fadeAnim.value.clamp(0.0, 1.0),
+                    child: Transform.translate(
+                      offset: Offset(0, offsetAnim.value),
+                      child: Transform.scale(
+                        scale: scaleAnim.value,
+                        alignment: spec.usesIconAnchor
+                            ? _demoIconAnchor
+                            : Alignment.center,
+                        child: current,
+                      ),
+                    ),
+                  );
+                },
+                child: _buildSimulatedHomeBackdrop(cs, spec.usesIconAnchor),
               ),
             ),
 
-            // Home screen layer driven by exact CloseAppAnimationSpec
-            AnimatedBuilder(
-              animation: _homeEnterController,
-              builder: (context, child) {
-                Widget current = child!;
-                final blur = blurAnim.value;
-                if (blur > 0.05) {
-                  current = ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-                    child: current,
+            // Foreground: Simulated Placeholder App Window closing upward
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _appCloseController,
+                builder: (context, child) {
+                  final t = closeCurved.value;
+                  if (t >= 0.999) return const SizedBox.shrink();
+                  return Opacity(
+                    opacity: (1.0 - t).clamp(0.0, 1.0),
+                    child: Transform.translate(
+                      offset: Offset(0, -140 * t),
+                      child: Transform.scale(
+                        scale: 1.0 - (0.35 * t),
+                        alignment: Alignment.center,
+                        child: child,
+                      ),
+                    ),
                   );
-                }
-                return Opacity(
-                  opacity: fadeAnim.value.clamp(0.0, 1.0),
-                  child: Transform.translate(
-                    offset: Offset(0, offsetAnim.value),
-                    child: Transform.scale(
-                      scale: scaleAnim.value,
-                      alignment: spec.usesIconAnchor
-                          ? _demoIconAnchor
-                          : Alignment.center,
-                      child: current,
-                    ),
-                  ),
-                );
-              },
-              child: _buildMockHomeWorkspace(),
+                },
+                child: _buildPlaceholderApp(cs),
+              ),
             ),
 
-            // Closing app window overlay (swipe-up to dismiss)
-            AnimatedBuilder(
-              animation: _appCloseController,
-              builder: (context, child) {
-                final t = closeCurved.value;
-                if (t >= 0.999) return const SizedBox.shrink();
-                return Opacity(
-                  opacity: (1.0 - t).clamp(0.0, 1.0),
-                  child: Transform.translate(
-                    offset: Offset(0, -140 * t),
-                    child: Transform.scale(
-                      scale: 1.0 - (0.28 * t),
-                      child: child,
-                    ),
-                  ),
-                );
-              },
-              child: _buildMockOpenApp(cs),
-            ),
-
-            // Gesture pill indicator at bottom
+            // Simulated Gesture Pill Bar at bottom (matches GestureDemoPage)
             Positioned(
               left: 0,
               right: 0,
-              bottom: 8,
+              bottom: 12,
               child: Center(
                 child: Container(
-                  width: 64,
-                  height: 4,
+                  width: 110,
+                  height: 4.5,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.75),
-                    borderRadius: BorderRadius.circular(999),
+                    color: cs.onSurface.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
               ),
@@ -433,87 +396,40 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
     );
   }
 
-  Widget _buildMockHomeWorkspace() {
-    final colors = [
-      Colors.amber,
-      Colors.lightBlueAccent,
-      Colors.pinkAccent,
-      Colors.greenAccent,
-      Colors.deepOrangeAccent,
-      Colors.purpleAccent,
-      Colors.tealAccent,
-      Colors.cyanAccent,
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 26, 16, 24),
+  Widget _buildSimulatedHomeBackdrop(ColorScheme cs, bool highlightTarget) {
+    return Container(
+      color: cs.surfaceContainerLowest,
+      padding: const EdgeInsets.fromLTRB(28, 36, 28, 36),
       child: Column(
         children: [
-          // Mock clock / weather header
-          const Text(
-            '09:41',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 30,
-              fontWeight: FontWeight.w300,
-            ),
-          ),
-          const Text(
-            '22° • Clear',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-            ),
-          ),
           const Spacer(),
-          // 4x2 app grid (row 0 col 2 highlighted as target icon)
-          GridView.builder(
+          GridView.count(
             shrinkWrap: true,
+            crossAxisCount: 4,
+            mainAxisSpacing: 18,
+            crossAxisSpacing: 18,
             physics: const NeverScrollableScrollPhysics(),
-            itemCount: 8,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: 14,
-              crossAxisSpacing: 14,
-            ),
-            itemBuilder: (context, index) {
-              final isTarget = index == 2;
+            children: List.generate(12, (index) {
+              final isTarget = highlightTarget && index == 6;
               return Container(
                 decoration: BoxDecoration(
-                  color: colors[index].withValues(alpha: 0.9),
+                  color: isTarget
+                      ? cs.primaryContainer
+                      : cs.surfaceContainerHigh,
                   shape: BoxShape.circle,
                   border: isTarget
-                      ? Border.all(color: Colors.white, width: 2)
+                      ? Border.all(color: cs.primary, width: 2)
                       : null,
                 ),
-                child: Icon(
-                  isTarget ? Icons.public_rounded : Icons.apps_rounded,
-                  color: Colors.black87,
-                  size: 18,
-                ),
               );
-            },
+            }),
           ),
-          const SizedBox(height: 22),
-          // Mock dock
+          const SizedBox(height: 28),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            height: 36,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(
-                4,
-                (i) => Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(18),
             ),
           ),
         ],
@@ -521,55 +437,71 @@ class _NavigationsStyleDemoScreenState extends State<NavigationsStyleDemoScreen>
     );
   }
 
-  Widget _buildMockOpenApp(ColorScheme cs) {
+  Widget _buildPlaceholderApp(ColorScheme cs) {
     return Container(
       color: cs.surfaceContainerLow,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 36),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: Colors.pinkAccent.withValues(alpha: 0.85),
-                child: const Icon(
-                  Icons.public_rounded,
-                  size: 16,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Open App Window',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: cs.onSurface,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Center(
-                child: Text(
-                  'Swiping up to close…',
-                  style: TextStyle(
-                    color: cs.onSurfaceVariant,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
+          Container(
+            width: 130,
+            height: 16,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
             ),
           ),
+          const SizedBox(height: 22),
+          Container(
+            height: 130,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          const SizedBox(height: 20),
+          for (var i = 0; i < 3; i++) ...[
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 120,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
         ],
       ),
     );

@@ -51,13 +51,13 @@ class CloseAppAnimationSpec {
       style: CloseAppAnimationStyle.homeSettle,
       id: 'home_settle',
       title: 'Default — Home Settle',
-      subtitle: '190ms smooth fade & subtle 0.94→1.0 scale settle on return.',
+      subtitle: '240ms smooth fade & subtle 0.93→1.0 scale settle on return.',
       badge: 'Default',
       isExperimental: false,
-      duration: Duration(milliseconds: 190),
+      duration: Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
       beginOpacity: 0.0,
-      beginScale: 0.94,
+      beginScale: 0.93,
       beginOffsetY: 0.0,
       beginBlurSigma: 0.0,
       usesIconAnchor: false,
@@ -159,7 +159,7 @@ class NavigationSettingsService extends ChangeNotifier {
   bool _iconCoordinationBlurEnabled = false;
   bool _returnBlurEnabled = false;
   bool _predictiveBackScaleEnabled = false;
-  bool _keepLauncherWarmEnabled = false;
+  bool _keepLauncherWarmEnabled = true;
 
   Alignment _lastLaunchAlignment = Alignment.center;
 
@@ -196,7 +196,7 @@ class NavigationSettingsService extends ChangeNotifier {
     _returnBlurEnabled = prefs.getBool(_keyReturnBlur) ?? false;
     _predictiveBackScaleEnabled =
         prefs.getBool(_keyPredictiveBackScale) ?? false;
-    _keepLauncherWarmEnabled = prefs.getBool(_keyKeepLauncherWarm) ?? false;
+    _keepLauncherWarmEnabled = prefs.getBool(_keyKeepLauncherWarm) ?? true;
     _loaded = true;
     await _syncToNative();
     notifyListeners();
@@ -217,6 +217,7 @@ class NavigationSettingsService extends ChangeNotifier {
       nx.clamp(-0.9, 0.9),
       ny.clamp(-0.9, 0.9),
     );
+    _syncToNative();
   }
 
   Future<void> setStyle(CloseAppAnimationStyle value) async {
@@ -266,10 +267,23 @@ class NavigationSettingsService extends ChangeNotifier {
   }
 
   Future<void> _syncToNative() async {
+    final spec = effectiveSpec;
+    final pivotX = spec.usesIconAnchor
+        ? ((_lastLaunchAlignment.x + 1.0) * 0.5).clamp(0.05, 0.95)
+        : 0.5;
+    final pivotY = spec.usesIconAnchor
+        ? ((_lastLaunchAlignment.y + 1.0) * 0.5).clamp(0.05, 0.95)
+        : 0.5;
     await LauncherService.syncNavigationSettings(
       gestureNavContractEnabled:
           _gestureNavContractEnabled || _iconCoordinationBlurEnabled,
       keepLauncherWarmEnabled: _keepLauncherWarmEnabled,
+      durationMs: spec.duration.inMilliseconds,
+      beginAlpha: spec.beginOpacity,
+      beginScale: spec.beginScale,
+      beginOffsetY: spec.beginOffsetY,
+      pivotX: pivotX,
+      pivotY: pivotY,
     );
   }
 }
