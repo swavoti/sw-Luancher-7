@@ -139,10 +139,18 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun getNavPref(key: String, defaultValue: Boolean): Boolean {
+        return getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
+            .getBoolean(key, defaultValue)
+    }
+
     override fun onNewIntent(intent: Intent) {
         setIntent(intent)
         super.onNewIntent(intent)
         LauncherKeepAliveService.stop(this)
+        if (getNavPref("gesture_nav_contract", false)) {
+            fulfillGestureNavContract(intent)
+        }
         keepFlutterSurfaceAliveAndHot(resumeLifecycle = false)
         if (wasStoppedInBackground) {
             wasStoppedInBackground = false
@@ -624,8 +632,10 @@ class MainActivity : FlutterActivity() {
                             val intent = packageManager.getLaunchIntentForPackage(packageName)
                             if (intent != null) {
                                 // Start Play-Store-compliant shortService keep-alive while in foreground
-                                // so Android does not freeze the launcher while the user is in the app.
-                                LauncherKeepAliveService.start(this)
+                                // when enabled in Navigation & Gestures settings.
+                                if (getNavPref("keep_launcher_warm", false)) {
+                                    LauncherKeepAliveService.start(this)
+                                }
 
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                                 if (splitScreen && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -698,6 +708,16 @@ class MainActivity : FlutterActivity() {
                     } else {
                         result.success(false)
                     }
+                }
+                "setNavigationSettings" -> {
+                    val contractEnabled = call.argument<Boolean>("gestureNavContractEnabled") ?: false
+                    val warmEnabled = call.argument<Boolean>("keepLauncherWarmEnabled") ?: false
+                    getSharedPreferences("swavoti_nav_prefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("gesture_nav_contract", contractEnabled)
+                        .putBoolean("keep_launcher_warm", warmEnabled)
+                        .apply()
+                    result.success(null)
                 }
                 "appInfo" -> {
                     val packageName = call.argument<String>("packageName")

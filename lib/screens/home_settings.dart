@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
 import 'package:swavoti/services/lightweight_mode.dart';
+import 'package:swavoti/services/navigation_settings_service.dart';
+import 'package:swavoti/screens/navigations-style.demo.dart';
 import 'package:swavoti/screens/search_settings.dart';
 import 'package:swavoti/screens/app_lock_screen.dart';
 
@@ -111,6 +113,20 @@ class _HomeSettingsState extends State<HomeSettings> {
                     context,
                     MaterialPageRoute(
                       builder: (_) => const SearchSettingsScreen(),
+                    ),
+                  ),
+                ),
+                _buildCategoryTile(
+                  icon: Icons.swipe_up_rounded,
+                  title: 'Navigation & Gestures',
+                  subtitle:
+                      'Close-app animations, NavContract & experimental blur',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NavigationGesturesSettingsSubscreen(
+                        onSettingsChanged: widget.onSettingsChanged,
+                      ),
                     ),
                   ),
                 ),
@@ -1049,6 +1065,229 @@ class GridSizeScreen extends StatelessWidget {
           );
         }).toList(),
       ),
+    );
+  }
+}
+
+class NavigationGesturesSettingsSubscreen extends StatefulWidget {
+  final VoidCallback? onSettingsChanged;
+
+  const NavigationGesturesSettingsSubscreen({super.key, this.onSettingsChanged});
+
+  @override
+  State<NavigationGesturesSettingsSubscreen> createState() =>
+      _NavigationGesturesSettingsSubscreenState();
+}
+
+class _NavigationGesturesSettingsSubscreenState
+    extends State<NavigationGesturesSettingsSubscreen> {
+  final _nav = NavigationSettingsService.instance;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _nav.load();
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _openDemo([CloseAppAnimationStyle? style]) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NavigationsStyleDemoScreen(
+          initialStyle: style ?? _nav.effectiveSpec.style,
+          initialBlurOverride: _nav.returnBlurEnabled,
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() {});
+      widget.onSettingsChanged?.call();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      backgroundColor: cs.surface,
+      appBar: AppBar(
+        title: const Text('Navigation & Gestures'),
+        backgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        actions: [
+          TextButton.icon(
+            onPressed: () => _openDemo(),
+            icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+            label: const Text('See demo'),
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Card(
+                    elevation: 0,
+                    color: cs.primaryContainer.withValues(alpha: 0.45),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.animation_rounded,
+                        color: cs.primary,
+                      ),
+                      title: const Text(
+                        'Interactive Navigation Style Demo',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        'Preview exact timing, blur & icon morph animations',
+                      ),
+                      trailing: FilledButton.tonal(
+                        onPressed: () => _openDemo(),
+                        child: const Text('See demo'),
+                      ),
+                      onTap: () => _openDemo(),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    'CLOSE-APP ANIMATION STYLE',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                RadioGroup<CloseAppAnimationStyle>(
+                  groupValue: _nav.style,
+                  onChanged: (val) async {
+                    if (val == null) return;
+                    await _nav.setStyle(val);
+                    if (mounted) setState(() {});
+                    widget.onSettingsChanged?.call();
+                  },
+                  child: Column(
+                    children: CloseAppAnimationSpec.all.map((spec) {
+                      return RadioListTile<CloseAppAnimationStyle>(
+                        value: spec.style,
+                        title: Row(
+                          children: [
+                            Expanded(child: Text(spec.title)),
+                            if (spec.isExperimental)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cs.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  'Experimental',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: cs.onTertiaryContainer,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        subtitle: Text(spec.subtitle),
+                        secondary: IconButton(
+                          tooltip: 'See demo',
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          onPressed: () => _openDemo(spec.style),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const Divider(height: 24),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: Text(
+                    'GESTURE & NAVCONTRACT (OFF BY DEFAULT)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: cs.primary,
+                    ),
+                  ),
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.blur_on_rounded),
+                  title: const Text('Icon coordination with blur'),
+                  subtitle: const Text(
+                    'Experimental: anchor return settle to last opened icon with Gaussian blur',
+                  ),
+                  value: _nav.iconCoordinationBlurEnabled,
+                  onChanged: (val) async {
+                    await _nav.setIconCoordinationBlurEnabled(val);
+                    if (mounted) setState(() {});
+                    widget.onSettingsChanged?.call();
+                  },
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.gesture_rounded),
+                  title: const Text('GestureNavContract reporting'),
+                  subtitle: const Text(
+                    'Experimental: reply to SystemUI gesture_nav_contract_v1 with icon bounds',
+                  ),
+                  value: _nav.gestureNavContractEnabled,
+                  onChanged: (val) async {
+                    await _nav.setGestureNavContractEnabled(val);
+                    if (mounted) setState(() {});
+                    widget.onSettingsChanged?.call();
+                  },
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.deblur_rounded),
+                  title: const Text('Return backdrop blur'),
+                  subtitle: const Text(
+                    'Apply a brief blur settle on any close-app animation style',
+                  ),
+                  value: _nav.returnBlurEnabled,
+                  onChanged: (val) async {
+                    await _nav.setReturnBlurEnabled(val);
+                    if (mounted) setState(() {});
+                    widget.onSettingsChanged?.call();
+                  },
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.memory_rounded),
+                  title: const Text('Keep launcher warm while app is open'),
+                  subtitle: const Text(
+                    'Use short foreground service to prevent Android freezing home activity',
+                  ),
+                  value: _nav.keepLauncherWarmEnabled,
+                  onChanged: (val) async {
+                    await _nav.setKeepLauncherWarmEnabled(val);
+                    if (mounted) setState(() {});
+                    widget.onSettingsChanged?.call();
+                  },
+                ),
+              ],
+            ),
     );
   }
 }

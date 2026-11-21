@@ -2,6 +2,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:swavoti/services/navigation_settings_service.dart';
 import 'dart:typed_data';
 import 'dart:ui'; 
 class MediaPlaybackInfo {
@@ -315,6 +316,19 @@ class LauncherService {
     bool fromDrawer = false,
   }) async {
     try {
+      if (sourceBounds != null) {
+        final views = PlatformDispatcher.instance.views;
+        if (views.isNotEmpty && views.first.devicePixelRatio > 0) {
+          final screenSize =
+              views.first.physicalSize / views.first.devicePixelRatio;
+          NavigationSettingsService.instance.recordLaunchOrigin(
+            sourceBounds,
+            screenSize,
+          );
+        }
+      } else {
+        NavigationSettingsService.instance.recordLaunchOrigin(null, Size.zero);
+      }
       await _systemChannel.invokeMethod('startApp', {
         'packageName': packageName,
         'splitScreen': splitScreen,
@@ -336,6 +350,20 @@ class LauncherService {
       });
     } catch (e) {
       debugPrint('Error starting app: $e');
+    }
+  }
+
+  static Future<void> syncNavigationSettings({
+    required bool gestureNavContractEnabled,
+    required bool keepLauncherWarmEnabled,
+  }) async {
+    try {
+      await _systemChannel.invokeMethod('setNavigationSettings', {
+        'gestureNavContractEnabled': gestureNavContractEnabled,
+        'keepLauncherWarmEnabled': keepLauncherWarmEnabled,
+      });
+    } catch (e) {
+      debugPrint('Error syncing navigation settings: $e');
     }
   }
 

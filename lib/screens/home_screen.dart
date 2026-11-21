@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:swavoti/services/launcher_service.dart';
+import 'package:swavoti/services/navigation_settings_service.dart';
 import 'package:swavoti/services/app_lock_service.dart';
 import 'package:swavoti/screens/widget_bottomsheet.dart';
 import 'package:swavoti/widgets/icon_shape_clipper.dart';
@@ -64,8 +66,11 @@ class HomeScreenState extends State<HomeScreen>
 
   // Smooth home entrance settle-in when returning from an external app
   late final AnimationController _homeEnterController;
-  late final Animation<double> _homeEnterFade;
-  late final Animation<double> _homeEnterScale;
+  late Animation<double> _homeEnterFade;
+  late Animation<double> _homeEnterScale;
+  late Animation<double> _homeEnterOffsetY;
+  late Animation<double> _homeEnterBlur;
+  Alignment _homeEnterAlignment = Alignment.center;
   StreamSubscription<String>? _homeEventsSubscription;
 
   // Split-screen preloaded apps
@@ -115,16 +120,19 @@ class HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 190),
       value: 1.0,
     );
-    final curvedEnter = CurvedAnimation(
-      parent: _homeEnterController,
-      curve: Curves.easeOutCubic,
-    );
-    _homeEnterFade = Tween<double>(begin: 0.0, end: 1.0).animate(curvedEnter);
-    _homeEnterScale = Tween<double>(begin: 0.94, end: 1.0).animate(curvedEnter);
+    _applyNavEnterSpec();
+    NavigationSettingsService.instance.addListener(_onNavSettingsChanged);
+    unawaited(NavigationSettingsService.instance.load());
 
     _homeEventsSubscription = LauncherService.homeEventsStream.listen((event) {
       if (event == 'onHomeEnter' && mounted) {
-        _homeEnterController.forward(from: 0.0);
+        _applyNavEnterSpec();
+        final spec = NavigationSettingsService.instance.effectiveSpec;
+        if (spec.duration == Duration.zero) {
+          _homeEnterController.value = 1.0;
+        } else {
+          _homeEnterController.forward(from: 0.0);
+        }
       }
     });
 
@@ -298,8 +306,46 @@ class HomeScreenState extends State<HomeScreen>
     return filtered;
   }
 
+  void _onNavSettingsChanged() {
+    if (mounted) {
+      _applyNavEnterSpec();
+    }
+  }
+
+  void _applyNavEnterSpec() {
+    final nav = NavigationSettingsService.instance;
+    final spec = nav.effectiveSpec;
+    _homeEnterController.duration = spec.duration == Duration.zero
+        ? const Duration(milliseconds: 1)
+        : spec.duration;
+    final curved = CurvedAnimation(
+      parent: _homeEnterController,
+      curve: spec.curve,
+    );
+    _homeEnterFade = Tween<double>(
+      begin: spec.beginOpacity,
+      end: 1.0,
+    ).animate(curved);
+    _homeEnterScale = Tween<double>(
+      begin: spec.beginScale,
+      end: 1.0,
+    ).animate(curved);
+    _homeEnterOffsetY = Tween<double>(
+      begin: spec.beginOffsetY,
+      end: 0.0,
+    ).animate(curved);
+    _homeEnterBlur = Tween<double>(
+      begin: nav.effectiveBeginBlurSigma,
+      end: 0.0,
+    ).animate(curved);
+    _homeEnterAlignment = spec.usesIconAnchor
+        ? nav.lastLaunchAlignment
+        : Alignment.center;
+  }
+
   @override
   void dispose() {
+    NavigationSettingsService.instance.removeListener(_onNavSettingsChanged);
     launcherRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _workspaceController.removeListener(_onWorkspaceScroll);
@@ -986,11 +1032,30 @@ class HomeScreenState extends State<HomeScreen>
                   _editingWidgetId = null;
                 })
               : null,
-          child: FadeTransition(
-            opacity: _homeEnterFade,
-            child: ScaleTransition(
-              scale: _homeEnterScale,
-              child: RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _homeEnterController,
+            builder: (context, child) {
+              Widget current = child!;
+              final blur = _homeEnterBlur.value;
+              if (blur > 0.05) {
+                current = ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                  child: current,
+                );
+              }
+              return Opacity(
+                opacity: _homeEnterFade.value.clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: Offset(0, _homeEnterOffsetY.value),
+                  child: Transform.scale(
+                    scale: _homeEnterScale.value,
+                    alignment: _homeEnterAlignment,
+                    child: current,
+                  ),
+                ),
+              );
+            },
+            child: RepaintBoundary(
                 key: _repaintBoundaryKey,
                 child: Container(
               color: Colors.transparent,
@@ -1912,7 +1977,6 @@ class HomeScreenState extends State<HomeScreen>
                   ],
                 ),
               ),
-            ),
             ),
             ),
           ),
