@@ -665,7 +665,7 @@ class MainActivity : FlutterActivity() {
                                     )
                                 } else {
                                     LauncherSceneStore.lastLaunchedPackage = packageName
-                                    LauncherSceneStore.lastLaunchedFromDrawer = fromDrawer
+                                    LauncherSceneStore.lastLaunchedFromDrawer = false
                                     LauncherSceneStore.lastLaunchedReturnRect = null
                                     GoLauncherApplication.lastLaunchedAppRect = null
                                     ActivityOptions.makeBasic()
